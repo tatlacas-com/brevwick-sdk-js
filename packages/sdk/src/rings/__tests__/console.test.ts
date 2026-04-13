@@ -69,6 +69,24 @@ describe('console ring', () => {
     expect(entry?.message).not.toContain('eyJabc.def.ghi');
   });
 
+  it('redacts bare JWT-shaped tokens (no Bearer prefix) via the JWT pattern', () => {
+    // Standalone coverage for the JWT pattern in redact.ts. The Bearer test
+    // above incidentally covers JWTs only because the Bearer regex fires
+    // first and swallows the token; a JWT with no `Bearer ` prefix must still
+    // be scrubbed by the dedicated JWT rule.
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    console.error('token: eyJabc.def.ghi');
+
+    expect(entries).toHaveLength(1);
+    const entry = entries[0];
+    expect(entry).toBeDefined();
+    expect(entry?.message).toContain('[jwt]');
+    expect(entry?.message).not.toContain('eyJabc.def.ghi');
+  });
+
   it('coerces Error args via message+stack, not JSON.stringify', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { ctx, entries } = makeCtx();
