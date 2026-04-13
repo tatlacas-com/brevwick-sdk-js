@@ -294,6 +294,7 @@ describe('_internal ring buffers', () => {
         level: 'error',
         message: `msg ${i}`,
         timestamp: i,
+        count: 1,
       });
     }
     const snap = internal.buffers.console.snapshot();

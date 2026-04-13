@@ -108,8 +108,11 @@ export function installConsoleRing(ctx: RingContext): () => void {
     const now = Date.now();
     const key = dedupeKey(message, stack);
     const last = recent.get(key);
-    if (last && now - last.timestamp < DEDUPE_WINDOW_MS) {
-      last.count = (last.count ?? 1) + 1;
+    // Boundary is inclusive: WT-02 acceptance says "within 500 ms", and a
+    // repeat fired at exactly the window edge is intuitively still "within"
+    // the window. The exact-edge case is covered by a dedicated test.
+    if (last && now - last.timestamp <= DEDUPE_WINDOW_MS) {
+      last.count += 1;
       last.timestamp = now;
       return;
     }
@@ -118,11 +121,12 @@ export function installConsoleRing(ctx: RingContext): () => void {
     ctx.push(entry);
 
     // Prune stale keys opportunistically so the map can't grow unbounded when
-    // many distinct errors fire over time — anything older than the dedupe
-    // window can never match again anyway.
+    // many distinct errors fire over time — anything strictly older than the
+    // dedupe window can never match again anyway. Mirrors the inclusive
+    // dedupe check above.
     if (recent.size > 32) {
       for (const [k, v] of recent) {
-        if (now - v.timestamp >= DEDUPE_WINDOW_MS) recent.delete(k);
+        if (now - v.timestamp > DEDUPE_WINDOW_MS) recent.delete(k);
       }
     }
   }

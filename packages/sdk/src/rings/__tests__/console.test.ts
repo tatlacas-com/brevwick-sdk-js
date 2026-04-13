@@ -157,6 +157,31 @@ describe('console ring', () => {
     expect(entries[1]?.count).toBe(1);
   });
 
+  it('treats the 500 ms dedupe boundary as inclusive (exactly 500 ms dedupes)', () => {
+    // WT-02 acceptance says "within 500 ms". The boundary is inclusive —
+    // a repeat at exactly the window edge still counts as the same event.
+    // Regression guard against an off-by-one strict-less-than check.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    console.error('edge');
+    vi.advanceTimersByTime(500); // exactly at the boundary
+    console.error('edge');
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.count).toBe(2);
+
+    // One ms past the boundary is a separate event.
+    vi.advanceTimersByTime(501);
+    console.error('edge');
+
+    expect(entries).toHaveLength(2);
+    expect(entries[1]?.count).toBe(1);
+  });
+
   it('captures window "error" events with stack', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { ctx, entries } = makeCtx();
