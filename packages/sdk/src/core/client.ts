@@ -155,16 +155,20 @@ function build(
   const instance: Brevwick = {
     install,
     uninstall,
-    async submit(_input: FeedbackInput): Promise<SubmitResult> {
-      // Promise-returning so `.catch()` handlers attach before the rejection
-      // fires — a synchronous throw here would short-circuit any chain built
-      // in user code. Real implementation lands in #4.
-      throw new Error('Brevwick.submit is not yet implemented');
-    },
-    async captureScreenshot(): Promise<Blob> {
-      const { captureScreenshotForInstance } = await import('../screenshot');
-      return captureScreenshotForInstance(internal);
-    },
+    submit: (input: FeedbackInput): Promise<SubmitResult> =>
+      // Lazy-load so the submit pipeline (plus redaction + version helpers)
+      // lives in its own chunk and the eager core bundle stays under the
+      // 2 kB gzip budget. `dispatchSubmit` owns both the happy path and
+      // the never-throws fallback for any unexpected pipeline rejection,
+      // so no error-code literals leak into the eager surface. A chunk-
+      // load failure here (deploy mismatch / offline) rejects the
+      // returned promise — that is the only environmental escape from
+      // the never-throws contract and is unreachable in a healthy build.
+      import('../submit').then((m) => m.dispatchSubmit(internal, input)),
+    captureScreenshot: (): Promise<Blob> =>
+      import('../screenshot').then((m) =>
+        m.captureScreenshotForInstance(internal),
+      ),
   };
 
   Object.defineProperty(instance, INTERNAL_KEY, {

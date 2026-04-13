@@ -13,6 +13,8 @@ export type {
   Environment,
   FeedbackAttachment,
   FeedbackInput,
+  SubmitError,
+  SubmitErrorCode,
   SubmitResult,
 } from './types';
 

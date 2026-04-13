@@ -36,5 +36,60 @@ describe('bundle chunk split', () => {
         expect(hit).toBe(true);
       },
     );
+
+    /**
+     * Submit pipeline must live in a sibling chunk: the base chunk loads it
+     * via `import('../submit')` only on the first `submit()` call. If a
+     * future inline merges submit symbols into the base chunk, the eager
+     * 2 kB gzip budget regresses. We assert by:
+     *   1. The base chunk references the submit chunk via dynamic import.
+     *   2. The base chunk does not contain any submit-specific error code
+     *      literal (those live exclusively in the submit chunk).
+     *   3. A sibling chunk file actually contains the submit symbols.
+     */
+    it.each([
+      ['ESM', 'index.js', '.js', 'submit-'],
+      ['CJS', 'index.cjs', '.cjs', 'submit-'],
+    ])(
+      '%s base chunk imports the submit pipeline lazily and ships no submit error literals',
+      (_label, baseName, ext, prefix) => {
+        const baseSrc = readFileSync(join(dist, baseName), 'utf8');
+        // Base must reference the submit chunk filename via a dynamic import.
+        expect(baseSrc).toMatch(new RegExp(`['"\`]\\.\\/${prefix}`));
+        // Submit error-code literals must not leak into the eager chunk.
+        for (const code of [
+          'ATTACHMENT_UPLOAD_FAILED',
+          'INGEST_REJECTED',
+          'INGEST_TIMEOUT',
+          'INGEST_INVALID_RESPONSE',
+          'INGEST_RETRY_EXHAUSTED',
+        ]) {
+          expect(baseSrc).not.toContain(code);
+        }
+        // Submit-only runtime symbols must not be inlined.
+        expect(baseSrc).not.toContain('runSubmit');
+        expect(baseSrc).not.toContain('INGEST_BACKOFFS_MS');
+
+        const siblings = readdirSync(dist).filter(
+          (f) => f.endsWith(ext) && f.startsWith(prefix),
+        );
+        expect(siblings.length).toBeGreaterThan(0);
+        const submitChunk = readFileSync(join(dist, siblings[0]!), 'utf8');
+        expect(submitChunk).toContain('INGEST_RETRY_EXHAUSTED');
+      },
+    );
+
+    /**
+     * Hard ceiling: the eager gzipped chunk must stay under the 2 kB budget
+     * declared in CLAUDE.md and SDD § 12. Without this guard, future code
+     * changes can silently regress past the budget — CI does not yet enforce
+     * it (see WT-07).
+     */
+    it('eager ESM chunk is under the 2 kB gzip budget', async () => {
+      const { gzipSync } = await import('node:zlib');
+      const raw = readFileSync(baseEsm);
+      const gzipped = gzipSync(raw).length;
+      expect(gzipped).toBeLessThan(2048);
+    });
   });
 });

@@ -45,9 +45,53 @@ export interface FeedbackInput {
   attachments?: Array<Blob | FeedbackAttachment>;
 }
 
-export interface SubmitResult {
-  reportId: string;
+/**
+ * Discriminator for {@link SubmitError}. Every failure path in the submit
+ * pipeline maps to exactly one of these codes.
+ *
+ * - `ATTACHMENT_UPLOAD_FAILED`: client-side validation rejected an
+ *   attachment (count > 5, size > 10 MB, MIME outside the
+ *   image/png|jpeg|webp + video/webm whitelist), or the presign / R2 PUT
+ *   failed before the report POST was reached.
+ * - `INGEST_REJECTED`: the ingest endpoint returned a 4xx (e.g. 422
+ *   QUOTA_EXCEEDED, 413 PAYLOAD_TOO_LARGE). Not retried — the same payload
+ *   would be rejected again. The server-echoed response body (capped at 256
+ *   chars and run through `redact()`) is appended to the message.
+ * - `INGEST_RETRY_EXHAUSTED`: the ingest POST hit the maximum retry count
+ *   (one initial + two backoffs) on 5xx or thrown-fetch responses and never
+ *   succeeded.
+ *
+ * The submit pipeline itself never throws — it always resolves to one of the
+ * codes above. The single documented exception is if the lazy `submit` chunk
+ * itself fails to load (offline, CDN outage, deploy mismatch): that is an
+ * environmental failure before the pipeline runs, and the returned promise
+ * rejects instead of resolving. A rejection is the truthful signal — the
+ * request never reached our ingest. Callers in such hostile environments
+ * may wrap `submit()` in their own `.catch`.
+ * - `INGEST_TIMEOUT`: the 30 s total-budget AbortController fired before the
+ *   pipeline (presign, PUT, POST, or backoff sleep) completed.
+ * - `INGEST_INVALID_RESPONSE`: the ingest endpoint returned 2xx with a body
+ *   that did not parse as JSON or did not include a string `report_id`.
+ */
+export type SubmitErrorCode =
+  | 'ATTACHMENT_UPLOAD_FAILED'
+  | 'INGEST_REJECTED'
+  | 'INGEST_RETRY_EXHAUSTED'
+  | 'INGEST_TIMEOUT'
+  | 'INGEST_INVALID_RESPONSE';
+
+export interface SubmitError {
+  code: SubmitErrorCode;
+  message: string;
 }
+
+/**
+ * Tagged result. `submit()` never throws — callers discriminate on `ok`.
+ * Matches SDD § 12 updated contract (cross-repo PR accompanies this change).
+ */
+export type SubmitResult =
+  | { ok: true; report_id: string }
+  | { ok: false; error: SubmitError };
 
 export interface ConsoleEntry {
   kind: 'console';
