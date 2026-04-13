@@ -14,7 +14,9 @@ type PatchLevel = 'error' | 'warn';
  */
 function safeStringify(arg: unknown): string {
   if (arg instanceof Error) {
-    return arg.stack ? `${arg.name}: ${arg.message}\n${arg.stack}` : `${arg.name}: ${arg.message}`;
+    return arg.stack
+      ? `${arg.name}: ${arg.message}\n${arg.stack}`
+      : `${arg.name}: ${arg.message}`;
   }
   if (arg === null) return 'null';
   if (arg === undefined) return 'undefined';
@@ -98,7 +100,11 @@ export function installConsoleRing(ctx: RingContext): () => void {
   // mutates `count` on the same object already sitting in the ring buffer.
   const recent = new Map<string, ConsoleEntry>();
 
-  function record(level: PatchLevel, message: string, stack: string | undefined): void {
+  function record(
+    level: PatchLevel,
+    message: string,
+    stack: string | undefined,
+  ): void {
     const now = Date.now();
     const key = dedupeKey(message, stack);
     const last = recent.get(key);

@@ -38,8 +38,12 @@ describe('console ring', () => {
   });
 
   it('patches console.error and console.warn while still calling originals', () => {
-    const origErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const origWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const origErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const origWarnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     const { ctx, entries } = makeCtx();
 
     teardown = installConsoleRing(ctx);
@@ -50,8 +54,16 @@ describe('console ring', () => {
     expect(origErrorSpy).toHaveBeenCalledWith('boom');
     expect(origWarnSpy).toHaveBeenCalledWith('careful');
     expect(entries).toHaveLength(2);
-    expect(entries[0]).toMatchObject({ kind: 'console', level: 'error', message: 'boom' });
-    expect(entries[1]).toMatchObject({ kind: 'console', level: 'warn', message: 'careful' });
+    expect(entries[0]).toMatchObject({
+      kind: 'console',
+      level: 'error',
+      message: 'boom',
+    });
+    expect(entries[1]).toMatchObject({
+      kind: 'console',
+      level: 'warn',
+      message: 'careful',
+    });
   });
 
   it('redacts Bearer tokens and JWTs in buffered messages', () => {
@@ -109,7 +121,10 @@ describe('console ring', () => {
 
     const fakeStack =
       'Error: long\n' +
-      Array.from({ length: 50 }, (_, i) => `    at frame${i} (f.js:${i}:1)`).join('\n');
+      Array.from(
+        { length: 50 },
+        (_, i) => `    at frame${i} (f.js:${i}:1)`,
+      ).join('\n');
     const err = new Error('long');
     err.stack = fakeStack;
 
