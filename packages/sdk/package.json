@@ -1,0 +1,36 @@
+{
+  "name": "compilerfish-sdk",
+  "version": "0.0.0",
+  "description": "Compilerfish core SDK — submit feedback reports from any browser app. AI-formatted into clean GitHub-ready issues.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:cover": "vitest run --coverage",
+    "type-check": "tsc --noEmit"
+  },
+  "homepage": "https://github.com/tatlacas-com/compilerfish-sdk-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tatlacas-com/compilerfish-sdk-js.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": ["compilerfish", "qa", "feedback", "bug-report", "ai"],
+  "publishConfig": {
+    "access": "public"
+  }
+}
