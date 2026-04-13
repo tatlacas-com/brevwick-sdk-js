@@ -58,7 +58,7 @@ pnpm format
 
 ## Releasing
 
-Releases are driven by [Changesets](https://github.com/changesets/changesets). The two packages are **linked** (version in lockstep) pre-1.0.
+Releases are driven by [Changesets](https://github.com/changesets/changesets). The two packages are **linked** (version in lockstep) pre-1.0 and currently in **pre-release mode** (`beta`) — `.changeset/pre.json` pins the tag so `changeset version` emits `0.1.0-beta.x` suffixes until the next `changeset pre exit` (planned for the `0.1.0` stabilisation / tradekit cutover, per issue #8).
 
 ### Contributor flow
 
@@ -81,8 +81,8 @@ Releases are driven by [Changesets](https://github.com/changesets/changesets). T
 
 ### npm dist-tags
 
-- `npm add brevwick-sdk` resolves to the latest `latest`-tagged version (stable). During the pre-1.0 beta line this may not yet exist.
-- `npm add brevwick-sdk@beta` is the bleeding edge.
+- `npm add brevwick-sdk@beta` — canonical install during the `0.1.0-beta.x` MVP line (bleeding edge).
+- `npm add brevwick-sdk` — resolves to the `latest` dist-tag once stabilisation at `0.1.0` ships (tradekit cutover). The `latest` tag is intentionally unpopulated during the beta line. The full dist-tag policy is documented in [`brevwick-ops/docs/brevwick-sdd.md` § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts) (tracking: brevwick-ops#3).
 
 ### Repo secrets
 
@@ -91,4 +91,4 @@ Releases are driven by [Changesets](https://github.com/changesets/changesets). T
 
 ## Status
 
-Phase 0 — scaffolding. The packages publish as `0.0.0` placeholders containing only types and the redaction helpers. Real submit/screenshot/rings land in Phase 4 alongside `brevwick-api` Phase 2.
+Phase 0 — scaffolding. Both packages are baselined at `0.1.0-beta.0` on the `beta` dist-tag line; the first published artefact will be `0.1.0-beta.1` once the next real changeset merges to `main` (requires `NPM_TOKEN`, tracked in #15). The packages currently contain only types and the redaction helpers. Real submit/screenshot/rings land in Phase 4 alongside `brevwick-api` Phase 2. Issue #8 targets stabilisation at `0.1.0` on tradekit cutover.

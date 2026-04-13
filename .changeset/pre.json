@@ -1,0 +1,9 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "brevwick-react": "0.1.0-beta.0",
+    "brevwick-sdk": "0.1.0-beta.0"
+  },
+  "changesets": []
+}

@@ -15,19 +15,21 @@ permissions:
 
 jobs:
   release:
+    if: github.repository == 'tatlacas-com/brevwick-sdk-js'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
       - name: Create Release PR or publish
         uses: changesets/action@v1
         with:

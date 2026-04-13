@@ -6,4 +6,4 @@
  * brevwick-ops/docs/brevwick-sdd.md § 12 for the React contract.
  */
 
-export const BREVWICK_REACT_VERSION = '0.0.0';
+export const BREVWICK_REACT_VERSION = '0.1.0-beta.0';
