@@ -288,7 +288,7 @@ STEP 2 — Ring module (packages/sdk/src/rings/console.ts):
 - installConsoleRing(instance): attaches and returns an uninstall function that the core calls from uninstall().
 - Patch console.error + console.warn: preserve original reference; call through after pushing to buffer so the user's DevTools output is unchanged.
 - Add window.addEventListener('error', handler) and 'unhandledrejection' handler — match ErrorEvent vs PromiseRejectionEvent shapes explicitly.
-- Entry shape: { kind: 'console', level: 'error' | 'warn', message: string, stack?: string, ts: number, count: number }.
+- Entry shape: `{ kind: 'console', level: 'error' | 'warn', message: string, stack?: string, timestamp: number, count: number }`. (Ratified post-WT-01: `timestamp` is the canonical name across every `RingEntry` variant shipped in `packages/sdk/src/types.ts`; aligning ConsoleEntry on `ts` alone would break type consistency. `count` is required — the ring always writes `count: 1` on first push and increments in place.)
 
 STEP 3 — Redaction + trimming:
 - Every string field (message, stack) runs through redact() before push.
@@ -296,7 +296,7 @@ STEP 3 — Redaction + trimming:
 - Message coerced from any args via a small safeStringify helper (no JSON.stringify on Errors — use err.message + err.stack).
 
 STEP 4 — Deduplication:
-- Keyed on hash(message + first stack frame). If an identical key fires within 500 ms of the last push, increment count on the existing entry instead of pushing a new one.
+- Keyed on hash(message + first stack frame). If an identical key fires within 500 ms of the last push (boundary inclusive — exactly 500 ms still dedupes), increment count on the existing entry instead of pushing a new one.
 - Use a tiny internal Map<string, { index, ts }> cleared on uninstall.
 
 STEP 5 — Uninstall hygiene:
@@ -307,8 +307,8 @@ STEP 5 — Uninstall hygiene:
 STEP 6 — Tests (packages/sdk/src/rings/__tests__/console.test.ts):
 - Vitest + happy-dom.
 - Patched console captures; originals still called (spy the original reference).
-- Redaction: console.error('Bearer eyJabc.def.ghi') → buffer entry message contains '«redacted:bearer»', not the token.
-- Dedupe: two identical errors inside 500 ms → one entry with count 2; outside 500 ms → two entries.
+- Redaction: `console.error('Bearer eyJabc.def.ghi')` → buffer entry message must not contain the raw token. Canonical redaction marker is `Bearer [redacted]` — this is what `packages/sdk/src/core/internal/redact.ts` emits and is the governing contract for every string that leaves the device (ratified post-WT-01). The earlier `«redacted:bearer»` placeholder in this worktree was illustrative only.
+- Dedupe: two identical errors inside 500 ms → one entry with count 2; at exactly 500 ms → still one entry with count 2 (boundary inclusive); strictly outside 500 ms → two entries.
 - Global error event with synthetic ErrorEvent → captured with stack.
 - unhandledrejection with Error reason → captured; with non-Error reason (string) → captured with safe coercion.
 - Leak guard: install → uninstall → install → log → exactly one buffer entry; window.console.error identity unchanged between cycles.

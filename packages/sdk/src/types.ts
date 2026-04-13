@@ -55,6 +55,11 @@ export interface ConsoleEntry {
   message: string;
   stack?: string;
   timestamp: number;
+  /**
+   * Always >= 1. Starts at 1 when the entry is first pushed and is incremented
+   * in-place when an identical entry repeats inside the dedupe window.
+   */
+  count: number;
 }
 
 /**

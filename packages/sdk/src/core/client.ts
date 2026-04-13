@@ -21,7 +21,7 @@ import { validateConfig, type ValidatedConfig } from './validate';
 
 /**
  * A ring loader is either a ready {@link RingDefinition} or a thunk that
- * resolves to one. The default set uses dynamic-import thunks so the ring
+ * resolves to one. The default set uses dynamic-import thunks so each ring
  * module (patching logic, redaction helpers) ships in its own async chunk
  * — keeping the eager core bundle under the 2 kB gzip budget mandated by
  * `CLAUDE.md`. The registry also accepts ready definitions for tests, which
@@ -36,6 +36,7 @@ export type RingLoader = RingDefinition | (() => Promise<RingDefinition>);
  * observable by rings installed later.
  */
 const DEFAULT_RING_LOADERS: readonly RingLoader[] = [
+  () => import('../rings/console').then((m) => m.consoleRing),
   () => import('../rings/network').then((m) => m.networkRing),
 ];
 
