@@ -301,4 +301,48 @@ describe('<FeedbackButton>', () => {
     // No thumbnail was rendered
     expect(screen.queryByAltText(/screenshot preview/i)).toBeNull();
   });
+
+  it('derives the screenshot attachment extension from its MIME type', async () => {
+    const blob = new Blob(['x'], { type: 'image/webp' });
+    captureScreenshot.mockResolvedValueOnce(blob);
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_ext' });
+    mount();
+    fireEvent.click(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    );
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /attach screenshot/i }),
+      );
+    });
+    const titleInput = screen.getAllByRole('textbox')[0]!;
+    fireEvent.change(titleInput, { target: { value: 'with screenshot' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+
+    const input = submit.mock.calls[0]![0] as {
+      attachments: Array<{ blob: Blob; filename: string }>;
+    };
+    expect(input.attachments[0]!.filename).toBe('screenshot.webp');
+  });
+
+  it('surfaces a recovery message when submit() rejects (chunk load failure)', async () => {
+    submit.mockRejectedValueOnce(new Error('chunk load failed'));
+    mount();
+    fireEvent.click(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    );
+    const titleInput = screen.getAllByRole('textbox')[0]!;
+    fireEvent.change(titleInput, { target: { value: 'oops' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+
+    expect(
+      screen.getByText(/chunk load failed/i, { selector: '[role="alert"]' }),
+    ).toBeInTheDocument();
+    // Dialog stays open so the user can retry
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
 });

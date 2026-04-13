@@ -41,9 +41,18 @@ export function useFeedback(): UseFeedbackResult {
   const submit = useCallback(
     async (input: FeedbackInput): Promise<SubmitResult> => {
       setStatus('submitting');
-      const result = await brevwick.submit(input);
-      setStatus(result.ok ? 'success' : 'error');
-      return result;
+      try {
+        const result = await brevwick.submit(input);
+        setStatus(result.ok ? 'success' : 'error');
+        return result;
+      } catch (error) {
+        // `brevwick.submit` only rejects when the lazy submit chunk itself
+        // fails to load (deploy mismatch / offline). Flip to 'error' so the
+        // UI isn't stuck on 'submitting', then rethrow so callers can
+        // distinguish an environmental failure from an ingest-level one.
+        setStatus('error');
+        throw error;
+      }
     },
     [brevwick],
   );

@@ -187,8 +187,12 @@ export function FeedbackButton({
       setTitleError(null);
 
       const attachments: Array<Blob | FeedbackAttachment> = [];
-      if (screenshot)
-        attachments.push({ blob: screenshot, filename: 'screenshot.png' });
+      if (screenshot) {
+        // Derive the extension from the blob's MIME (the SDK produces
+        // `image/webp`) so the attachment's filename matches its content.
+        const ext = screenshot.type.split('/')[1]?.split('+')[0] || 'webp';
+        attachments.push({ blob: screenshot, filename: `screenshot.${ext}` });
+      }
       for (const f of files) attachments.push({ blob: f, filename: f.name });
 
       const input: FeedbackInput = {
@@ -199,18 +203,30 @@ export function FeedbackButton({
         attachments: attachments.length ? attachments : undefined,
       };
 
-      const result = await submit(input);
-      if (!mountedRef.current) return;
-      onSubmit?.(result);
-      if (result.ok) {
-        closeTimerRef.current = setTimeout(() => {
-          closeTimerRef.current = null;
-          if (!mountedRef.current) return;
-          setOpen(false);
-          resetForm();
-        }, AUTO_CLOSE_MS);
-      } else {
-        setSubmitError(result.error.message);
+      try {
+        const result = await submit(input);
+        if (!mountedRef.current) return;
+        onSubmit?.(result);
+        if (result.ok) {
+          closeTimerRef.current = setTimeout(() => {
+            closeTimerRef.current = null;
+            if (!mountedRef.current) return;
+            setOpen(false);
+            resetForm();
+          }, AUTO_CLOSE_MS);
+        } else {
+          setSubmitError(result.error.message);
+        }
+      } catch (err) {
+        // `submit` only rejects when the lazy submit chunk fails to load
+        // (deploy mismatch / offline). Surface a generic message so the
+        // dialog can recover and the user can retry.
+        if (!mountedRef.current) return;
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'We could not submit your feedback. Please try again.';
+        setSubmitError(message);
       }
     },
     [

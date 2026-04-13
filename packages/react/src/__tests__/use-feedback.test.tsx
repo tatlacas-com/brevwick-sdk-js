@@ -80,4 +80,16 @@ describe('useFeedback', () => {
   it('throws when used outside a provider', () => {
     expect(() => renderHook(() => useFeedback())).toThrow(/BrevwickProvider/);
   });
+
+  it('flips status to error and rethrows when submit() rejects', async () => {
+    const chunkLoadError = new Error('chunk load failed');
+    submit.mockRejectedValueOnce(chunkLoadError);
+    const { result } = renderHook(() => useFeedback(), { wrapper });
+    await act(async () => {
+      await expect(result.current.submit({ description: 'x' })).rejects.toBe(
+        chunkLoadError,
+      );
+    });
+    expect(result.current.status).toBe('error');
+  });
 });
