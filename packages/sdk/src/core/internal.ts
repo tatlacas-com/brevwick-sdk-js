@@ -43,6 +43,14 @@ export interface BrevwickInternal {
   readonly config: ValidatedConfig;
   push(entry: RingEntry): void;
   state(): LifecycleState;
+  /**
+   * Promise that resolves once every async ring loader from the most recent
+   * `install()` call has either mounted its ring or been skipped because
+   * the instance was uninstalled before the loader landed. Exposed for
+   * tests that need to deterministically await patched globals; production
+   * consumers should not depend on this handle.
+   */
+  ready(): Promise<void>;
 }
 
 /** Key used by rings + tests to reach the internal API without polluting the public surface. */

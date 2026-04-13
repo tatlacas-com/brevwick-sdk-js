@@ -62,6 +62,14 @@ export interface ConsoleEntry {
   count: number;
 }
 
+/**
+ * Captured network request. Populated by the network ring for any request
+ * that fails (status ≥ 400 or thrown). All text fields below are **already
+ * redacted and capped at the ring boundary** — downstream code in the
+ * submit pipeline must not re-redact or re-cap them. Field names follow
+ * the TypeScript/camelCase convention; the submit pipeline translates to
+ * wire-snake_case (`request_body`, etc.) at the network boundary.
+ */
 export interface NetworkEntry {
   kind: 'network';
   method: string;
@@ -70,6 +78,14 @@ export interface NetworkEntry {
   durationMs?: number;
   error?: string;
   timestamp: number;
+  /** Request body, redacted, capped at 2 kB with `… [truncated N bytes]`. */
+  requestBody?: string;
+  /** Response body, redacted, capped at 4 kB with `… [truncated N bytes]`. */
+  responseBody?: string;
+  /** Allow-listed request headers, lower-cased keys. */
+  requestHeaders?: Record<string, string>;
+  /** Allow-listed response headers, lower-cased keys. */
+  responseHeaders?: Record<string, string>;
 }
 
 export interface RouteEntry {

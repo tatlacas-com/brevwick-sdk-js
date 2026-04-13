@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  __resetBrevwickRegistry,
-  __setRingsForTesting,
-  createBrevwick,
-} from '../client';
+import { createBrevwick } from '../client';
+import { __resetBrevwickRegistry, __setRingsForTesting } from '../../testing';
 import type { BrevwickInternal, RingDefinition } from '../internal';
 import type { RingEntry } from '../../types';
 
@@ -228,6 +225,36 @@ describe('install / uninstall', () => {
     expect(() => instance.uninstall()).not.toThrow();
     // Route tears down before network (reverse order); console still fires after the throw.
     expect(torn).toEqual(['route', 'console']);
+  });
+
+  it('async ring loader rejection logs a warning but does not throw', async () => {
+    // Covers the "a single failed ring loader must not take out the SDK"
+    // rejection branch in client.ts — other rings still install, install()
+    // itself never rejects, and the warn channel receives the prefixed message.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const goodInstalled = vi.fn();
+    __setRingsForTesting([
+      () => Promise.reject(new Error('loader-boom')),
+      () =>
+        Promise.resolve({
+          name: 'console',
+          install: () => {
+            goodInstalled();
+            return () => undefined;
+          },
+        }),
+    ]);
+
+    const instance = createBrevwick({ projectKey: KEY_A });
+    expect(() => instance.install()).not.toThrow();
+    await expect(getInternal(instance).ready()).resolves.toBeUndefined();
+
+    expect(goodInstalled).toHaveBeenCalledTimes(1);
+    const messages = warn.mock.calls.map((c) => String(c[0]));
+    expect(messages.some((m) => m.includes('ring loader failed'))).toBe(true);
+    expect(messages.some((m) => m.includes('loader-boom'))).toBe(true);
+    instance.uninstall();
+    warn.mockRestore();
   });
 
   it('install() after uninstall() throws — the instance is terminal', () => {

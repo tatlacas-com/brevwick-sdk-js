@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  __resetBrevwickRegistry,
-  __setRingsForTesting,
-  createBrevwick,
-} from '../core/client';
+import { createBrevwick } from '../core/client';
+import { __resetBrevwickRegistry, __setRingsForTesting } from '../testing';
 import type { BrevwickInternal } from '../core/internal';
 
 const KEY = 'pk_test_aaaaaaaaaaaaaaaa01';
