@@ -1,6 +1,6 @@
 {
   "name": "brevwick-sdk",
-  "version": "0.0.0",
+  "version": "0.1.0-beta.0",
   "description": "Brevwick core SDK — submit feedback reports from any browser app. AI-formatted into clean GitHub-ready issues.",
   "license": "MIT",
   "type": "module",
@@ -41,6 +41,7 @@
     "ai"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   }
 }

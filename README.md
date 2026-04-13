@@ -56,6 +56,39 @@ pnpm type-check
 pnpm format
 ```
 
+## Releasing
+
+Releases are driven by [Changesets](https://github.com/changesets/changesets). The two packages are **linked** (version in lockstep) pre-1.0 and currently in **pre-release mode** (`beta`) — `.changeset/pre.json` pins the tag so `changeset version` emits `0.1.0-beta.x` suffixes until the next `changeset pre exit` (planned for the `0.1.0` stabilisation / tradekit cutover, per issue #8).
+
+### Contributor flow
+
+1. On any PR that changes `packages/**`, add a changeset:
+
+   ```bash
+   pnpm changeset
+   ```
+
+   Pick the affected package(s), the bump type, and write a short summary. Commit the generated `.changeset/*.md` file.
+
+2. CI (`changeset-check`) fails the PR if no changeset is present.
+
+### Publish flow
+
+- On merge to `main`, the `release` workflow runs `changesets/action@v1`.
+- If pending changesets exist, the action opens (or updates) a **Version Packages** PR that consumes the changesets, bumps both package versions in lockstep, and updates changelogs.
+- **Squash-merging the Version Packages PR** triggers the same workflow on `main`, which then runs `pnpm release` — building and publishing both packages to npm under the `beta` dist-tag with [provenance](https://docs.npmjs.com/generating-provenance-statements).
+- GitHub Releases are generated automatically from the changelog body.
+
+### npm dist-tags
+
+- `npm add brevwick-sdk@beta` — canonical install during the `0.1.0-beta.x` MVP line (bleeding edge).
+- `npm add brevwick-sdk` — resolves to the `latest` dist-tag once stabilisation at `0.1.0` ships (tradekit cutover). The `latest` tag is intentionally unpopulated during the beta line. The full dist-tag policy is documented in [`brevwick-ops/docs/brevwick-sdd.md` § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts) (tracking: brevwick-ops#3).
+
+### Repo secrets
+
+- `NPM_TOKEN` — automation token with publish rights for `brevwick-sdk` and `brevwick-react`. Set under **Settings → Secrets and variables → Actions**. Required by the `release` workflow; `id-token: write` permission is also granted so npm provenance can attest the build.
+- `GITHUB_TOKEN` — provided by Actions; the workflow requests `contents: write` and `pull-requests: write` so Changesets can open the Version Packages PR and create releases.
+
 ## Status
 
-Phase 0 — scaffolding. The packages publish as `0.0.0` placeholders containing only types and the redaction helpers. Real submit/screenshot/rings land in Phase 4 alongside `brevwick-api` Phase 2.
+Phase 0 — scaffolding. Both packages are baselined at `0.1.0-beta.0` on the `beta` dist-tag line; the first published artefact will be `0.1.0-beta.1` once the next real changeset merges to `main` (requires `NPM_TOKEN`, tracked in #15). The packages currently contain only types and the redaction helpers. Real submit/screenshot/rings land in Phase 4 alongside `brevwick-api` Phase 2. Issue #8 targets stabilisation at `0.1.0` on tradekit cutover.

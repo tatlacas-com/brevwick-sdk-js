@@ -6,4 +6,7 @@
  * brevwick-ops/docs/brevwick-sdd.md § 12 for the React contract.
  */
 
-export const BREVWICK_REACT_VERSION = '0.0.0';
+declare const __BREVWICK_REACT_VERSION__: string;
+
+// Injected at build/test time from packages/react/package.json via tsup/vitest `define`.
+export const BREVWICK_REACT_VERSION: string = __BREVWICK_REACT_VERSION__;

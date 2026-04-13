@@ -1,6 +1,6 @@
 {
   "name": "brevwick-react",
-  "version": "0.0.0",
+  "version": "0.1.0-beta.0",
   "description": "Brevwick React bindings — provider, FAB, useFeedback hook. Drop-in for any React app.",
   "license": "MIT",
   "type": "module",
@@ -41,7 +41,8 @@
     "bug-report"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "peerDependencies": {
     "brevwick-sdk": "workspace:*",
