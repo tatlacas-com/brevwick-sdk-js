@@ -1,0 +1,21 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+    patch:
+      default:
+        target: 80%
+
+ignore:
+  - '**/dist/**'
+  - '**/*.d.ts'
+  - '**/index.ts'
+  - '**/test/**'
+  - '**/__tests__/**'
+  - '**/*.config.*'
+
+comment:
+  layout: 'reach,diff,flags,files'
+  require_changes: true
