@@ -73,7 +73,9 @@ describe('validateConfig', () => {
 
   it('accepts every valid environment', () => {
     for (const env of ['dev', 'stg', 'prod'] as const) {
-      expect(validateConfig({ projectKey: VALID_KEY, environment: env }).environment).toBe(env);
+      expect(
+        validateConfig({ projectKey: VALID_KEY, environment: env }).environment,
+      ).toBe(env);
     }
   });
 
@@ -100,7 +102,10 @@ describe('validateConfig', () => {
   });
 
   it('accepts fingerprintOptOut=true', () => {
-    const cfg = validateConfig({ projectKey: VALID_KEY, fingerprintOptOut: true });
+    const cfg = validateConfig({
+      projectKey: VALID_KEY,
+      fingerprintOptOut: true,
+    });
     expect(cfg.fingerprintOptOut).toBe(true);
   });
 

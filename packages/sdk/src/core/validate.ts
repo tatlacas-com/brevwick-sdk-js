@@ -12,7 +12,11 @@ export class BrevwickConfigError extends Error {
 
 const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
 const DEFAULT_ENDPOINT = 'https://api.brevwick.com';
-const VALID_ENVIRONMENTS = ['dev', 'stg', 'prod'] as const satisfies readonly Environment[];
+const VALID_ENVIRONMENTS = [
+  'dev',
+  'stg',
+  'prod',
+] as const satisfies readonly Environment[];
 
 export interface ValidatedConfig extends Required<
   Pick<BrevwickConfig, 'projectKey' | 'endpoint'>
