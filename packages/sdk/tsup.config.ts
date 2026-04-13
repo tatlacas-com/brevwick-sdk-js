@@ -7,7 +7,7 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   treeshake: true,
-  splitting: false,
-  minify: false,
+  splitting: true,
+  minify: true,
   target: 'es2020',
 });

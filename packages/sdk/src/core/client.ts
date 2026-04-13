@@ -154,7 +154,8 @@ function build(
       throw new Error('Brevwick.submit is not yet implemented');
     },
     async captureScreenshot(): Promise<Blob> {
-      throw new Error('Brevwick.captureScreenshot is not yet implemented');
+      const { captureScreenshotForInstance } = await import('../screenshot');
+      return captureScreenshotForInstance(internal);
     },
   };
 

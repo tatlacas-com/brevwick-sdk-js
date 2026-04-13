@@ -15,3 +15,14 @@ export type {
   FeedbackInput,
   SubmitResult,
 } from './types';
+
+export type { CaptureScreenshotOpts } from './screenshot';
+
+/**
+ * Lazy re-export: the real module (and its `modern-screenshot` peer dep) is
+ * resolved only on the first call so the base chunk stays below its 2 kB gzip
+ * budget. `export { captureScreenshot } from './screenshot'` would pull the
+ * module — and through it, `modern-screenshot` — into the root bundle.
+ */
+export const captureScreenshot: typeof import('./screenshot').captureScreenshot =
+  (...args) => import('./screenshot').then((m) => m.captureScreenshot(...args));
