@@ -28,10 +28,11 @@ If the original issue or `worktree.md` called for it, it ships here. If a bug / 
 
 ## Workflow
 
-### Step 1 — Read Checklist & Check Out Branch
-1. Find file in `notes/reviews/`
-2. `gh pr view <N> --json headRefName` → branch
-3. `git checkout <branch>` — never a new branch, never a new PR
+### Step 1 — Read the Review Checklist(s) and Check Out the Branch
+1. Read `notes/reviews/pr-<N>-claude-review.md` — Claude's review (primary)
+2. Read `notes/reviews/pr-<N>-copilot-review.md` if it exists — Copilot's independent second opinion. Merge its findings into your action list; dedupe overlaps with Claude's review; **items that appear only in the Copilot review are just as valid as Claude's own** — action them equally
+3. `gh pr view <N> --json headRefName` → branch
+4. `git checkout <branch>` — never a new branch, never a new PR
 
 ### Step 2 — Load Standards
 - `CLAUDE.md` (repo + parent)
@@ -77,7 +78,7 @@ pnpm build
 Fix anything red.
 
 ### Step 6 — Final Audit
-Every `- [ ]` must be `- [x]` or `~~struck~~`. No `DEFERRED`.
+Scan **both** review documents — `pr-<N>-claude-review.md` and (if it exists) `pr-<N>-copilot-review.md`. Every `- [ ]` in either file must be `- [x]` or `~~struck~~`. No `DEFERRED`.
 
 ### Step 7 — Commit & Push
 ```bash
@@ -90,7 +91,7 @@ Conventional commit. No `Co-Authored-By: Claude`. Existing branch only.
 ### Step 8 — Chain the Validator (MANDATORY)
 Invoke `pr-review-validator` via Agent tool:
 
-> "PR #<N> fixes committed. Updated checklist at `notes/reviews/pr-<N>-review.md`. Validate every `- [x]` is real, no `- [ ]` remains, no scapegoating. Chain back to pr-review-fixer on any issue."
+> "PR #<N> fixes committed. Review documents: `notes/reviews/pr-<N>-claude-review.md` (primary) and `notes/reviews/pr-<N>-copilot-review.md` (if present — Copilot's independent second opinion). Validate every `- [x]` across **both** files is real, no `- [ ]` remains anywhere, no scapegoating. Chain back to pr-review-fixer on any issue."
 
 ## Never Violate
 1. Never `any` without documented eslint-disable

@@ -21,7 +21,8 @@ Reject on any banned phrase in a strike-out / commit / note:
 ## Process
 
 ### Step 1 — Load
-- `notes/reviews/pr-<N>-review.md`
+- `notes/reviews/pr-<N>-claude-review.md` — Claude's review (primary)
+- `notes/reviews/pr-<N>-copilot-review.md` if it exists — Copilot's independent second opinion. **Both files are authoritative**; any unchecked or invalid-struck item in either → fail
 - `gh pr view <N> --json number,headRefName,baseRefName,body`
 - `gh issue view <issue-N>`, `worktree.md`
 - `CLAUDE.md`, `eslint.config.mjs`, `tsconfig.base.json`, per-package configs
@@ -77,7 +78,7 @@ Any failure invalidates the pass.
 **APPROVED**: `gh pr comment <N>` with "Review validated — ready for merge". Stop. User merges.
 **RETURNED**: chain-invoke `pr-review-fixer`:
 
-> "PR #<N> validation failed. Outstanding items under `## Validation` in `notes/reviews/pr-<N>-review.md`. Resolve every one — clean architecture, clean code, completeness non-negotiable, no scapegoating. Chain back to pr-review-validator."
+> "PR #<N> validation failed. Outstanding items under `## Validation` in `notes/reviews/pr-<N>-claude-review.md`. Resolve every one — clean architecture, clean code, completeness non-negotiable, no scapegoating. Chain back to pr-review-validator."
 
 ## Hard Rules
 - You validate, never fix

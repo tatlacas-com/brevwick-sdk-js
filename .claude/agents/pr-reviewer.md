@@ -98,7 +98,7 @@ HARD blockers. Any violation → **CHANGES REQUIRED**.
 
 ### Step 4 — Write the Review
 
-Save to `notes/reviews/pr-<N>-review.md`:
+Save to `notes/reviews/pr-<N>-claude-review.md`:
 
 ```markdown
 # PR #<N> Review — <title>
@@ -146,7 +146,7 @@ Save to `notes/reviews/pr-<N>-review.md`:
 ### Step 5 — Chain the Fixer (MANDATORY)
 Invoke `pr-review-fixer` via Agent tool:
 
-> "PR #<N> review at `notes/reviews/pr-<N>-review.md`. Resolve every item — clean architecture, clean code, completeness non-negotiable, no deferrals, no scapegoating. Chain pr-review-validator on completion."
+> "PR #<N> review at `notes/reviews/pr-<N>-claude-review.md`. Resolve every item — clean architecture, clean code, completeness non-negotiable, no deferrals, no scapegoating. Chain pr-review-validator on completion."
 
 ## Hard Rules
 - Specific package + file:line for every finding
