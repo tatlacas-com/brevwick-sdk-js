@@ -10,7 +10,16 @@ import {
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { createBrevwick } from '../core/client';
+import { INTERNAL_KEY, type BrevwickInternal } from '../core/internal';
 import { __resetBrevwickRegistry, __setRingsForTesting } from '../testing';
+
+function getInternal(
+  instance: ReturnType<typeof createBrevwick>,
+): BrevwickInternal {
+  return (instance as unknown as Record<typeof INTERNAL_KEY, BrevwickInternal>)[
+    INTERNAL_KEY
+  ];
+}
 
 const KEY = 'pk_test_aaaaaaaaaaaaaaaa01';
 const ENDPOINT = 'https://api.brevwick.com';
@@ -99,26 +108,87 @@ describe('submit — happy path', () => {
       environment: 'stg',
       release: '1.2.3',
       buildSha: 'deadbeef',
+      userContext: () => ({ tenantId: 't_99', plan: 'pro' }),
+      user: { id: 'u_7' },
     });
     const result = await instance.submit({
       title: 'broken',
       description: 'the thing broke',
+      expected: 'works',
+      actual: 'broken',
       attachments: [makeBlob()],
     });
 
     expect(result).toEqual({ ok: true, report_id: 'rep_abc' });
     expect(reportBody).toBeDefined();
+    // Round-tripped scalar fields.
+    expect(reportBody?.title).toBe('broken');
+    expect(reportBody?.description).toBe('the thing broke');
+    expect(reportBody?.expected).toBe('works');
+    expect(reportBody?.actual).toBe('broken');
+    expect(reportBody?.environment).toBe('stg');
+    expect(reportBody?.release).toBe('1.2.3');
+    expect(reportBody?.build_sha).toBe('deadbeef');
+    // route_path is auto-collected from `location.pathname + search`.
+    expect(typeof reportBody?.route_path).toBe('string');
+    // Attachments resolved via presign.
     const attachments = reportBody?.attachments as unknown[];
     expect(attachments).toHaveLength(1);
     expect(attachments[0]).toMatchObject({
       object_key: OBJECT_KEY,
       mime: 'image/png',
     });
+    // Device context — every field present (jsdom provides the globals).
     const deviceCtx = reportBody?.device_context as Record<string, unknown>;
     expect(deviceCtx.platform).toBe('web');
-    expect((deviceCtx.sdk as Record<string, unknown>).name).toBe(
-      'brevwick-sdk',
+    expect(typeof deviceCtx.ua).toBe('string');
+    expect(typeof deviceCtx.locale).toBe('string');
+    const viewport = deviceCtx.viewport as Record<string, number>;
+    expect(typeof viewport.w).toBe('number');
+    expect(typeof viewport.h).toBe('number');
+    const sdk = deviceCtx.sdk as Record<string, unknown>;
+    expect(sdk.name).toBe('brevwick-sdk');
+    expect(typeof sdk.version).toBe('string');
+    expect(sdk.platform).toBe('web');
+    // userContext callback merged into user_context alongside config.user.
+    const userCtx = reportBody?.user_context as Record<string, unknown>;
+    expect((userCtx.user as Record<string, unknown>).id).toBe('u_7');
+    expect(userCtx.tenantId).toBe('t_99');
+    expect(userCtx.plan).toBe('pro');
+    // Ring snapshots flow through (empty arrays here, but present as keys).
+    expect(Array.isArray(reportBody?.console_errors)).toBe(true);
+    expect(Array.isArray(reportBody?.network_errors)).toBe(true);
+    expect(Array.isArray(reportBody?.route_trail)).toBe(true);
+  });
+
+  it('accepts FeedbackAttachment { blob, filename } in addition to plain Blob', async () => {
+    // Exercises the `toAttachmentDescriptor` non-Blob branch. `filename` is
+    // not yet on the wire (presign body is mime + size only), but the call
+    // must succeed and the resulting attachment descriptor must include
+    // mime + size pulled from the wrapped blob.
+    installUploadHandlers();
+    let reportBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(REPORTS_URL, async ({ request }) => {
+        reportBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { report_id: 'rep_named', status: 'received' },
+          { status: 202 },
+        );
+      }),
     );
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({
+      description: 'd',
+      attachments: [{ blob: makeBlob(), filename: 'screenshot.png' }],
+    });
+    expect(result).toEqual({ ok: true, report_id: 'rep_named' });
+    const attachments = reportBody?.attachments as unknown[];
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]).toMatchObject({
+      object_key: OBJECT_KEY,
+      mime: 'image/png',
+    });
   });
 });
 
@@ -210,11 +280,20 @@ describe('submit — ingest failures', () => {
   });
 
   it('ingest timeout — 30 s budget exceeded yields INGEST_TIMEOUT', async () => {
-    // Handler never responds; the submit-side AbortController is the only
-    // thing that can unblock the fetch. Fake timers let us advance past the
-    // 30 s budget deterministically without the test actually waiting.
+    // Handler awaits a promise that only resolves on signal abort. Using
+    // `request.signal` keeps the handler cleanly cancelable so msw's
+    // teardown does not leak a hanging request into later tests in this
+    // file. Fake timers let us advance past the 30 s budget deterministically
+    // without the test actually waiting.
     server.use(
-      http.post(REPORTS_URL, () => new Promise<Response>(() => undefined)),
+      http.post(REPORTS_URL, async ({ request }) => {
+        await new Promise<void>((_, reject) => {
+          request.signal.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          );
+        });
+        return HttpResponse.json({ report_id: 'never' });
+      }),
     );
     vi.useFakeTimers();
     const instance = createBrevwick({ projectKey: KEY });
@@ -317,5 +396,320 @@ describe('submit — headers + redaction', () => {
     // (present and a string). The hard secrets-leakage guard is the golden
     // fixture test above.
     expect(typeof user.display_name).toBe('string');
+  });
+
+  it('redacts secrets embedded in user.display_name via redactValue', async () => {
+    // Defensive — guards against a future refactor that would bypass
+    // `redactValue` for fields outside the known `id` / `email` shapes.
+    installUploadHandlers();
+    const capture = captureReportBody();
+    const instance = createBrevwick({
+      projectKey: KEY,
+      user: {
+        id: 'u_99',
+        display_name: 'Bearer sk_live_supersecret_1234567890',
+      },
+    });
+    const result = await instance.submit({ description: 'd' });
+    expect(result.ok).toBe(true);
+    const body = capture.get() ?? '';
+    expect(body).not.toContain('sk_live_supersecret_1234567890');
+    expect(body).toContain('Bearer [redacted]');
+  });
+
+  it('stamps Authorization: Bearer <projectKey> on every ingest-origin request', async () => {
+    const ingestAuthHeaders: string[] = [];
+    server.use(
+      http.post(PRESIGN_URL, ({ request }) => {
+        ingestAuthHeaders.push(request.headers.get('authorization') ?? '');
+        return HttpResponse.json({
+          object_key: OBJECT_KEY,
+          upload_url: UPLOAD_URL,
+        });
+      }),
+      http.put(UPLOAD_URL, () => new HttpResponse(null, { status: 200 })),
+      http.post(REPORTS_URL, ({ request }) => {
+        ingestAuthHeaders.push(request.headers.get('authorization') ?? '');
+        return HttpResponse.json(
+          { report_id: 'rep_auth', status: 'received' },
+          { status: 202 },
+        );
+      }),
+    );
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({
+      description: 'd',
+      attachments: [makeBlob()],
+    });
+    expect(result.ok).toBe(true);
+    expect(ingestAuthHeaders).toHaveLength(2);
+    for (const h of ingestAuthHeaders) {
+      expect(h).toBe(`Bearer ${KEY}`);
+    }
+  });
+
+  it('does not re-redact ring snapshots (already-masked markers pass through unchanged)', async () => {
+    // Ring buffers redact at the capture boundary; the submit pipeline
+    // must not re-run redact() on snapshots. If it did, an already-masked
+    // marker like `Bearer [redacted]` could be re-inspected, and any
+    // future regex change could double-process tokens.
+    installUploadHandlers();
+    let reportBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(REPORTS_URL, async ({ request }) => {
+        reportBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { report_id: 'rep_ringz', status: 'received' },
+          { status: 202 },
+        );
+      }),
+    );
+    const instance = createBrevwick({ projectKey: KEY });
+    const internal = getInternal(instance);
+    internal.push({
+      kind: 'network',
+      method: 'GET',
+      url: 'https://api.example.com/whoami',
+      status: 401,
+      timestamp: Date.now(),
+      requestHeaders: { authorization: 'Bearer [redacted]' },
+      requestBody: 'token=Bearer [redacted]',
+    });
+    const result = await instance.submit({ description: 'd' });
+    expect(result.ok).toBe(true);
+    const networkErrors = reportBody?.network_errors as Array<
+      Record<string, unknown>
+    >;
+    expect(networkErrors).toHaveLength(1);
+    const entry = networkErrors[0]!;
+    expect(entry.requestBody).toBe('token=Bearer [redacted]');
+    expect((entry.requestHeaders as Record<string, string>).authorization).toBe(
+      'Bearer [redacted]',
+    );
+    // Whole body must contain the token marker exactly once per occurrence
+    // — no double-masking such as `Bearer [[redacted]]` or `[Bearer [redacted]]`.
+    const raw = JSON.stringify(reportBody);
+    expect(raw).not.toContain('[[redacted]]');
+    expect(raw).not.toContain('[Bearer [redacted]]');
+  });
+});
+
+describe('submit — attachment validation (client-side)', () => {
+  it('rejects when more than 5 attachments are supplied', async () => {
+    let presignHits = 0;
+    server.use(
+      http.post(PRESIGN_URL, () => {
+        presignHits++;
+        return HttpResponse.json({
+          object_key: OBJECT_KEY,
+          upload_url: UPLOAD_URL,
+        });
+      }),
+    );
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({
+      description: 'd',
+      attachments: [
+        makeBlob(),
+        makeBlob(),
+        makeBlob(),
+        makeBlob(),
+        makeBlob(),
+        makeBlob(),
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('ATTACHMENT_UPLOAD_FAILED');
+      expect(result.error.message).toMatch(/exceeds limit of 5/);
+    }
+    expect(presignHits).toBe(0);
+  });
+
+  it('rejects when an attachment exceeds 10 MB', async () => {
+    let presignHits = 0;
+    server.use(
+      http.post(PRESIGN_URL, () => {
+        presignHits++;
+        return HttpResponse.json({
+          object_key: OBJECT_KEY,
+          upload_url: UPLOAD_URL,
+        });
+      }),
+    );
+    const oversized = new Blob([new Uint8Array(10 * 1024 * 1024 + 1)], {
+      type: 'image/png',
+    });
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({
+      description: 'd',
+      attachments: [oversized],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('ATTACHMENT_UPLOAD_FAILED');
+      expect(result.error.message).toMatch(/exceeds 10 MB/);
+    }
+    expect(presignHits).toBe(0);
+  });
+
+  it('rejects an attachment with a MIME outside the allowed list', async () => {
+    let presignHits = 0;
+    server.use(
+      http.post(PRESIGN_URL, () => {
+        presignHits++;
+        return HttpResponse.json({
+          object_key: OBJECT_KEY,
+          upload_url: UPLOAD_URL,
+        });
+      }),
+    );
+    const wrongMime = new Blob([new Uint8Array([1, 2, 3])], {
+      type: 'application/pdf',
+    });
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({
+      description: 'd',
+      attachments: [wrongMime],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('ATTACHMENT_UPLOAD_FAILED');
+      expect(result.error.message).toMatch(/application\/pdf/);
+    }
+    expect(presignHits).toBe(0);
+  });
+});
+
+describe('submit — ingest retry / failure modes', () => {
+  it('retries on a thrown fetch error and succeeds on second attempt', async () => {
+    let hits = 0;
+    server.use(
+      http.post(REPORTS_URL, () => {
+        hits++;
+        if (hits === 1) {
+          // msw HttpResponse.error() simulates a thrown network error
+          // (the same shape `fetch` reports for `TypeError: Failed to fetch`).
+          return HttpResponse.error();
+        }
+        return HttpResponse.json(
+          { report_id: 'rep_retry', status: 'received' },
+          { status: 202 },
+        );
+      }),
+    );
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({ description: 'd' });
+    expect(result).toEqual({ ok: true, report_id: 'rep_retry' });
+    expect(hits).toBe(2);
+  });
+
+  it('returns INGEST_RETRY_EXHAUSTED after three straight 503s', async () => {
+    let hits = 0;
+    server.use(
+      http.post(REPORTS_URL, () => {
+        hits++;
+        return HttpResponse.json({ error: 'down' }, { status: 503 });
+      }),
+    );
+    vi.useFakeTimers();
+    const instance = createBrevwick({ projectKey: KEY });
+    const pending = instance.submit({ description: 'd' });
+    // Burn through both backoff sleeps deterministically.
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('INGEST_RETRY_EXHAUSTED');
+      expect(result.error.message).toMatch(/ingest 503/);
+    }
+    expect(hits).toBe(3);
+  });
+
+  it('returns INGEST_INVALID_RESPONSE when 200 has a malformed body', async () => {
+    server.use(
+      http.post(REPORTS_URL, () =>
+        HttpResponse.json({ unexpected: true }, { status: 200 }),
+      ),
+    );
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({ description: 'd' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('INGEST_INVALID_RESPONSE');
+    }
+  });
+
+  it.each([400, 401, 403, 409, 413])(
+    'does not retry on %s and returns INGEST_REJECTED',
+    async (status) => {
+      let hits = 0;
+      server.use(
+        http.post(REPORTS_URL, () => {
+          hits++;
+          return HttpResponse.json({ error: { code: 'WHATEVER' } }, { status });
+        }),
+      );
+      const instance = createBrevwick({ projectKey: KEY });
+      const result = await instance.submit({ description: 'd' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('INGEST_REJECTED');
+      expect(hits).toBe(1);
+    },
+  );
+
+  it('redacts the server-echoed body in INGEST_REJECTED messages', async () => {
+    server.use(
+      http.post(REPORTS_URL, () =>
+        HttpResponse.text('Bearer sk_live_leaked_token_abcdef1234567890', {
+          status: 400,
+        }),
+      ),
+    );
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({ description: 'd' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('INGEST_REJECTED');
+      expect(result.error.message).not.toContain('sk_live_leaked');
+      expect(result.error.message).toContain('Bearer [redacted]');
+    }
+  });
+});
+
+describe('submit — userContext throw safety', () => {
+  it('treats a throwing userContext() as empty extras and still succeeds', async () => {
+    installUploadHandlers();
+    let reportBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(REPORTS_URL, async ({ request }) => {
+        reportBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { report_id: 'rep_uctx', status: 'received' },
+          { status: 202 },
+        );
+      }),
+    );
+    const instance = createBrevwick({
+      projectKey: KEY,
+      userContext: () => {
+        throw new Error('boom');
+      },
+      user: { id: 'u_keep' },
+    });
+    const internal = getInternal(instance);
+    const result = await instance.submit({ description: 'd' });
+    expect(result).toEqual({ ok: true, report_id: 'rep_uctx' });
+    // user_context still includes config.user.
+    const userCtx = reportBody?.user_context as Record<string, unknown>;
+    expect((userCtx.user as Record<string, unknown>).id).toBe('u_keep');
+    // The thrown extras key must NOT appear.
+    expect(userCtx.tenantId).toBeUndefined();
+    // The throw was logged via the console ring (warn level).
+    const consoleSnapshot = internal.buffers.console.snapshot();
+    const matched = consoleSnapshot.some(
+      (e) => e.level === 'warn' && e.message.includes('userContext()'),
+    );
+    expect(matched).toBe(true);
   });
 });
