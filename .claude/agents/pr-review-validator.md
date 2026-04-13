@@ -1,6 +1,6 @@
 ---
 name: pr-review-validator
-description: "Use after pr-review-fixer has committed fixes on brevwick-sdk-js. Validates every checklist item, architecture / clean code / completeness intact, CI green. Chain-invokes pr-review-fixer on any issue.\n\nExamples:\n\n- user: \"Validate PR 42 fixes\"\n  assistant: \"Launching pr-review-validator.\"\n  <uses Agent tool to launch pr-review-validator>"
+description: "Use after pr-review-fixer has committed fixes on brevwick-sdk-js. Validates every checklist item, architecture / clean code / completeness intact, CI green. If anything is wrong, the **parent session** (not this subagent) MUST re-launch pr-review-fixer with the regression list — subagents cannot dispatch other subagents. On APPROVED, comments on the PR and stops.\n\nExamples:\n\n- user: \"Validate PR 42 fixes\"\n  assistant: \"Launching pr-review-validator; if it flags regressions I'll re-launch pr-review-fixer.\"\n  <parent session launches pr-review-validator, then on RETURNED verdict re-launches pr-review-fixer>\n\n- user: \"Confirm the review fixes landed\"\n  assistant: \"Running the validator; approving or looping back to the fixer based on its verdict.\"\n  <parent session launches pr-review-validator, loops until APPROVED>"
 model: opus
 color: blue
 memory: project
@@ -74,11 +74,18 @@ Any failure invalidates the pass.
 - gh pr checks: pass | fail
 ```
 
-### Step 6 — Route
-**APPROVED**: `gh pr comment <N>` with "Review validated — ready for merge". Stop. User merges.
-**RETURNED**: chain-invoke `pr-review-fixer`:
+### Step 6 — Route the Outcome (Return, so the Parent Session Loops)
 
-> "PR #<N> validation failed. Outstanding items under `## Validation` in `notes/reviews/pr-<N>-claude-review.md`. Resolve every one — clean architecture, clean code, completeness non-negotiable, no scapegoating. Chain back to pr-review-validator."
+Subagents in Claude Code cannot dispatch other subagents — the `Agent`/`Task` tool is not in a subagent's toolset. So you do NOT re-launch pr-review-fixer yourself. Instead, return a summary to the parent session.
+
+**APPROVED** (all items confirmed, no new findings, tooling green):
+- `gh pr comment <N>` with "Review validated — ready for merge".
+- Return to the parent with verdict `APPROVED` and the literal line: **"NEXT: parent session stops the chain. User merges."**
+- Do NOT merge — the user merges.
+
+**RETURNED TO FIXER** (anything outstanding):
+- Do NOT comment on the PR (that would misrepresent state).
+- Return to the parent with verdict `RETURNED TO FIXER`, listing every outstanding item under `## Validation` in `notes/reviews/pr-<N>-claude-review.md`, and ending with the literal line: **"NEXT: parent session MUST immediately re-launch `pr-review-fixer` with the regression list — do not wait for user confirmation."**
 
 ## Hard Rules
 - You validate, never fix

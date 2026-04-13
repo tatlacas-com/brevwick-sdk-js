@@ -1,6 +1,6 @@
 ---
 name: pr-review-fixer
-description: "Use this agent when a PR review checklist has been written to notes/reviews/ by pr-reviewer on brevwick-sdk-js. Actions every item — no deferrals. Chain-invokes pr-review-validator.\n\nExamples:\n\n- user: \"Action the PR 42 review\"\n  assistant: \"Launching pr-review-fixer.\"\n  <uses Agent tool to launch pr-review-fixer>"
+description: "Use this agent once a PR review checklist has been written to notes/reviews/ by pr-reviewer on brevwick-sdk-js. Actions every item — no deferrals, no scapegoating. On return, the **parent session** (not this subagent) MUST immediately launch pr-review-validator — subagents cannot dispatch other subagents, so the chain is the caller's responsibility.\n\nExamples:\n\n- user: \"Action the PR 42 review\"\n  assistant: \"Launching pr-review-fixer; I'll chain to pr-review-validator as soon as it returns.\"\n  <parent session launches pr-review-fixer, then on return launches pr-review-validator>\n\n- user: \"Fix the PR review findings\"\n  assistant: \"Running the fix pass and then the validator.\"\n  <parent session launches pr-review-fixer, then pr-review-validator in sequence>"
 model: opus
 color: green
 memory: project
@@ -88,10 +88,17 @@ git push
 ```
 Conventional commit. No `Co-Authored-By: Claude`. Existing branch only.
 
-### Step 8 — Chain the Validator (MANDATORY)
-Invoke `pr-review-validator` via Agent tool:
+### Step 8 — Return, so the Parent Session Chains the Validator (MANDATORY)
 
-> "PR #<N> fixes committed. Review documents: `notes/reviews/pr-<N>-claude-review.md` (primary) and `notes/reviews/pr-<N>-copilot-review.md` (if present — Copilot's independent second opinion). Validate every `- [x]` across **both** files is real, no `- [ ]` remains anywhere, no scapegoating. Chain back to pr-review-fixer on any issue."
+Subagents in Claude Code cannot dispatch other subagents — the `Agent`/`Task` tool is not in a subagent's toolset. So **you do NOT launch pr-review-validator yourself**. Instead:
+
+1. Finish the commit + push.
+2. Return a short summary to the parent session that:
+   - Confirms fixes are pushed and names the branch + PR number
+   - Names the checklist paths: `notes/reviews/pr-<N>-claude-review.md` (primary) and `notes/reviews/pr-<N>-copilot-review.md` (if present)
+   - Ends with this literal instruction line for the parent: **"NEXT: parent session MUST immediately launch `pr-review-validator` with the checklist paths — do not wait for user confirmation."**
+
+The parent session is responsible for the chain; your job ends when fixes are pushed and the hand-off line is emitted.
 
 ## Never Violate
 1. Never `any` without documented eslint-disable
