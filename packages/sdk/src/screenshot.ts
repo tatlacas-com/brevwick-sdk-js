@@ -132,6 +132,7 @@ function logFailure(
         level: 'warn',
         message,
         timestamp: Date.now(),
+        count: 1,
       });
       return;
     } catch {

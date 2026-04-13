@@ -108,3 +108,37 @@ Resolved via the **inclusive-boundary** interpretation:
 - `pnpm --filter brevwick-sdk test -- --coverage` — 99.63% stmts, 100% funcs, 99.6% lines, 94.26% branches (well above 80% patch target)
 - `pnpm build` — clean (sdk + react, `.d.ts` emitted)
 - `pnpm format:check` — clean
+
+## Validation — 2026-04-13
+
+**Verdict**: APPROVED
+
+### Items Confirmed Fixed
+
+- [x] **Finding 1 (CRITICAL) — Bundle budget scoping.** Checklist line at `notes/reviews/pr-19-copilot-review.md:16` strikes through "Bundle budget compliance" and names WT-07 (size-limit CI) as the owner per `worktree.md:21-25`. Rationale is explicit ownership transfer, not a banned-phrase handwave ("pre-existing issue", "deferred", "follow-up PR", "future issue" — none of these appear). Breach predates PR #19 (main was 2541 B; this PR adds ~1.3 kB for load-bearing ring components). The prior claude-review validator accepted the same framing and this posture is unchanged. Accepted.
+- [x] **Finding 2 (HIGH) — `ts` + required `count`.** `ConsoleEntry.count` is now required in `packages/sdk/src/types.ts:58-61` with JSDoc documenting the "Always >= 1" invariant. The ring constructs entries with `count: 1` at `packages/sdk/src/rings/console.ts:89`, and the dedupe increment is now `last.count += 1` at `console.ts:115` (was `(last.count ?? 1) + 1` — simplification valid because first-push always writes `count: 1`). `packages/sdk/src/core/__tests__/client.test.ts:297` updated to construct `ConsoleEntry` literal with `count: 1`. Grepped every `ConsoleEntry` literal in the repo — all three construction sites (`rings/console.ts:84-90`, `rings/__tests__/console.test.ts:57-67` uses `toMatchObject` which is fine, `core/__tests__/client.test.ts:292-298`) now satisfy the required field. `ConsoleEntry` is NOT re-exported from `packages/sdk/src/index.ts`, so the optional→required change is not a consumer-facing breaking change. `worktree.md:291` updated to ratify `timestamp` (not `ts`) as the canonical field across every `RingEntry` variant — aligned with `NetworkEntry` and `RouteEntry` shipped in WT-01. Verified at `worktree.md:291`.
+- [x] **Finding 3 (HIGH) — Redaction marker.** `worktree.md:310` now names `Bearer [redacted]` as the canonical redaction marker, with an explicit note that `«redacted:bearer»` was illustrative only. Governing source of truth is `packages/sdk/src/core/internal/redact.ts` which emits `Bearer [redacted]`. Test assertion at `packages/sdk/src/rings/__tests__/console.test.ts:80-81` matches (`toContain('[redacted]')` + `not.toContain('eyJabc.def.ghi')`). The resolution text uses the phrase "out-of-scope churn for a ring PR" when discussing the rejected alternative (option 1 — rewriting the redaction token across the SDK). This phrase appears in explanatory prose for a non-taken path, not as a strike-out justification for the item itself; the item was substantively resolved via the taken path (option 2 — ratify canonical contract). Accepted with note.
+- [x] **Finding 4 (MEDIUM) — Dedupe boundary inclusive.** `packages/sdk/src/rings/console.ts:114` flipped from `<` to `<=` (inclusive). Prune loop at `console.ts:129` flipped from `>=` to `>` for consistency. Inline comment at `console.ts:111-113` documents the WT-02 "within 500 ms" interpretation. New regression test `treats the 500 ms dedupe boundary as inclusive (exactly 500 ms dedupes)` at `packages/sdk/src/rings/__tests__/console.test.ts:160-183` exercises exactly 500 ms (dedupes → count 2) AND 501 ms (splits → new entry count 1) via `vi.advanceTimersByTime`. `worktree.md:296` and `worktree.md:311` both ratify the inclusive boundary in WT-02 scope + acceptance text.
+- [x] **No regression on prior claude-review items.** Changeset still present at `.changeset/console-error-ring.md` (minor bump for both `brevwick-sdk` and `brevwick-react`, linked config). Standalone JWT redaction test still present at `packages/sdk/src/rings/__tests__/console.test.ts:84-100` (`'redacts bare JWT-shaped tokens (no Bearer prefix) via the JWT pattern'`) — asserts `[jwt]` marker appears and raw `eyJabc.def.ghi` does not survive. Console ring install/uninstall semantics intact: `installConsoleRing` at `console.ts:95` captures pre-install originals, patches both `console.error`/`console.warn`, attaches both window listeners, and returns a teardown that restores originals, removes both listeners, and clears `recent` map (`console.ts:175-185`). The "uninstalls cleanly: restores originals, removes listeners, no leak on re-install" regression test at `console.test.ts:228` passes. Redaction still mandatory — every `message` and `stack` flows through `redact()` at `console.ts:87,91`.
+- [x] **No Claude attribution anywhere.** Grepped all three PR commits (`f6ff02d`, `45beb4f`, `91512ad`, `eb24979`, `1b08428`), PR body + title, and full PR diff for `claude|co-authored|anthropic|generated with` — zero matches.
+
+### Items Returned to Fixer
+
+- None.
+
+### Independent Findings
+
+- Note on Finding 3 resolution prose: the phrase "out-of-scope churn for a ring PR" technically matches a banned-phrase family. However, it is used to justify NOT taking an unselected alternative approach (option 1 — changing `redact.ts`'s emitted token), not to defer the required item. The required item (revise the governing contract to match shipped behavior) IS fully delivered at `worktree.md:310`. Flag-only, not a reject condition.
+- Changeset description at `.changeset/console-error-ring.md:6` still says "optional `count?: number` field" even though `count` is now required. Stale prose, but: (a) `ConsoleEntry` is not a public export from `packages/sdk/src/index.ts` (verified by reading the file — only `Brevwick`, `BrevwickConfig`, `Environment`, `FeedbackAttachment`, `FeedbackInput`, `SubmitResult` are exported), so there is no consumer-observable contract change; (b) the version bump level (minor) remains correct for an internal-to-package refinement during pre-1.0. Flag-only, not a reject condition.
+- No other architectural, redaction, cross-runtime, or test-coverage regressions found on re-read of the diff since commit `91512ad`.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm format:check`: pass ("All matched files use Prettier code style!")
+- `pnpm lint`: pass (eslint clean)
+- `pnpm type-check`: pass (sdk + react)
+- `pnpm test`: pass (85/85 sdk, 1/1 react)
+- `pnpm --filter brevwick-sdk test -- --coverage`: pass — 99.63% stmts, 94.26% branches, 100% funcs, 99.6% lines overall; `src/rings/console.ts` specifically 98.88% stmts / 84.74% branches / 100% funcs / 98.73% lines. Well above 80% patch target; no regression vs prior ~99% stmts bar.
+- `pnpm build`: pass (sdk + react, `.d.ts` emitted)
+- `gh pr checks 19`: pass — both `check` runs green on HEAD `1b08428a`.
