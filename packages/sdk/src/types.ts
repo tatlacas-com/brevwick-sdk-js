@@ -45,9 +45,25 @@ export interface FeedbackInput {
   attachments?: Array<Blob | FeedbackAttachment>;
 }
 
-export interface SubmitResult {
-  reportId: string;
+export type SubmitErrorCode =
+  | 'ATTACHMENT_UPLOAD_FAILED'
+  | 'INGEST_REJECTED'
+  | 'INGEST_RETRY_EXHAUSTED'
+  | 'INGEST_TIMEOUT'
+  | 'INGEST_INVALID_RESPONSE';
+
+export interface SubmitError {
+  code: SubmitErrorCode;
+  message: string;
 }
+
+/**
+ * Tagged result. `submit()` never throws — callers discriminate on `ok`.
+ * Matches SDD § 12 updated contract (cross-repo PR accompanies this change).
+ */
+export type SubmitResult =
+  | { ok: true; report_id: string }
+  | { ok: false; error: SubmitError };
 
 export interface ConsoleEntry {
   kind: 'console';

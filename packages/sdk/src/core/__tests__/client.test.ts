@@ -284,17 +284,27 @@ describe('install / uninstall', () => {
 });
 
 describe('stub public methods', () => {
-  it('submit() returns a rejecting Promise (no sync throw)', async () => {
-    const instance = createBrevwick({ projectKey: KEY_A });
-    const caught = vi.fn();
-    // Sync throw would bypass .catch — this test guards against that regression.
-    const p = instance.submit({ description: 'x' });
-    expect(p).toBeInstanceOf(Promise);
-    await p.catch(caught);
-    expect(caught).toHaveBeenCalledTimes(1);
-    await expect(instance.submit({ description: 'x' })).rejects.toThrow(
-      /not yet implemented/,
-    );
+  it('submit() always resolves — never throws — when fetch rejects', async () => {
+    // Full pipeline behaviour is covered under msw in submit.test.ts — this
+    // test guards the one-line contract in client.ts: any failure, including
+    // a synchronous fetch rejection, must surface as `{ ok: false }`, never
+    // as a thrown error that would bypass caller `.catch()` chains.
+    const fetchStub = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('network down'));
+    try {
+      const instance = createBrevwick({ projectKey: KEY_A });
+      const p = instance.submit({ description: 'x' });
+      expect(p).toBeInstanceOf(Promise);
+      const result = await p;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(typeof result.error.code).toBe('string');
+        expect(typeof result.error.message).toBe('string');
+      }
+    } finally {
+      fetchStub.mockRestore();
+    }
   });
 
   it('captureScreenshot() returns a Blob via the screenshot module', async () => {

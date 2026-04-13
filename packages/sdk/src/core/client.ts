@@ -155,11 +155,21 @@ function build(
   const instance: Brevwick = {
     install,
     uninstall,
-    async submit(_input: FeedbackInput): Promise<SubmitResult> {
-      // Promise-returning so `.catch()` handlers attach before the rejection
-      // fires — a synchronous throw here would short-circuit any chain built
-      // in user code. Real implementation lands in #4.
-      throw new Error('Brevwick.submit is not yet implemented');
+    submit(input: FeedbackInput): Promise<SubmitResult> {
+      // Lazy-load so the submit pipeline (plus redaction + version helpers)
+      // lives in its own chunk and the eager core bundle stays under the
+      // 2 kB gzip budget. runSubmit itself never throws; the `.catch` only
+      // guards the import() against rare chunk-loading failures.
+      return import('../submit').then(
+        (m) => m.runSubmit(internal, input),
+        (e: unknown) => ({
+          ok: false as const,
+          error: {
+            code: 'INGEST_RETRY_EXHAUSTED' as const,
+            message: (e as Error)?.message ?? String(e),
+          },
+        }),
+      );
     },
     async captureScreenshot(): Promise<Blob> {
       const { captureScreenshotForInstance } = await import('../screenshot');
