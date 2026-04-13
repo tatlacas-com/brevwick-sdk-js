@@ -1,5 +1,5 @@
 /**
- * Client-side redaction. Mirrors the server-side sanitiser in compilerfish-api;
+ * Client-side redaction. Mirrors the server-side sanitiser in brevwick-api;
  * we redact early so secrets never even leave the device.
  *
  * Patterns:

@@ -1,9 +1,9 @@
 export type Environment = 'dev' | 'stg' | 'prod';
 
-export interface CompilerfishConfig {
+export interface BrevwickConfig {
   /** Public ingest key, e.g. `pk_live_xxx`. */
   projectKey: string;
-  /** Override the default ingest endpoint (https://api.compilerfish.com). */
+  /** Override the default ingest endpoint (https://api.brevwick.com). */
   endpoint?: string;
   environment?: Environment;
   /** Set to false to make every method a no-op. Useful in tests. */
@@ -12,7 +12,7 @@ export interface CompilerfishConfig {
   buildSha?: string;
   /** Resolved at submit time; merged into `user_context`. */
   userContext?: () => Record<string, unknown>;
-  /** Send `X-Compilerfish-Fingerprint-Optout: 1` to skip the salted fingerprint. */
+  /** Send `X-Brevwick-Fingerprint-Optout: 1` to skip the salted fingerprint. */
   fingerprintOptOut?: boolean;
 }
 
@@ -29,7 +29,7 @@ export interface SubmitResult {
   reportId: string;
 }
 
-export interface Compilerfish {
+export interface Brevwick {
   submit(input: FeedbackInput): Promise<SubmitResult>;
   captureScreenshot(): Promise<Blob>;
   /** Installs console + fetch rings. Returns an uninstaller. */

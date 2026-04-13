@@ -1,29 +1,29 @@
-# compilerfish-sdk-js
+# brevwick-sdk-js
 
-JS/TS SDK for [Compilerfish](https://github.com/tatlacas-com/compilerfish-ops) — the AI-first QA feedback SaaS.
+JS/TS SDK for [Brevwick](https://github.com/tatlacas-com/brevwick-ops) — the AI-first QA feedback SaaS.
 
 This is a pnpm workspace publishing two packages to npm:
 
-| Package                                  | Purpose                                                        |
-| ---------------------------------------- | -------------------------------------------------------------- |
-| [`compilerfish-sdk`](./packages/sdk)     | Framework-agnostic core. Submit feedback from any browser app. |
-| [`compilerfish-react`](./packages/react) | React provider, floating FAB, `useFeedback` hook.              |
+| Package                              | Purpose                                                        |
+| ------------------------------------ | -------------------------------------------------------------- |
+| [`brevwick-sdk`](./packages/sdk)     | Framework-agnostic core. Submit feedback from any browser app. |
+| [`brevwick-react`](./packages/react) | React provider, floating FAB, `useFeedback` hook.              |
 
-**Canonical contract:** [`compilerfish-ops/docs/compilerfish-sdd.md` § 12](https://github.com/tatlacas-com/compilerfish-ops/blob/main/docs/compilerfish-sdd.md#12-client-sdk-contracts).
+**Canonical contract:** [`brevwick-ops/docs/brevwick-sdd.md` § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts).
 
 ## Quick start (Phase 4 preview)
 
 ```ts
-import { createCompilerfish } from 'compilerfish-sdk';
+import { createBrevwick } from 'brevwick-sdk';
 
-const cf = createCompilerfish({
+const bw = createBrevwick({
   projectKey: 'pk_live_...',
   buildSha: process.env.BUILD_SHA,
 });
 
-const uninstall = cf.install(); // installs console + fetch rings
+const uninstall = bw.install(); // installs console + fetch rings
 
-await cf.submit({
+await bw.submit({
   description: 'Customer modal hangs on second open',
   expected: 'Modal opens with details',
   actual: 'Spinner forever',
@@ -31,12 +31,12 @@ await cf.submit({
 ```
 
 ```tsx
-import { CompilerfishProvider, FeedbackButton } from 'compilerfish-react';
+import { BrevwickProvider, FeedbackButton } from 'brevwick-react';
 
-<CompilerfishProvider config={{ projectKey: 'pk_live_...' }}>
+<BrevwickProvider config={{ projectKey: 'pk_live_...' }}>
   <App />
   <FeedbackButton />
-</CompilerfishProvider>;
+</BrevwickProvider>;
 ```
 
 ## Bundle budget
@@ -58,4 +58,4 @@ pnpm format
 
 ## Status
 
-Phase 0 — scaffolding. The packages publish as `0.0.0` placeholders containing only types and the redaction helpers. Real submit/screenshot/rings land in Phase 4 alongside `compilerfish-api` Phase 2.
+Phase 0 — scaffolding. The packages publish as `0.0.0` placeholders containing only types and the redaction helpers. Real submit/screenshot/rings land in Phase 4 alongside `brevwick-api` Phase 2.

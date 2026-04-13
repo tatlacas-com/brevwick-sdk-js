@@ -8,6 +8,6 @@ export default defineConfig({
   sourcemap: true,
   treeshake: true,
   splitting: false,
-  external: ['react', 'react-dom', 'compilerfish-sdk'],
+  external: ['react', 'react-dom', 'brevwick-sdk'],
   target: 'es2020',
 });

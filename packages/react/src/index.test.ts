@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { COMPILERFISH_REACT_VERSION } from './index';
+import { BREVWICK_REACT_VERSION } from './index';
 
-describe('compilerfish-react', () => {
+describe('brevwick-react', () => {
   it('exports a version string', () => {
-    expect(typeof COMPILERFISH_REACT_VERSION).toBe('string');
+    expect(typeof BREVWICK_REACT_VERSION).toBe('string');
   });
 });

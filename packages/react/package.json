@@ -1,7 +1,7 @@
 {
-  "name": "compilerfish-react",
+  "name": "brevwick-react",
   "version": "0.0.0",
-  "description": "Compilerfish React bindings — provider, FAB, useFeedback hook. Drop-in for any React app.",
+  "description": "Brevwick React bindings — provider, FAB, useFeedback hook. Drop-in for any React app.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -27,14 +27,14 @@
     "test:cover": "vitest run --coverage",
     "type-check": "tsc --noEmit"
   },
-  "homepage": "https://github.com/tatlacas-com/compilerfish-sdk-js",
+  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tatlacas-com/compilerfish-sdk-js.git",
+    "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",
     "directory": "packages/react"
   },
   "keywords": [
-    "compilerfish",
+    "brevwick",
     "react",
     "qa",
     "feedback",
@@ -44,7 +44,7 @@
     "access": "public"
   },
   "peerDependencies": {
-    "compilerfish-sdk": "workspace:*",
+    "brevwick-sdk": "workspace:*",
     "react": ">=18 <20",
     "react-dom": ">=18 <20"
   },
@@ -53,7 +53,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "compilerfish-sdk": "workspace:*",
+    "brevwick-sdk": "workspace:*",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   }
