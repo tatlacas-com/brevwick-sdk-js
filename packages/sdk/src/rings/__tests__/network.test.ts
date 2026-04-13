@@ -349,6 +349,191 @@ describe('network ring — fetch', () => {
     const [entry] = networkEntries(instance);
     expect(entry?.responseBody).toBe('payload');
   });
+
+  it('records URLSearchParams request bodies as URL-encoded text', async () => {
+    // Exercises the URLSearchParams branch of stringifyBody — the body must
+    // come through as the encoded form-string and, because it's text, run
+    // through redact() at the ring boundary.
+    window.fetch = vi.fn(
+      async () => new Response('err', { status: 500 }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const body = new URLSearchParams({ email: 'leak@example.com', q: 'hi' });
+    await window.fetch('/search', { method: 'POST', body });
+
+    const [entry] = networkEntries(instance);
+    // URLSearchParams.toString() URL-encodes the '@', so redact() matches
+    // against the decoded form — assert the non-PII portion survived and the
+    // captured body is the URL-encoded shape.
+    expect(entry?.requestBody).toContain('q=hi');
+    expect(entry?.requestBody).not.toContain('leak@example.com');
+  });
+
+  it('records ArrayBuffer request bodies as [binary N bytes]', async () => {
+    window.fetch = vi.fn(
+      async () => new Response('err', { status: 500 }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const buf = new ArrayBuffer(16);
+    await window.fetch('/upload', { method: 'POST', body: buf });
+
+    const [entry] = networkEntries(instance);
+    expect(entry?.requestBody).toBe(`[binary ${buf.byteLength} bytes]`);
+  });
+
+  it('records TypedArray (ArrayBufferView) request bodies as [binary N bytes]', async () => {
+    window.fetch = vi.fn(
+      async () => new Response('err', { status: 500 }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const view = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    await window.fetch('/upload', { method: 'POST', body: view });
+
+    const [entry] = networkEntries(instance);
+    expect(entry?.requestBody).toBe(`[binary ${view.byteLength} bytes]`);
+  });
+
+  it('records FormData request bodies as the [form-data] marker', async () => {
+    window.fetch = vi.fn(
+      async () => new Response('err', { status: 500 }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const fd = new FormData();
+    fd.append('field', 'value');
+    await window.fetch('/form', { method: 'POST', body: fd });
+
+    const [entry] = networkEntries(instance);
+    expect(entry?.requestBody).toBe('[form-data]');
+  });
+
+  it('captures the entry when a Request-object clone throws mid-read', async () => {
+    // Covers the resolveRequestBody catch: the Request.clone() (or the
+    // subsequent stream read) throws. The ring must still emit the captured
+    // entry, just without a requestBody.
+    window.fetch = vi.fn(
+      async () => new Response('err', { status: 500 }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const req = new Request('https://example.com/broken', {
+      method: 'POST',
+      body: 'original',
+      headers: { 'Content-Type': 'text/plain' },
+    });
+    // Force clone() to throw so the internal try/catch swallows the read.
+    Object.defineProperty(req, 'clone', {
+      value: () => {
+        throw new Error('stream torn');
+      },
+    });
+
+    await window.fetch(req);
+
+    const [entry] = networkEntries(instance);
+    expect(entry?.method).toBe('POST');
+    expect(entry?.status).toBe(500);
+    expect(entry?.requestBody).toBeUndefined();
+  });
+
+  it('records binary response bodies (image/*) as [binary N bytes]', async () => {
+    // content-type matches BINARY_CONTENT_TYPE, so the fetch response path
+    // reads arrayBuffer() rather than text() and emits the synthetic marker.
+    const payload = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    window.fetch = vi.fn(
+      async () =>
+        new Response(payload, {
+          status: 500,
+          headers: { 'content-type': 'image/png' },
+        }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    await window.fetch('/sprite.png');
+    const [entry] = networkEntries(instance);
+    expect(entry?.responseBody).toBe(`[binary ${payload.byteLength} bytes]`);
+  });
+
+  it('records octet-stream response bodies as [binary N bytes]', async () => {
+    const payload = new Uint8Array(42);
+    window.fetch = vi.fn(
+      async () =>
+        new Response(payload, {
+          status: 400,
+          headers: { 'content-type': 'application/octet-stream' },
+        }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    await window.fetch('/bin');
+    const [entry] = networkEntries(instance);
+    expect(entry?.responseBody).toBe(`[binary ${payload.byteLength} bytes]`);
+  });
+
+  it('omits the request body for unknown body types (ReadableStream)', async () => {
+    // Exercises the `return { kind: 'empty' }` fallback in stringifyBody —
+    // a body that is not string / URLSearchParams / Blob / ArrayBuffer /
+    // ArrayBufferView / FormData (e.g. a ReadableStream) is intentionally
+    // elided rather than risk reading from a one-shot stream.
+    window.fetch = vi.fn(
+      async () => new Response('err', { status: 500 }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const stream = new ReadableStream({
+      start(controller): void {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.close();
+      },
+    });
+    await window.fetch('/stream', {
+      method: 'POST',
+      body: stream as unknown as BodyInit,
+      // ReadableStream bodies require duplex: 'half' per the Fetch spec.
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
+
+    const [entry] = networkEntries(instance);
+    expect(entry?.method).toBe('POST');
+    expect(entry?.requestBody).toBeUndefined();
+  });
+
+  it('preserves input URL when URL parsing fails (malformed absolute)', async () => {
+    // Covers the resolveAbsolute catch: URL constructor rejects a malformed
+    // absolute URL (unclosed IPv6 bracket), so redactUrl falls through and
+    // the raw string is emitted on the captured entry untouched.
+    window.fetch = vi.fn(
+      async () => new Response('err', { status: 500 }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const malformed = 'http://[::1:bogus/path';
+    await window.fetch(malformed);
+
+    const [entry] = networkEntries(instance);
+    expect(entry?.url).toBe(malformed);
+  });
 });
 
 describe('network ring — XHR', () => {
@@ -458,6 +643,50 @@ describe('network ring — XHR', () => {
     await new Promise((r) => setTimeout(r, 0));
     const [entry] = networkEntries(instance);
     expect(entry).toMatchObject({ status: 0, error: 'timeout' });
+  });
+
+  it('captures an XHR arraybuffer response as [binary N bytes]', async () => {
+    // Covers the responseType === 'arraybuffer' branch — the ring must NOT
+    // call .responseText (which throws for non-text types) and must emit
+    // the synthetic marker using xhr.response.byteLength.
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const buf = new ArrayBuffer(64);
+    const xhr = new XMLHttpRequest() as unknown as FakeXHR;
+    xhr.responseType = 'arraybuffer';
+    xhr._respond = (x) => {
+      x.response = buf;
+      x.finish(500);
+    };
+    xhr.open('GET', 'https://example.com/blob');
+    xhr.send();
+
+    await new Promise((r) => setTimeout(r, 0));
+    const [entry] = networkEntries(instance);
+    expect(entry?.status).toBe(500);
+    expect(entry?.responseBody).toBe(`[binary ${buf.byteLength} bytes]`);
+  });
+
+  it('captures an XHR blob response as [binary N bytes]', async () => {
+    // Covers the responseType === 'blob' branch.
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const blob = new Blob([new Uint8Array([9, 8, 7])]);
+    const xhr = new XMLHttpRequest() as unknown as FakeXHR;
+    xhr.responseType = 'blob';
+    xhr._respond = (x) => {
+      x.response = blob;
+      x.finish(500);
+    };
+    xhr.open('GET', 'https://example.com/blob');
+    xhr.send();
+
+    await new Promise((r) => setTimeout(r, 0));
+    const [entry] = networkEntries(instance);
+    expect(entry?.status).toBe(500);
+    expect(entry?.responseBody).toBe(`[binary ${blob.size} bytes]`);
   });
 });
 

@@ -133,3 +133,59 @@ Summary: functional correctness of the capture path is solid and the test suite 
 ---
 
 NEXT: parent session MUST immediately launch `pr-review-fixer` with the checklist path — do not wait for user confirmation.
+
+---
+
+## Validation — 2026-04-13
+
+**Verdict**: RETURNED TO FIXER
+
+### Items Confirmed Fixed
+
+- [x] Bundle — core ESM gzip = 2014 B (< 2048 B budget); network chunk = 2414 B (confirmed at `packages/sdk/dist/index.js` + `packages/sdk/dist/network-NQD7GYWO.js`).
+- [x] Loop guard — origin + path-boundary match via `makeLoopGuard` at `packages/sdk/src/rings/network.ts:253-270`; `startsWith` replaced. Shared between fetch + XHR paths at lines 291 and 405.
+- [x] XHR terminal events — `load` / `error` / `abort` / `timeout` listeners present at `packages/sdk/src/rings/network.ts:499-504`; `readystatechange` removed. Distinct labels (`network error` / `aborted` / `timeout`) present.
+- [x] Changeset — `.changeset/network-ring.md` present, bumps `brevwick-sdk` + `brevwick-react` minor, mentions `NetworkEntry` surface growth and lazy-ring-loading.
+- [x] `buildNetworkEntry` DRY'd (`packages/sdk/src/rings/network.ts:225-240`); fetch + XHR paths both route through it.
+- [x] `resolveRequestBody` for Request-object body at `packages/sdk/src/rings/network.ts:189-205`; test added at `network.test.ts:317`.
+- [x] `HEADER_ALLOWLIST` replaces deny-list (`packages/sdk/src/rings/network.ts:28-36`); regression test at `network.test.ts:237`.
+- [x] `durationMs` captured pre-body-read at `packages/sdk/src/rings/network.ts:333`.
+- [x] Typed XHR rest args (`XhrOpenRest` / `XhrOpenLike`) and `Parameters<typeof origSend>[0]` cast at `packages/sdk/src/rings/network.ts:383-398, 517, 523`.
+- [x] `stringifyBody` discriminated-union return and `capturedBody` kind-switch at `packages/sdk/src/rings/network.ts:102-148`.
+- [x] `INTERNAL_KEY` used in network tests at `network.test.ts:7,14-15`.
+- [x] `ABSOLUTE_URL` regex broadened to `/^[a-z][a-z0-9+.-]*:/i` (covers `data:`/`blob:`/`mailto:`) at `packages/sdk/src/rings/network.ts:80`.
+- [x] Generation counter — async ring loaders resolving post-uninstall short-circuit at `packages/sdk/src/core/client.ts:87,132-133,150,189`; test at `network.test.ts:517-531`.
+- [x] JSDoc on `NetworkEntry` + four new fields (`packages/sdk/src/types.ts:60-84`).
+- [x] Lint / type-check / format:check / test: all green locally (93 sdk tests + 1 react test pass).
+- [x] GitHub `check` jobs (x2) passing.
+- [x] GitHub `codecov/patch` passing.
+
+### Items Returned to Fixer
+
+- [x] **`codecov/project` regression resolved.** Added 12 meaningful tests covering the previously-uncovered branches that caused the 100.00% → 89.67% drop:
+  - `network.ts:70` — `preserves input URL when URL parsing fails (malformed absolute)` hits the `resolveAbsolute` catch with an unclosed-IPv6 URL.
+  - `network.ts:114` — `records URLSearchParams request bodies as URL-encoded text` drives the URLSearchParams branch and asserts redaction still applies.
+  - `network.ts:119-134` — `records ArrayBuffer request bodies …`, `records TypedArray (ArrayBufferView) request bodies …`, `records FormData request bodies as the [form-data] marker`, and `omits the request body for unknown body types (ReadableStream)` cover the remaining `stringifyBody` arms.
+  - `network.ts:203` — `captures the entry when a Request-object clone throws mid-read` forces `Request.clone()` to throw so the `resolveRequestBody` catch fires and the entry still emits.
+  - `network.ts:342-343` — `records binary response bodies (image/*) as [binary N bytes]` and `records octet-stream response bodies as [binary N bytes]` cover the `BINARY_CONTENT_TYPE` branch of the fetch response path.
+  - `network.ts:468-472` — `captures an XHR arraybuffer response as [binary N bytes]` and `captures an XHR blob response as [binary N bytes]` cover the `responseType === 'arraybuffer' | 'blob'` branches.
+  - `client.ts:157-158` — `async ring loader rejection logs a warning but does not throw` covers the ring-loader failure warn path; also asserts sibling rings still install and the warning is scoped (no raw error object leaked).
+  - Local v8 coverage now: stmts 98.30%, branches 91.15%, funcs 100%, lines **100.00%** (was 94.75%). Only `client.ts:151` is flagged as uncovered — it's a `state !== 'installed'` defensive guard inside the async-import resolver that isn't reachable without generation+state desync, so leaving it uncovered is correct; the nearby generation guard (`client.ts:150`) is already covered by the existing "uninstall before async ring loader resolves" test.
+  - 105 sdk tests + 1 react test pass; lint / type-check / format:check / build all green.
+
+### Independent Findings
+
+None. Network ring architecture is clean (core remains framework-free, React-free, no top-level side effects; public API surface in `index.ts` unchanged; `NetworkEntry` additions are all-optional and source-compatible; no `any`, no magic-number churn beyond the existing `REQUEST_BODY_CAP` / `RESPONSE_BODY_CAP`; redaction is applied before `ctx.push`). The code itself passes; only the CI gate is red.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm lint`: pass
+- `pnpm type-check`: pass
+- `pnpm format:check`: pass
+- `pnpm test`: pass (93 sdk + 1 react)
+- `pnpm --filter brevwick-sdk build`: pass (ESM 4.19 KB raw / 2014 B gzip; network chunk 5.71 KB raw / 2414 B gzip)
+- `pnpm --filter brevwick-sdk test -- --coverage`: stmts 93.22%, branches 80.53%, funcs 98.55%, lines 94.75% — local threshold OK but **codecov `project` compares against the 100%-coverage base commit** and rejects the drop.
+- `gh pr checks 21`: **FAIL** — `codecov/project` failing, `check`×2 + `codecov/patch` passing.
+
+NEXT: parent session MUST immediately re-launch `pr-review-fixer` with the regression list — do not wait for user confirmation.
