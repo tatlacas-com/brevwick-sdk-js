@@ -6,9 +6,10 @@ import type { BrevwickInternal } from './core/internal';
 export interface CaptureScreenshotOpts {
   /**
    * Sub-tree to capture. Defaults to `document.documentElement` (the full
-   * page). Only `[data-brevwick-skip]` nodes *within* this element are
-   * scrubbed before capture — skip markers outside the sub-tree are left
-   * untouched.
+   * page). Only *descendants* marked with `[data-brevwick-skip]` are scrubbed
+   * before capture — a skip marker on the root element itself is ignored
+   * (hiding the capture target would produce an empty image). Skip markers
+   * outside the sub-tree are left untouched.
    */
   element?: HTMLElement;
   /**

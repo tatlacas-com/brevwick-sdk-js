@@ -221,4 +221,56 @@ describe('captureScreenshot', () => {
       expect.objectContaining({ quality: 0.85, type: 'image/webp' }),
     );
   });
+
+  it('returns a placeholder without invoking modern-screenshot when document is undefined (SSR)', async () => {
+    const domToBlob = vi.fn();
+    vi.doMock('modern-screenshot', () => ({ domToBlob }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubGlobal('document', undefined);
+    try {
+      const { captureScreenshot } = await import('../screenshot');
+      const blob = await captureScreenshot();
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe('image/webp');
+      expect(domToBlob).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+      const msg = String(warn.mock.calls[0]?.[0] ?? '');
+      expect(msg).toMatch(/document is not available/);
+    } finally {
+      vi.unstubAllGlobals();
+      warn.mockRestore();
+    }
+  });
+
+  it('does not hide the root element itself when the root carries data-brevwick-skip', async () => {
+    // Per the JSDoc contract, the root is never scrubbed — hiding the capture
+    // target would produce an empty image. Only descendants are hidden.
+    const root = document.createElement('section');
+    root.setAttribute('data-brevwick-skip', '');
+    root.style.visibility = 'visible';
+    const child = document.createElement('div');
+    child.setAttribute('data-brevwick-skip', '');
+    root.appendChild(child);
+    document.body.appendChild(root);
+
+    let rootDuring = '';
+    let childDuring = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        rootDuring = root.style.visibility;
+        childDuring = child.style.visibility;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot({ element: root });
+
+    expect(rootDuring).toBe('visible');
+    expect(childDuring).toBe('hidden');
+    // Post-capture restore: child returns to its original empty value.
+    expect(child.style.visibility).toBe('');
+    expect(root.style.visibility).toBe('visible');
+    root.remove();
+  });
 });

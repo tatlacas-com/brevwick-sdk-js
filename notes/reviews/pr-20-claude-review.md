@@ -144,3 +144,41 @@ Per CLAUDE.md, this SDD update is required before merge.
 ## Final verdict
 
 **CHANGES REQUIRED** — primarily for the two correctness blockers in `screenshot.ts` (concurrent-capture re-entrancy; throw-escape from `internal.push`), the missing JSDoc on the public `CaptureScreenshotOpts` type, and the required SDD § 12 update. Everything else (architecture, chunk split, tests, build, hygiene) is clean.
+
+## Validation — 2026-04-13
+
+**Verdict**: APPROVED
+
+### Items Confirmed Fixed
+
+- [x] Concurrent-capture re-entrancy — `stashedOriginal` + `skipRefCount` WeakMaps at `packages/sdk/src/screenshot.ts:84-85`; outermost scrub stashes, innermost restore writes back and clears both maps (lines 91-118). Hand-walked two overlapping captures on a `visibility: 'visible'` node: ref reaches 2, first finally decrements to 1 (no writeback), second finally hits 0, writes `'visible'` back and deletes both map entries. A third later call re-stashes correctly.
+- [x] `logFailure` try/catch fallback — `packages/sdk/src/screenshot.ts:127-146`. `internal.push` wrapped; on throw falls through to `globalThis.console?.warn?.(message)`.
+- [x] `skipped` declared outside try — `packages/sdk/src/screenshot.ts:162`, `scrubSkippedNodes` moved inside try at line 165.
+- [x] `CaptureScreenshotOpts` JSDoc — type-level + per-field at `packages/sdk/src/screenshot.ts:3-19`.
+- [x] Placeholder bytes decoded once — `PLACEHOLDER_BUFFER` IIFE at `packages/sdk/src/screenshot.ts:34-39`; `placeholderBlob()` wraps per call at 41-43.
+- [x] `modernScreenshotPromise` cache — `packages/sdk/src/screenshot.ts:52-61`.
+- [x] New tests — concurrent-capture test at `packages/sdk/src/__tests__/screenshot.test.ts:142-186` (gated deferred promise, interleaved awaits, asserts `'hidden'` mid-flight and `'visible'` only after both resolve); throwing-listener test at 188-208 (installs a real `entry` listener that throws, asserts placeholder Blob + `console.warn` fallback).
+- [x] SDD § 12 update — brevwick-ops#5 diff genuinely adds `CaptureScreenshotOpts`, package-level `captureScreenshot`, never-throws contract, ref-counted scrub semantics, optional peer dep note.
+- [x] CI green — gzip = 1936 B (verified locally), 0 `modern-screenshot` refs in `dist/index.js`, 1 in sibling chunk.
+
+### Items Returned to Fixer
+
+None.
+
+### Independent Findings
+
+- Two struck items (`AbortSignal support`, `budget headroom 110 B`) use legitimate, non-banned justifications (signal is additive and outside issue #5 AC; headroom is a forward-looking note, not a defect). No banned-scapegoat phrases anywhere.
+- WeakMap design: keys are `HTMLElement` refs, so detached nodes GC normally — no leak surface.
+- `modernScreenshotPromise` module-level cache is compatible with tests because `vi.resetModules()` in `beforeEach` re-imports screenshot on every test, so the cache is per-test.
+- No Claude attribution in commit bodies, PR body, or code comments.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm type-check`: pass
+- `pnpm lint`: pass
+- `pnpm --filter brevwick-sdk test`: pass (7 files, 81 tests)
+- `pnpm --filter brevwick-sdk build`: pass (ESM + CJS, dts)
+- `gh pr checks 20`: pass (check, codecov/patch, codecov/project)
+- `dist/index.js` gzip: 1936 B; 0 `modern-screenshot` refs
+- `dist/screenshot-*.js`: 1 `modern-screenshot` ref
