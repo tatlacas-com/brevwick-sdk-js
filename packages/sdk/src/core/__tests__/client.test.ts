@@ -300,16 +300,19 @@ describe('stub public methods', () => {
     );
   });
 
-  it('captureScreenshot() returns a rejecting Promise (no sync throw)', async () => {
+  it('captureScreenshot() returns a Blob via the screenshot module', async () => {
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi
+        .fn()
+        .mockResolvedValue(
+          new Blob([new Uint8Array([0x89, 0x50])], { type: 'image/png' }),
+        ),
+    }));
     const instance = createBrevwick({ projectKey: KEY_A });
-    const caught = vi.fn();
-    const p = instance.captureScreenshot();
-    expect(p).toBeInstanceOf(Promise);
-    await p.catch(caught);
-    expect(caught).toHaveBeenCalledTimes(1);
-    await expect(instance.captureScreenshot()).rejects.toThrow(
-      /not yet implemented/,
-    );
+    const blob = await instance.captureScreenshot();
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toMatch(/^image\//);
+    vi.doUnmock('modern-screenshot');
   });
 });
 
