@@ -1,7 +1,16 @@
 export type Environment = 'dev' | 'stg' | 'prod';
 
+export interface BrevwickRingsConfig {
+  /** Patch console.error / window.onerror to capture console entries. Default true. */
+  console?: boolean;
+  /** Patch fetch / XMLHttpRequest to capture failed network calls. Default true. */
+  network?: boolean;
+  /** Track history pushState / popstate transitions. Default true. */
+  route?: boolean;
+}
+
 export interface BrevwickConfig {
-  /** Public ingest key, e.g. `pk_live_xxx`. */
+  /** Public ingest key, e.g. `pk_live_xxx` or `pk_test_xxx`. */
   projectKey: string;
   /** Override the default ingest endpoint (https://api.brevwick.com). */
   endpoint?: string;
@@ -10,10 +19,22 @@ export interface BrevwickConfig {
   enabled?: boolean;
   /** Build SHA — included in every report. */
   buildSha?: string;
+  /** Released app version — passed through on every report. */
+  release?: string;
   /** Resolved at submit time; merged into `user_context`. */
   userContext?: () => Record<string, unknown>;
+  /** Opaque user identity merged into reports (id + optional metadata). */
+  user?: { id: string; [key: string]: unknown };
+  /** Per-ring toggles. All default to true. */
+  rings?: BrevwickRingsConfig;
   /** Send `X-Brevwick-Fingerprint-Optout: 1` to skip the salted fingerprint. */
   fingerprintOptOut?: boolean;
+}
+
+export interface FeedbackAttachment {
+  /** PNG / JPEG / WebP / WebM; ≤10 MB each, ≤5 total per report. */
+  blob: Blob;
+  filename?: string;
 }
 
 export interface FeedbackInput {
@@ -21,17 +42,51 @@ export interface FeedbackInput {
   description: string;
   expected?: string;
   actual?: string;
-  /** PNG / JPEG / WebP / WebM. ≤10 MB each, ≤5 total. */
-  attachments?: Blob[];
+  attachments?: Array<Blob | FeedbackAttachment>;
 }
 
 export interface SubmitResult {
   reportId: string;
 }
 
+export interface ConsoleEntry {
+  kind: 'console';
+  level: 'log' | 'info' | 'warn' | 'error' | 'debug';
+  message: string;
+  stack?: string;
+  timestamp: number;
+}
+
+export interface NetworkEntry {
+  kind: 'network';
+  method: string;
+  url: string;
+  status?: number;
+  durationMs?: number;
+  error?: string;
+  timestamp: number;
+}
+
+export interface RouteEntry {
+  kind: 'route';
+  path: string;
+  timestamp: number;
+}
+
+export type RingEntry = ConsoleEntry | NetworkEntry | RouteEntry;
+
 export interface Brevwick {
+  /**
+   * Install rings (console / network / route as configured) and begin capturing
+   * entries. Safe to call more than once; subsequent calls are no-ops while
+   * already installed. No-op entirely in non-browser contexts (SSR, workers).
+   */
+  install(): void;
+  /**
+   * Restore every patched global, drain internal buffers, and move the instance
+   * to the `uninstalled` state. A second call is a no-op.
+   */
+  uninstall(): void;
   submit(input: FeedbackInput): Promise<SubmitResult>;
   captureScreenshot(): Promise<Blob>;
-  /** Installs console + fetch rings. Returns an uninstaller. */
-  install(): () => void;
 }

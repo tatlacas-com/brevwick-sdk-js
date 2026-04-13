@@ -1,17 +1,16 @@
 /**
  * Brevwick — AI-first QA feedback SDK for browser apps.
  *
- * Phase 0: types and redaction primitives only. The full client (rings,
- * screenshot, submit) lands in Phase 4 — see brevwick-ops/docs/brevwick-sdd.md
- * § 12 for the contract.
+ * Public surface is frozen to exactly the symbols re-exported here. See
+ * brevwick-ops/docs/brevwick-sdd.md § 12 for the contract.
  */
+
+export { createBrevwick } from './core/client';
 
 export type {
   Brevwick,
   BrevwickConfig,
-  Environment,
+  FeedbackAttachment,
   FeedbackInput,
   SubmitResult,
 } from './types';
-
-export { redact, redactValue } from './rings/redact';
