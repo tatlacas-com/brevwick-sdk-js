@@ -35,7 +35,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function assertHttpsUrl(value: string, field: string): void {
+/**
+ * Parse + canonicalise so `https://api.brevwick.com` and
+ * `https://API.Brevwick.com/` collapse to the same singleton key. Without
+ * this, a typo in config on the second `createBrevwick` call spawns a
+ * shadow instance that silently diverges from the first.
+ */
+function canonicaliseHttpsUrl(value: string, field: string): string {
   let parsed: URL;
   try {
     parsed = new URL(value);
@@ -45,6 +51,9 @@ function assertHttpsUrl(value: string, field: string): void {
   if (parsed.protocol !== 'https:') {
     throw new BrevwickConfigError(`${field} must use https`);
   }
+  const host = parsed.host.toLowerCase();
+  const path = parsed.pathname.replace(/\/+$/, '');
+  return `https://${host}${path}${parsed.search}`;
 }
 
 function isEnvironment(value: unknown): value is Environment {
@@ -66,14 +75,14 @@ export function validateConfig(input: unknown): ValidatedConfig {
     );
   }
 
-  let endpoint: string = DEFAULT_ENDPOINT;
+  let rawEndpoint: string = DEFAULT_ENDPOINT;
   if (input.endpoint !== undefined) {
     if (typeof input.endpoint !== 'string') {
       throw new BrevwickConfigError('endpoint must be a string');
     }
-    endpoint = input.endpoint;
+    rawEndpoint = input.endpoint;
   }
-  assertHttpsUrl(endpoint, 'endpoint');
+  const endpoint = canonicaliseHttpsUrl(rawEndpoint, 'endpoint');
 
   let environment: Environment | undefined;
   if (input.environment !== undefined) {

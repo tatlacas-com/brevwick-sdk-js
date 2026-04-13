@@ -1,9 +1,15 @@
 /**
- * Internal surface shared between the factory and ring modules. Not exported
- * from the package root — only downstream ring code (landing in #2 / #3) and
- * tests import from `brevwick-sdk/core/internal`.
+ * Internal surface shared between the factory and ring modules. Imported via
+ * relative paths inside this package only — not re-exported from the package
+ * root and intentionally not listed in `package.json` `exports`, so consumer
+ * code can never reach the uninstall-unsafe primitives that live here.
  */
-import type { RingEntry } from '../types';
+import type {
+  ConsoleEntry,
+  NetworkEntry,
+  RingEntry,
+  RouteEntry,
+} from '../types';
 import type { Bus } from './bus';
 import type { RingBuffer } from './buffer';
 import type { ValidatedConfig } from './validate';
@@ -29,9 +35,9 @@ export interface RingDefinition {
 
 export interface BrevwickInternal {
   readonly buffers: {
-    readonly console: RingBuffer<RingEntry>;
-    readonly network: RingBuffer<RingEntry>;
-    readonly route: RingBuffer<RingEntry>;
+    readonly console: RingBuffer<ConsoleEntry>;
+    readonly network: RingBuffer<NetworkEntry>;
+    readonly route: RingBuffer<RouteEntry>;
   };
   readonly bus: Bus<BusEventMap>;
   readonly config: ValidatedConfig;

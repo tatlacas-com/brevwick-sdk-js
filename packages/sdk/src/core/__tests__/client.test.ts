@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  __registerRing,
   __resetBrevwickRegistry,
-  __resetRingRegistry,
+  __setRingsForTesting,
   createBrevwick,
 } from '../client';
 import type { BrevwickInternal, RingDefinition } from '../internal';
@@ -17,12 +16,12 @@ function getInternal(instance: unknown): BrevwickInternal {
 
 beforeEach(() => {
   __resetBrevwickRegistry();
-  __resetRingRegistry();
+  __setRingsForTesting();
 });
 
 afterEach(() => {
   __resetBrevwickRegistry();
-  __resetRingRegistry();
+  __setRingsForTesting();
 });
 
 describe('createBrevwick', () => {
@@ -54,6 +53,20 @@ describe('createBrevwick', () => {
     warn.mockRestore();
   });
 
+  it('collapses endpoint variants onto the same singleton key', () => {
+    // Trailing slash, host casing, and default path all canonicalise to the
+    // same key so a second createBrevwick with a typo-equivalent endpoint
+    // never spawns a shadow instance.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const a = createBrevwick({ projectKey: KEY_A });
+    const b = createBrevwick({
+      projectKey: KEY_A,
+      endpoint: 'https://API.Brevwick.com/',
+    });
+    expect(b).toBe(a);
+    warn.mockRestore();
+  });
+
   it('returns distinct instances when endpoint differs', () => {
     const a = createBrevwick({ projectKey: KEY_A });
     const b = createBrevwick({
@@ -67,6 +80,18 @@ describe('createBrevwick', () => {
     const a = createBrevwick({ projectKey: KEY_A });
     const b = createBrevwick({ projectKey: KEY_B });
     expect(b).not.toBe(a);
+  });
+
+  it('uninstall() evicts the key so a fresh instance is created next time', () => {
+    const first = createBrevwick({ projectKey: KEY_A });
+    first.install();
+    first.uninstall();
+    const second = createBrevwick({ projectKey: KEY_A });
+    // The torn-down handle stays terminal, but the registry cleared so the
+    // next createBrevwick() returns a brand-new, installable instance.
+    expect(second).not.toBe(first);
+    expect(getInternal(second).state()).toBe('idle');
+    expect(() => first.install()).toThrow(/cannot be called after uninstall/);
   });
 });
 
@@ -83,7 +108,7 @@ describe('install / uninstall', () => {
         };
       },
     };
-    __registerRing(ring);
+    __setRingsForTesting([ring]);
 
     const instance = createBrevwick({ projectKey: KEY_A });
     const before = console.error;
@@ -131,9 +156,11 @@ describe('install / uninstall', () => {
         return () => events.push(`teardown:${name}`);
       },
     });
-    __registerRing(mkRing('console'));
-    __registerRing(mkRing('network'));
-    __registerRing(mkRing('route'));
+    __setRingsForTesting([
+      mkRing('console'),
+      mkRing('network'),
+      mkRing('route'),
+    ]);
 
     const instance = createBrevwick({ projectKey: KEY_A });
     instance.install();
@@ -151,20 +178,22 @@ describe('install / uninstall', () => {
 
   it('skips rings whose config flag is false', () => {
     const installed: string[] = [];
-    __registerRing({
-      name: 'console',
-      install: () => {
-        installed.push('console');
-        return () => undefined;
+    __setRingsForTesting([
+      {
+        name: 'console',
+        install: () => {
+          installed.push('console');
+          return () => undefined;
+        },
       },
-    });
-    __registerRing({
-      name: 'network',
-      install: () => {
-        installed.push('network');
-        return () => undefined;
+      {
+        name: 'network',
+        install: () => {
+          installed.push('network');
+          return () => undefined;
+        },
       },
-    });
+    ]);
 
     const instance = createBrevwick({
       projectKey: KEY_A,
@@ -177,20 +206,22 @@ describe('install / uninstall', () => {
 
   it('ring teardown errors do not block sibling teardowns', () => {
     const torn: string[] = [];
-    __registerRing({
-      name: 'console',
-      install: () => () => torn.push('console'),
-    });
-    __registerRing({
-      name: 'network',
-      install: () => () => {
-        throw new Error('boom');
+    __setRingsForTesting([
+      {
+        name: 'console',
+        install: () => () => torn.push('console'),
       },
-    });
-    __registerRing({
-      name: 'route',
-      install: () => () => torn.push('route'),
-    });
+      {
+        name: 'network',
+        install: () => () => {
+          throw new Error('boom');
+        },
+      },
+      {
+        name: 'route',
+        install: () => () => torn.push('route'),
+      },
+    ]);
 
     const instance = createBrevwick({ projectKey: KEY_A });
     instance.install();
@@ -208,21 +239,20 @@ describe('install / uninstall', () => {
     );
   });
 
-  it('__registerRing is idempotent for duplicate names (HMR / test re-import safe)', () => {
-    const installs: string[] = [];
-    const mk = (tag: string): RingDefinition => ({
-      name: 'console',
-      install: () => {
-        installs.push(tag);
-        return () => undefined;
+  it('__setRingsForTesting() with no args restores the default (empty) set', () => {
+    __setRingsForTesting([
+      {
+        name: 'console',
+        install: () => () => undefined,
       },
-    });
-    __registerRing(mk('first'));
-    __registerRing(mk('second')); // same name, must be skipped
-
+    ]);
+    __setRingsForTesting();
     const instance = createBrevwick({ projectKey: KEY_A });
-    instance.install();
-    expect(installs).toEqual(['first']);
+    // With DEFAULT_RINGS empty again, install() completes without touching any ring.
+    expect(() => {
+      instance.install();
+      instance.uninstall();
+    }).not.toThrow();
   });
 });
 

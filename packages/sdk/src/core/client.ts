@@ -1,12 +1,14 @@
 import type {
   Brevwick,
   BrevwickConfig,
+  ConsoleEntry,
   FeedbackInput,
-  RingEntry,
+  NetworkEntry,
+  RouteEntry,
   SubmitResult,
 } from '../types';
 import { createBus } from './bus';
-import { createRingBuffer, type RingBuffer } from './buffer';
+import { createRingBuffer } from './buffer';
 import {
   INTERNAL_KEY,
   type BrevwickInternal,
@@ -18,22 +20,33 @@ import {
 import { validateConfig, type ValidatedConfig } from './validate';
 
 /**
- * Rings are attached in this order when their config flag is true. Ring
- * modules (landing in #2 / #3) register themselves via `__registerRing` so
- * the factory stays ring-agnostic. Order matters: entries emitted during a
- * ring's install run must be observable by later rings' listeners.
+ * Rings attached on install, in this order, when their config flag is true.
+ * Deliberately populated by direct import from ring modules in #2 / #3
+ * rather than by side-effect self-registration: the SDK package declares
+ * `"sideEffects": false`, so any registration-on-import pattern would be
+ * tree-shaken away in consumer builds and the rings would silently vanish
+ * in production. Order matters: entries emitted while a ring installs must
+ * be observable by rings installed later.
  */
-const registeredRings: RingDefinition[] = [];
+const DEFAULT_RINGS: readonly RingDefinition[] = [];
+
+/**
+ * Active ring set. Defaults to {@link DEFAULT_RINGS}; tests swap it via
+ * {@link __setRingsForTesting} to inject fakes without touching module
+ * identity.
+ */
+let activeRings: readonly RingDefinition[] = DEFAULT_RINGS;
 
 interface BrevwickWithInternal extends Brevwick {
   readonly [INTERNAL_KEY]: BrevwickInternal;
 }
 
 /**
- * Singleton registry. Keyed by `projectKey|endpoint` so a tenant pointing
- * the SDK at an alternate ingest (EU shard, test mock) still gets distinct
- * instances. Test code MUST call {@link __resetBrevwickRegistry} between
- * runs — module-scoped state survives Vitest's module graph otherwise.
+ * Singleton registry. Keyed by `projectKey|endpoint` (canonicalised in
+ * {@link validateConfig}) so typo-equivalents never spawn shadow instances.
+ * Entries are evicted on {@link Brevwick.uninstall} so a subsequent
+ * `createBrevwick(sameKey)` call gets a fresh, installable instance — the
+ * instance itself stays terminal once torn down.
  */
 const instances = new Map<string, BrevwickWithInternal>();
 
@@ -45,25 +58,14 @@ function isBrowser(): boolean {
   return typeof window !== 'undefined' && typeof document !== 'undefined';
 }
 
-function bufferFor(
-  entry: RingEntry,
-  buffers: BrevwickInternal['buffers'],
-): RingBuffer<RingEntry> {
-  switch (entry.kind) {
-    case 'console':
-      return buffers.console;
-    case 'network':
-      return buffers.network;
-    case 'route':
-      return buffers.route;
-  }
-}
-
-function build(config: ValidatedConfig): BrevwickWithInternal {
+function build(
+  config: ValidatedConfig,
+  onUninstall: () => void,
+): BrevwickWithInternal {
   const buffers = {
-    console: createRingBuffer<RingEntry>(50),
-    network: createRingBuffer<RingEntry>(50),
-    route: createRingBuffer<RingEntry>(20),
+    console: createRingBuffer<ConsoleEntry>(50),
+    network: createRingBuffer<NetworkEntry>(50),
+    route: createRingBuffer<RouteEntry>(20),
   } as const;
   const bus = createBus<BusEventMap>();
 
@@ -75,7 +77,20 @@ function build(config: ValidatedConfig): BrevwickWithInternal {
     bus,
     config,
     push(entry) {
-      bufferFor(entry, buffers).push(entry);
+      // Inline dispatch keeps per-buffer type narrowing — `bufferFor(entry)`
+      // would widen back to `RingBuffer<RingEntry>` and lose the invariant
+      // that each buffer only holds its own kind.
+      switch (entry.kind) {
+        case 'console':
+          buffers.console.push(entry);
+          break;
+        case 'network':
+          buffers.network.push(entry);
+          break;
+        case 'route':
+          buffers.route.push(entry);
+          break;
+      }
       bus.emit('entry', entry);
     },
     state: () => state,
@@ -84,11 +99,12 @@ function build(config: ValidatedConfig): BrevwickWithInternal {
   function install(): void {
     if (state === 'installed') return;
     // Once torn down, the instance is terminal — re-install would leak
-    // captured buffers and invite double-patched globals. Tenants that
-    // genuinely need a fresh lifecycle should build a new instance.
+    // captured buffers and invite double-patched globals. The registry
+    // already evicted this key on uninstall, so the "create a new instance"
+    // path is just another `createBrevwick(...)` call.
     if (state === 'uninstalled') {
       throw new Error(
-        'Brevwick.install() cannot be called after uninstall(); create a new instance instead',
+        'Brevwick.install() cannot be called after uninstall(); call createBrevwick() again for a fresh instance',
       );
     }
     if (!isBrowser()) return;
@@ -99,7 +115,7 @@ function build(config: ValidatedConfig): BrevwickWithInternal {
       bus,
       push: internal.push,
     };
-    for (const ring of registeredRings) {
+    for (const ring of activeRings) {
       if (!config.rings[ring.name]) continue;
       teardowns.push(ring.install(ctx));
     }
@@ -125,6 +141,7 @@ function build(config: ValidatedConfig): BrevwickWithInternal {
     buffers.route.clear();
     bus.clear();
     state = 'uninstalled';
+    onUninstall();
   }
 
   const instance: Brevwick = {
@@ -141,8 +158,6 @@ function build(config: ValidatedConfig): BrevwickWithInternal {
     },
   };
 
-  // _internal is reachable for downstream rings but intentionally hidden from
-  // enumeration/iteration so it stays off the public surface.
   Object.defineProperty(instance, INTERNAL_KEY, {
     value: internal,
     enumerable: false,
@@ -158,20 +173,25 @@ export function createBrevwick(config: BrevwickConfig): Brevwick {
   const key = instanceKey(validated);
   const existing = instances.get(key);
   if (existing) {
-    // Capture-time console binding would be stronger, but createBrevwick is
-    // called before any ring patches `console.warn`, so the live binding is
-    // the original. Worth revisiting if the ordering ever changes.
+    // createBrevwick runs before any ring patches console, so the live
+    // binding is still the original. Worth revisiting if that ordering
+    // ever changes.
     const originalWarn = (globalThis as { console?: Console }).console?.warn;
-    // Log only the key prefix — full public keys are safe per the SDD but
-    // narrow logs make grep noise smaller and defuse the accidental "log the
-    // secret key" bug class if a live key ever sneaks into dev output.
+    // Log only a prefix — public keys aren't secret per the SDD, but narrow
+    // logs keep grep noise small and defuse the accidental "log the secret
+    // key" bug class if a live key ever sneaks into dev output.
     const prefix = validated.projectKey.slice(0, 12);
     originalWarn?.(
       `[brevwick] createBrevwick called twice for projectKey=${prefix}…; returning existing instance`,
     );
     return existing;
   }
-  const instance = build(validated);
+  const instance = build(validated, () => {
+    // Evict on uninstall so the next createBrevwick() call for this key
+    // returns a fresh, installable instance. The torn-down instance itself
+    // stays terminal — any handle still held by caller code cannot re-install.
+    instances.delete(key);
+  });
   instances.set(key, instance);
   return instance;
 }
@@ -182,16 +202,10 @@ export function __resetBrevwickRegistry(): void {
 }
 
 /**
- * Internal: ring modules call this at module-evaluation time to register
- * themselves with the factory. Duplicate names are ignored (idempotent so
- * HMR / test re-imports stay safe). Not part of the public API.
+ * Test-only: swap in a fake ring set (or restore the default with no args).
+ * Replaces the older `__registerRing` side-effect seam, which was unsafe
+ * under the package's `sideEffects: false` contract.
  */
-export function __registerRing(ring: RingDefinition): void {
-  if (registeredRings.some((r) => r.name === ring.name)) return;
-  registeredRings.push(ring);
-}
-
-/** Test-only: drop ring registrations so each test can inject fakes. */
-export function __resetRingRegistry(): void {
-  registeredRings.length = 0;
+export function __setRingsForTesting(rings?: readonly RingDefinition[]): void {
+  activeRings = rings ?? DEFAULT_RINGS;
 }
