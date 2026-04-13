@@ -83,20 +83,22 @@ function makeTimeoutAbortReason(message: string): Error {
 }
 
 /**
- * Synthesize a tagged-failure result for callers when something inside the
- * submit pipeline ever rejects. The pipeline already routes every failure
- * through `submitError()`, so this only fires on truly unexpected exceptions
- * (e.g. a programmer error in `runSubmit`). Living in the submit module
- * keeps every error-code literal off the eager surface.
+ * Safety net for rejections bubbling out of `runSubmit` after the submit
+ * chunk has already loaded. The pipeline routes every expected failure
+ * through `submitError()`, so this only fires on a programmer error inside
+ * `runSubmit` itself. Living in the submit module keeps every error-code
+ * literal off the eager surface. True chunk-load failures (offline, deploy
+ * mismatch) happen in `core/client.ts` before this module is evaluated —
+ * those reject the outer promise per the `SubmitErrorCode` docs.
  */
-function chunkLoadFailure(e: unknown): SubmitResult {
+function unexpectedSubmitFailure(e: unknown): SubmitResult {
   const message = e instanceof Error ? e.message : String(e);
   return submitError('INGEST_RETRY_EXHAUSTED', message);
 }
 
 /**
  * Eager-wrapper entry point. Delegates to {@link runSubmit} and catches any
- * unexpected rejection so the eager wrapper in `core/client.ts` can be a
+ * post-load rejection so the eager wrapper in `core/client.ts` can be a
  * single `import().then(m => m.dispatchSubmit(...))` — keeping all error
  * literals out of the 2 kB eager-budget chunk.
  */
@@ -104,7 +106,7 @@ export function dispatchSubmit(
   internal: BrevwickInternal,
   input: FeedbackInput,
 ): Promise<SubmitResult> {
-  return runSubmit(internal, input).catch(chunkLoadFailure);
+  return runSubmit(internal, input).catch(unexpectedSubmitFailure);
 }
 
 function redactOptional(value: string | undefined): string | undefined {

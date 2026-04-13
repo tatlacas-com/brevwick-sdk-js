@@ -59,7 +59,15 @@ export interface FeedbackInput {
  *   chars and run through `redact()`) is appended to the message.
  * - `INGEST_RETRY_EXHAUSTED`: the ingest POST hit the maximum retry count
  *   (one initial + two backoffs) on 5xx or thrown-fetch responses and never
- *   succeeded. Also fires for unrecoverable chunk-loading errors.
+ *   succeeded.
+ *
+ * The submit pipeline itself never throws — it always resolves to one of the
+ * codes above. The single documented exception is if the lazy `submit` chunk
+ * itself fails to load (offline, CDN outage, deploy mismatch): that is an
+ * environmental failure before the pipeline runs, and the returned promise
+ * rejects instead of resolving. A rejection is the truthful signal — the
+ * request never reached our ingest. Callers in such hostile environments
+ * may wrap `submit()` in their own `.catch`.
  * - `INGEST_TIMEOUT`: the 30 s total-budget AbortController fired before the
  *   pipeline (presign, PUT, POST, or backoff sleep) completed.
  * - `INGEST_INVALID_RESPONSE`: the ingest endpoint returned 2xx with a body

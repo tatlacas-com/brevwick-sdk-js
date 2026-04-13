@@ -114,3 +114,78 @@ Strong core. The pipeline is well-structured, the never-throws contract is honor
 **Summary for the parent session:**
 
 Verdict: **CHANGES REQUIRED**. Blockers: bundle budget overage (2110 B vs 2048 B), missing cross-repo SDD § 12 update, missing attachment cap enforcement, `config.userContext()` can crack the never-throws contract, no client-side MIME/size validation, test coverage gaps on every auto-collected context field and on the retry-on-throw / RETRY_EXHAUSTED / INVALID_RESPONSE branches. Strong work on the pipeline shape, the retry ladder, and the redaction golden fixture — the bones are right.
+
+## Validation — 2026-04-13
+
+**Verdict**: RETURNED TO FIXER
+
+### Items Confirmed Fixed
+
+- [x] Eager bundle ≤ 2048 B — `gzip -kc packages/sdk/dist/index.js | wc -c` → **2044 B**, confirmed under budget.
+- [x] Dispatcher collapsed — `packages/sdk/src/core/client.ts:158-171` has `submit` and `captureScreenshot` as single-`.then` arrows; `dispatchSubmit` exported from `packages/sdk/src/submit.ts:103-108` owns both happy path and never-throws fallback (`chunkLoadFailure`). Eager chunk dump shows no `INGEST_*` / `ATTACHMENT_UPLOAD_FAILED` / `runSubmit` literals.
+- [x] Attachment validation runs before any presign — `validateAttachments` in `packages/sdk/src/submit.ts:168-193` called at `runSubmit` line 493 before `uploadAttachments`. Count ≤ 5, size ≤ 10 MB, MIME whitelist (image/png, image/jpeg, image/webp, video/webm).
+- [x] `userContext()` throw safety — `readUserContextExtra` at `packages/sdk/src/submit.ts:421-439` wraps in try/catch, pushes a `warn`-level console-ring entry on throw, returns `undefined`. Covered by `submit.test.ts:681-714`.
+- [x] `makeTimeoutAbortReason` — `packages/sdk/src/submit.ts:76-83` falls back to `new Error` with `name = 'TimeoutError'` when `DOMException` is not a global.
+- [x] `putAttachment` header merge — `packages/sdk/src/submit.ts:267-270` spreads `{ 'Content-Type': blob.type, ...(presign.headers ?? {}) }` so presign headers win but Content-Type always lands.
+- [x] Presign response strict-shape check — `packages/sdk/src/submit.ts:249-252` uses `typeof json.object_key !== 'string' || typeof json.upload_url !== 'string'`.
+- [x] 4xx body redacted — `packages/sdk/src/submit.ts:363` wraps `raw.slice(0, 256)` in `redact(...)`. Covered by `submit.test.ts:661-677`.
+- [x] `redactUser` returns `Record<string, unknown>` (not optional) — `packages/sdk/src/submit.ts:139`.
+- [x] `MAX_INGEST_ATTEMPTS` constant — `packages/sdk/src/submit.ts:32`, used at line 343 as `attempt < MAX_INGEST_ATTEMPTS`.
+- [x] Test count grew to 26 cases in `submit.test.ts` covering all listed scenarios (context round-trip, count/size/MIME rejection with presign hit count = 0, retry-on-thrown-fetch, INGEST_RETRY_EXHAUSTED via fake timers, INGEST_INVALID_RESPONSE, 4xx matrix 400/401/403/409/413, 4xx body redaction, userContext throw safety, Authorization header on presign + reports, ring-re-redaction invariant, FeedbackAttachment branch, `display_name` secret redaction).
+- [x] `chunk-split.test.ts` guards submit chunk — lines 50-80 assert base chunk imports submit lazily, has no `INGEST_*` / `runSubmit` / `INGEST_BACKOFFS_MS` literals; lines 88-93 assert gzipped size < 2048.
+- [x] `.changeset/submit-pipeline.md` — minor bump for both `brevwick-sdk` and `brevwick-react`, documents breaking `SubmitResult` change, new `SubmitError`/`SubmitErrorCode`/`FeedbackAttachment` exports.
+- [x] `SDD PR #7` exists and is open — `tatlacas-com/brevwick-ops#7` branch `docs/sdd-submit-result-tagged-union`, +42 -5 to `docs/brevwick-sdd.md`. Diff covers tagged `SubmitResult`, `SubmitError`/`SubmitErrorCode`, `FeedbackAttachment`, `FeedbackInput.attachments` widening, client-side attachment validation, `device_context.locale` / `.sdk`, `route_trail`, SSR lower-bound for `device_context`, `config.user.email` mask, INGEST_REJECTED body redaction.
+- [x] `SubmitErrorCode` JSDoc — each variant documented in `packages/sdk/src/types.ts:49-67`.
+- [x] No Claude attribution anywhere — commits, PR body, code comments all clean.
+
+### Items Returned to Fixer
+
+- [x] **PR #22 body updated.** Body rewritten via `gh api -X PATCH repos/tatlacas-com/brevwick-sdk-js/pulls/22` (the `gh pr edit` GraphQL path tripped on the projects-classic deprecation warning, so used the REST endpoint instead). Confirmed live via `gh pr view 22 --json body`: bundle line now reads "**2044 B gzipped — under the 2 kB (2048 B) budget**"; new "## SDD § 12 update (cross-repo)" section links `tatlacas-com/brevwick-ops#7` (branch `docs/sdd-submit-result-tagged-union`) as the paired contract update; the old "Contract diverges from the SDD" section is gone — SubmitResult tagged-union is now framed as the canonical shape that ops#7 codifies in § 12. The X-Brevwick-SDK loop-guard rationale, wire shape, error codes, and test plan checkboxes are all preserved. No Claude attribution in the body.
+
+### Independent Findings
+
+- None. Architecture is clean (core framework-agnostic, submit lives in its own dynamic-import chunk, no DOM/Node leaks into universal surface), no `any`, no magic numbers (all caps-hoisted), no deep nesting, no dead code, naming is clear, redaction runs on every free-form field before the wire, cross-runtime safety is correct, tests cover every documented failure branch.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm lint`: pass
+- `pnpm type-check`: pass (both packages)
+- `pnpm test`: pass (164/164 sdk, 1/1 react)
+- `pnpm build`: pass (ESM + CJS + DTS for both packages)
+- `gzip -kc packages/sdk/dist/index.js | wc -c`: **2044** (budget 2048)
+- `gh pr checks 22`: pass (check ×2, codecov/patch, codecov/project)
+
+## Validation — 2026-04-13 (re-validation after PR-body fix)
+
+**Verdict**: APPROVED
+
+### Items Confirmed Fixed
+
+- [x] PR #22 body rewritten as claimed — confirmed via `gh pr view 22 --json body`:
+  - Bundle line reads "Eager core chunk (`dist/index.js`): **2044 B gzipped — under the 2 kB (2048 B) budget.**" — no stale "2110" / "62 B over" remaining.
+  - New `## SDD § 12 update (cross-repo)` section links `tatlacas-com/brevwick-ops#7` (`docs/sdd-submit-result-tagged-union`) as the companion SDD contract update.
+  - Old "Contract diverges from the SDD" section is gone; task-prompt deviations preserved under renamed `## Deviations from the task prompt (intentional)` header.
+  - Bullets for attachment validation (≤ 5, ≤ 10 MB, MIME whitelist), `userContext()` throw safety (logged to console ring, submit still succeeds), and 4xx body redaction all present under `## Summary`.
+  - Test plan includes the claimed eight new boxes: happy-path + msw failure branches, attachment validation rejection, throwing `userContext`, redaction golden fixture, `display_name: 'Bearer sk_live_...'` redaction, ring-not-re-redacted invariant, 4xx body redaction, `Authorization: Bearer pk_*` on both presign and reports, `X-Brevwick-SDK` loop-guard assertion, bundle budget recorded.
+  - `chunk-split.test.ts` enforcement of both the no-submit-symbols invariant and the 2048 B ceiling is called out under `## Bundle size`.
+- [x] Checklist `Items Returned to Fixer` entry flipped to `- [x]` at `notes/reviews/pr-22-claude-review.md:143`.
+- [x] Ops PR `tatlacas-com/brevwick-ops#7` — still OPEN, `docs/sdd-submit-result-tagged-union`, +42 -5 against `docs/brevwick-sdd.md`. § 12 diff intact.
+
+### Items Returned to Fixer
+
+- None.
+
+### Independent Findings
+
+- None. No code changes since the prior validation round; a spot-check of the diff (0 file mutations this round — body-only) confirms no drift. No banned scapegoating phrases anywhere in the checklist.
+
+### Tooling (re-run)
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm lint`: pass
+- `pnpm type-check`: pass (sdk + react)
+- `pnpm test`: pass (164/164 sdk, 1/1 react)
+- `pnpm build`: pass (ESM + CJS + DTS, both packages)
+- `gzip -kc packages/sdk/dist/index.js | wc -c`: **2044** (budget 2048)
+- `gh pr checks 22`: pass (check ×2, codecov/patch, codecov/project)
