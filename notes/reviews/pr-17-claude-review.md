@@ -52,7 +52,7 @@ There is, however, one substantive gap against issue #8 that is not called out i
 
 ## Bugs & Gaps
 
-- [x] **`pnpm/action-setup@v4` now pins `version: 10`** in both `release.yml` and `changeset-check.yml`. Explicit coupling replaces the implicit `packageManager` read, so a future action major that reorders resolution can't silently break the publish path.
+- [x] **`pnpm/action-setup@v4` reads pnpm version from `package.json`'s `packageManager: "pnpm@10.27.0"`** in both `release.yml` and `changeset-check.yml` — no explicit `with: { version: … }` block. The earlier attempt to pin `version: 10` conflicted with `packageManager` (CI aborted with `Error: Multiple versions of pnpm specified`) and was reverted in `e37bf20`. Single source of truth kept in `package.json`.
 - [x] **Stale-node_modules-after-bump concern** — no externally-pinned workspace-version devDeps exist today, so the `pnpm install --frozen-lockfile` before `changesets/action` is correct; `pnpm version-packages` refreshes the lockfile via `--lockfile-only` so `changeset publish` reads the updated versions correctly. Flagging in the PR body test-plan so we revisit if a devDep ever pins a workspace package version; not fixing speculatively today per KISS.
 - [x] **Fork guard added.** `release` job now has `if: github.repository == 'tatlacas-com/brevwick-sdk-js'`. Forks pushing to their `main` short-circuit the job entirely — no `id-token` noise, no attempted publish.
 - [x] **`paths:` + required-check interaction acknowledged.** The CLAUDE.md lists `check`, `codecov/patch`, `codecov/project` as required — the `check` job here is named `check` and, with `paths: [packages/**]`, GitHub treats paths-skipped as success only under "Do not require status checks on creation" / "skipped as success". Branch-protection on `main` was verified against the intended semantics: PRs that don't touch `packages/**` bypass this gate (correct — nothing to changeset). Documented in README's "Contributor flow" section (the gate fires *only* when `packages/**` changes). Not switching to a `paths-filter` inside-the-job pattern because the current setup matches the documented branch-protection behaviour and is simpler (KISS).
@@ -83,7 +83,7 @@ There is, however, one substantive gap against issue #8 that is not called out i
 - [x] Conventional commit subject (`chore(release): …`).
 - [x] `Closes #8` in body.
 - [x] Branch name `chore/issue-8-changesets` matches pattern.
-- [x] No Claude attribution anywhere in the diff.
+- [x] No Claude attribution in commit metadata, PR body, or code comments (per `CLAUDE.md`). The `notes/reviews/` path contains the literal string "claude" only as a filename/heading for this review artefact, not as authorship attribution.
 - [x] Follow-up issue #15 exists for the deferred `NPM_TOKEN` secret.
 - [x] **PR body updated to name the first intended published version** (`0.1.0-beta.1` — baseline is `0.1.0-beta.0` and the first real changeset after this PR merges will bump to `0.1.0-beta.1` for the first published artefact).
 
@@ -158,3 +158,43 @@ CI is red on fixer commit `883a7ac`. Two concrete regressions, both introduced b
 ### Tooling
 
 - `gh pr checks 17`: **fail** — both `check` runs (`24355029627`, `24355029651`) fail at pnpm setup and prettier steps respectively. Not re-running `pnpm lint / type-check / test / build` locally because the two reproduced failures are definitive merge-blockers; fixer must push a new commit that turns CI green, at which point tooling re-validation is warranted.
+
+---
+
+## Validation — 2026-04-13 (re-run on fixer commit e37bf20)
+
+**Verdict**: APPROVED
+
+Both returned regressions are gone at HEAD (`e37bf20`), CI is green on the two required `check` runs, and all previously validated items still hold.
+
+### Items Confirmed Fixed (regression pass)
+
+- [x] **pnpm version conflict removed** — `.github/workflows/changeset-check.yml:24` and `.github/workflows/release.yml:24` both use bare `uses: pnpm/action-setup@v4` with no `with: { version: ... }` block. Single source of truth is `package.json`'s `packageManager: "pnpm@10.27.0"`. Confirmed via file inspection at HEAD.
+- [x] **`pnpm format:check` regression fixed** — `.prettierignore:5` contains `notes`. Verified locally: `pnpm format:check` → `All matched files use Prettier code style!` (exit 0).
+
+### Items Confirmed Still Holding (no new regressions)
+
+- [x] Pre-release mode intact — `.changeset/pre.json` has `mode: pre`, `tag: beta`, `initialVersions` pinned to `0.1.0-beta.0`; both package.json files still at `0.1.0-beta.0` with `publishConfig.provenance: true`.
+- [x] SDD cross-repo follow-up `tatlacas-com/brevwick-ops#3` still OPEN.
+- [x] NPM_TOKEN follow-up `tatlacas-com/brevwick-sdk-js#15` still OPEN.
+- [x] Redundant `pnpm build` step absent from `release.yml`; `changesets/action@v1` runs `pnpm release` which chains build+publish exactly once.
+- [x] `BASE_REF` env var + quoted expansion preserved in `changeset-check.yml:19,31`.
+- [x] Fork guard preserved in `release.yml:18` (`if: github.repository == 'tatlacas-com/brevwick-sdk-js'`).
+- [x] eslint ignore pattern widening (`**/dist/`) preserved.
+- [x] No commits or pushes to `main` — fixer commit `e37bf20` is on `chore/issue-8-changesets` only (`git log origin/main..HEAD` shows the three PR commits).
+- [x] No Claude attribution anywhere — `git log --all --grep="Co-Authored-By: Claude"` empty; `e37bf20` authored by Tatenda Caston.
+- [x] Conventional commit subject (`fix(ci): resolve pnpm version conflict and format:check regression`).
+
+### Independent Findings
+
+- None. Diff scope remains release-infra only (workflow YAML + `.prettierignore` + review notes). No runtime code touched; architecture, redaction, bundle budget, cross-runtime safety, and public API surface are all untouched.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm lint`: pass
+- `pnpm type-check`: pass (both `packages/sdk` and `packages/react`)
+- `pnpm format:check`: pass
+- `pnpm test`: pass (sdk 8/8, react 1/1)
+- `pnpm build`: pass (both packages build; sdk and react dist artefacts produced)
+- `gh pr checks 17`: **pass** — both `check` jobs green on commit `e37bf20` (run IDs `24355228695` 39s, `24355228703` 14s).
