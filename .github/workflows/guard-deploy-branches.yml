@@ -1,0 +1,15 @@
+name: Guard deploy branches
+
+on:
+  pull_request:
+    branches: [beta, stable]
+
+jobs:
+  check-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only allow merges from main
+        if: github.head_ref != 'main'
+        run: |
+          echo "::error::Only the 'main' branch can be merged into '${{ github.base_ref }}'. Got '${{ github.head_ref }}'."
+          exit 1
