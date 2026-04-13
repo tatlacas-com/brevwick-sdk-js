@@ -9,9 +9,8 @@ const install = vi.fn();
 const uninstall = vi.fn();
 
 vi.mock('brevwick-sdk', async () => {
-  const actual = await vi.importActual<typeof import('brevwick-sdk')>(
-    'brevwick-sdk',
-  );
+  const actual =
+    await vi.importActual<typeof import('brevwick-sdk')>('brevwick-sdk');
   return {
     ...actual,
     createBrevwick: (_config: BrevwickConfig) =>
@@ -79,8 +78,6 @@ describe('useFeedback', () => {
   });
 
   it('throws when used outside a provider', () => {
-    expect(() => renderHook(() => useFeedback())).toThrow(
-      /BrevwickProvider/,
-    );
+    expect(() => renderHook(() => useFeedback())).toThrow(/BrevwickProvider/);
   });
 });

@@ -9,9 +9,8 @@ const captureScreenshot = vi.fn();
 const createBrevwick = vi.fn<(config: BrevwickConfig) => Brevwick>();
 
 vi.mock('brevwick-sdk', async () => {
-  const actual = await vi.importActual<typeof import('brevwick-sdk')>(
-    'brevwick-sdk',
-  );
+  const actual =
+    await vi.importActual<typeof import('brevwick-sdk')>('brevwick-sdk');
   return {
     ...actual,
     createBrevwick: (config: BrevwickConfig) => createBrevwick(config),
@@ -63,5 +62,34 @@ describe('BrevwickProvider', () => {
     );
     expect(createBrevwick).toHaveBeenCalledTimes(1);
     expect(install).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-creates the instance when a new config object is passed each render', () => {
+    // Documents the memoisation contract: consumers MUST hoist `config` or
+    // wrap it in `useMemo`. Passing a fresh object literal each render cycles
+    // install/uninstall on every render.
+    createBrevwick.mockImplementation(() => makeInstance());
+    const { rerender } = render(
+      <BrevwickProvider config={{ projectKey: 'pk_test_identity_a' }}>
+        <div>child</div>
+      </BrevwickProvider>,
+    );
+    rerender(
+      <BrevwickProvider config={{ projectKey: 'pk_test_identity_a' }}>
+        <div>child</div>
+      </BrevwickProvider>,
+    );
+    rerender(
+      <BrevwickProvider config={{ projectKey: 'pk_test_identity_a' }}>
+        <div>child</div>
+      </BrevwickProvider>,
+    );
+    // Every render yielded a fresh instance, so createBrevwick and install
+    // fire per render. The exact count may vary if React's dev-mode effect
+    // double-invocation is enabled; assert the cycling behaviour rather than
+    // a hard number.
+    expect(createBrevwick).toHaveBeenCalledTimes(3);
+    expect(install.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(uninstall.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -102,4 +102,6 @@ export const BREVWICK_CSS = `
 @keyframes brw-spin { to { transform: rotate(360deg); } }
 .brw-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 .brw-files { margin-top: 6px; font-size: 12px; color: var(--brw-muted); }
+.brw-file-label { display: inline-block; }
+.brw-file-input { display: none; }
 `;
