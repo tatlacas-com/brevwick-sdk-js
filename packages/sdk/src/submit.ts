@@ -24,6 +24,26 @@ const TOTAL_BUDGET_MS = 30_000;
  * total. Matches WT-04: "up to 2 retries on network error / 5xx; never 4xx".
  */
 const INGEST_BACKOFFS_MS = [250, 1000] as const;
+/**
+ * One initial attempt + one entry per backoff = total POST attempts. Hoisted
+ * as a named constant so the loop guard reads as `attempt < MAX_ATTEMPTS`
+ * rather than the off-by-one-looking `attempt <= INGEST_BACKOFFS_MS.length`.
+ */
+const MAX_INGEST_ATTEMPTS = INGEST_BACKOFFS_MS.length + 1;
+
+/**
+ * Per SDD § 7 presign validation. Mirrored client-side so we don't burn a
+ * presign round-trip per attachment when the client knows the request will
+ * be rejected.
+ */
+const ALLOWED_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'video/webm',
+]);
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB per SDD § 7
+const MAX_ATTACHMENT_COUNT = 5; // ≤5 total per FeedbackAttachment JSDoc
 
 interface PresignResponse {
   object_key: string;
@@ -43,8 +63,48 @@ interface ResolvedAttachment {
   size_bytes: number;
 }
 
-function err(code: SubmitErrorCode, message: string): SubmitResult {
+function submitError(code: SubmitErrorCode, message: string): SubmitResult {
   return { ok: false, error: { code, message } satisfies SubmitError };
+}
+
+/**
+ * Cross-runtime aborted-signal exception. `DOMException` is not a global on
+ * Node < 17 and on a few minimal edge runtimes; fall back to a tagged Error
+ * so AbortController.abort(reason) and the catch sites that read `.name`
+ * still see `'TimeoutError'`.
+ */
+function makeTimeoutAbortReason(message: string): Error {
+  if (typeof DOMException === 'function') {
+    return new DOMException(message, 'TimeoutError');
+  }
+  const e = new Error(message);
+  e.name = 'TimeoutError';
+  return e;
+}
+
+/**
+ * Synthesize a tagged-failure result for callers when something inside the
+ * submit pipeline ever rejects. The pipeline already routes every failure
+ * through `submitError()`, so this only fires on truly unexpected exceptions
+ * (e.g. a programmer error in `runSubmit`). Living in the submit module
+ * keeps every error-code literal off the eager surface.
+ */
+function chunkLoadFailure(e: unknown): SubmitResult {
+  const message = e instanceof Error ? e.message : String(e);
+  return submitError('INGEST_RETRY_EXHAUSTED', message);
+}
+
+/**
+ * Eager-wrapper entry point. Delegates to {@link runSubmit} and catches any
+ * unexpected rejection so the eager wrapper in `core/client.ts` can be a
+ * single `import().then(m => m.dispatchSubmit(...))` — keeping all error
+ * literals out of the 2 kB eager-budget chunk.
+ */
+export function dispatchSubmit(
+  internal: BrevwickInternal,
+  input: FeedbackInput,
+): Promise<SubmitResult> {
+  return runSubmit(internal, input).catch(chunkLoadFailure);
 }
 
 function redactOptional(value: string | undefined): string | undefined {
@@ -72,9 +132,11 @@ function maskEmail(email: string): string {
   return `${firstLocal}***@${firstDomain}***.${tld}`;
 }
 
-function redactUser(
-  user: Record<string, unknown>,
-): Record<string, unknown> | undefined {
+/**
+ * Always returns a fresh object — the empty-object case is handled at the
+ * call site by checking `config.user`, so this never needs a sentinel.
+ */
+function redactUser(user: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(user)) {
     if (k === 'id') {
@@ -96,6 +158,38 @@ function toAttachmentDescriptor(entry: Blob | FeedbackAttachment): {
 } {
   if (entry instanceof Blob) return { blob: entry };
   return { blob: entry.blob, filename: entry.filename };
+}
+
+/**
+ * Enforce the FeedbackAttachment public JSDoc contract + SDD § 7 presign
+ * validation client-side, before any network round-trip. Returns the first
+ * violation as a tagged failure; null on success.
+ */
+function validateAttachments(
+  attachments: ReadonlyArray<Blob | FeedbackAttachment>,
+): SubmitResult | null {
+  if (attachments.length > MAX_ATTACHMENT_COUNT) {
+    return submitError(
+      'ATTACHMENT_UPLOAD_FAILED',
+      `attachment count ${attachments.length} exceeds limit of ${MAX_ATTACHMENT_COUNT}`,
+    );
+  }
+  for (let i = 0; i < attachments.length; i++) {
+    const { blob } = toAttachmentDescriptor(attachments[i]!);
+    if (blob.size > MAX_ATTACHMENT_BYTES) {
+      return submitError(
+        'ATTACHMENT_UPLOAD_FAILED',
+        `attachment[${i}] size ${blob.size} exceeds 10 MB limit`,
+      );
+    }
+    if (!ALLOWED_MIMES.has(blob.type)) {
+      return submitError(
+        'ATTACHMENT_UPLOAD_FAILED',
+        `attachment[${i}] mime ${blob.type || '<empty>'} not in allowed list (image/png, image/jpeg, image/webp, video/webm)`,
+      );
+    }
+  }
+  return null;
 }
 
 /**
@@ -150,7 +244,12 @@ async function presignOne(
     throw new Error(`presign ${res.status}`);
   }
   const json = (await res.json()) as PresignResponse;
-  if (!json.object_key || !json.upload_url) {
+  // Strict shape check, not a truthy peek — `{ object_key: 0 }` would slip
+  // past `!json.object_key` and explode opaquely in `putAttachment`.
+  if (
+    typeof json.object_key !== 'string' ||
+    typeof json.upload_url !== 'string'
+  ) {
     throw new Error('presign response missing object_key / upload_url');
   }
   return json;
@@ -161,10 +260,18 @@ async function putAttachment(
   blob: Blob,
   signal: AbortSignal,
 ): Promise<void> {
+  // Merge instead of replace: presign-supplied headers (e.g. signed checksum)
+  // win, but Content-Type always falls back to the blob's MIME so a presign
+  // that returns `{ 'x-amz-checksum-sha256': '…' }` without a Content-Type
+  // does not produce a typeless PUT that R2 would reject.
+  const headers: Record<string, string> = {
+    'Content-Type': blob.type,
+    ...(presign.headers ?? {}),
+  };
   const res = await fetch(presign.upload_url, {
     method: 'PUT',
     signal,
-    headers: presign.headers ?? { 'Content-Type': blob.type },
+    headers,
     body: blob,
   });
   if (!res.ok) {
@@ -188,6 +295,8 @@ async function uploadAttachments(
       mime: blob.type,
       size_bytes: blob.size,
     });
+    // Note: a partial-presign-then-abort scenario can leave an orphaned
+    // R2 object — server-side GC sweeps these. Acceptable for MVP.
   }
   return out;
 }
@@ -231,7 +340,7 @@ async function postReport(
     body: JSON.stringify(payload),
   };
   let lastError = 'network error';
-  for (let attempt = 0; attempt <= INGEST_BACKOFFS_MS.length; attempt++) {
+  for (let attempt = 0; attempt < MAX_INGEST_ATTEMPTS; attempt++) {
     try {
       const { status, body, raw } = await fetchJson<IngestResponse>(
         url,
@@ -240,7 +349,7 @@ async function postReport(
       );
       if (status >= 200 && status < 300) {
         if (!body || typeof body.report_id !== 'string') {
-          return err(
+          return submitError(
             'INGEST_INVALID_RESPONSE',
             `ingest returned ${status} with non-JSON / missing report_id`,
           );
@@ -248,13 +357,19 @@ async function postReport(
         return { ok: true, report_id: body.report_id };
       }
       if (status >= 400 && status < 500) {
-        const detail = raw.length > 0 ? ` — ${raw.slice(0, 256)}` : '';
-        return err('INGEST_REJECTED', `ingest ${status}${detail}`);
+        // Run the server-echoed body through redact() — a misbehaving server
+        // could otherwise reflect Bearer tokens or PII back into our error
+        // message and from there into the caller's error log.
+        const detail = raw.length > 0 ? ` — ${redact(raw.slice(0, 256))}` : '';
+        return submitError('INGEST_REJECTED', `ingest ${status}${detail}`);
       }
       lastError = `ingest ${status}`;
     } catch (e) {
       if (signal.aborted) {
-        return err('INGEST_TIMEOUT', `ingest exceeded ${TOTAL_BUDGET_MS}ms`);
+        return submitError(
+          'INGEST_TIMEOUT',
+          `ingest exceeded ${TOTAL_BUDGET_MS}ms`,
+        );
       }
       lastError = e instanceof Error ? e.message : String(e);
     }
@@ -263,10 +378,64 @@ async function postReport(
     try {
       await wait(next, signal);
     } catch {
-      return err('INGEST_TIMEOUT', `ingest exceeded ${TOTAL_BUDGET_MS}ms`);
+      return submitError(
+        'INGEST_TIMEOUT',
+        `ingest exceeded ${TOTAL_BUDGET_MS}ms`,
+      );
     }
   }
-  return err('INGEST_RETRY_EXHAUSTED', lastError);
+  return submitError('INGEST_RETRY_EXHAUSTED', lastError);
+}
+
+/**
+ * Read SSR-safe device context. Returns `undefined` per field when the
+ * matching global is missing (Node, edge runtime) so JSON serialisation
+ * omits the key — leaving `device_context` as a lower bound rather than
+ * a hard contract.
+ */
+function readDeviceContext(): {
+  ua: string | undefined;
+  locale: string | undefined;
+  viewport: { w: number; h: number } | undefined;
+  routePath: string | undefined;
+} {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : undefined;
+  const locale =
+    typeof navigator !== 'undefined' ? navigator.language : undefined;
+  const viewport =
+    typeof window !== 'undefined'
+      ? { w: window.innerWidth, h: window.innerHeight }
+      : undefined;
+  const routePath =
+    typeof location !== 'undefined'
+      ? `${location.pathname}${location.search}`
+      : undefined;
+  return { ua, locale, viewport, routePath };
+}
+
+/**
+ * Resolve `config.userContext()` safely. A throwing user callback must not
+ * crack the never-throws contract — log via the console ring and treat as
+ * empty so the rest of `user_context` still ships.
+ */
+function readUserContextExtra(
+  internal: BrevwickInternal,
+): Record<string, unknown> | undefined {
+  const { config } = internal;
+  if (!config.userContext) return undefined;
+  try {
+    return config.userContext();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    internal.push({
+      kind: 'console',
+      level: 'warn',
+      message: `[brevwick] userContext() threw: ${message}`,
+      timestamp: Date.now(),
+      count: 1,
+    });
+    return undefined;
+  }
 }
 
 function composePayload(
@@ -275,27 +444,16 @@ function composePayload(
   resolved: ResolvedAttachment[],
 ): Record<string, unknown> {
   const { config, buffers } = internal;
-  const userCtxExtra = config.userContext ? config.userContext() : undefined;
+  const userCtxExtra = readUserContextExtra(internal);
   const userCtx: Record<string, unknown> = {};
   if (config.user) {
-    const redactedUser = redactUser(config.user);
-    if (redactedUser) userCtx.user = redactedUser;
+    userCtx.user = redactUser(config.user);
   }
   if (userCtxExtra) {
     Object.assign(userCtx, redactValue(userCtxExtra));
   }
 
-  const viewport =
-    typeof window !== 'undefined'
-      ? { w: window.innerWidth, h: window.innerHeight }
-      : undefined;
-  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : undefined;
-  const locale =
-    typeof navigator !== 'undefined' ? navigator.language : undefined;
-  const routePath =
-    typeof location !== 'undefined'
-      ? `${location.pathname}${location.search}`
-      : undefined;
+  const { ua, locale, viewport, routePath } = readDeviceContext();
 
   return {
     title: redactOptional(input.title),
@@ -329,10 +487,16 @@ export async function runSubmit(
   input: FeedbackInput,
 ): Promise<SubmitResult> {
   const { config } = internal;
+  const attachments = input.attachments ?? [];
+  // Validate before the first presign round-trip so a bad attachment list
+  // never burns server quota or partially allocates R2 object keys.
+  const validation = validateAttachments(attachments);
+  if (validation) return validation;
+
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort(
-      new DOMException(`submit exceeded ${TOTAL_BUDGET_MS}ms`, 'TimeoutError'),
+      makeTimeoutAbortReason(`submit exceeded ${TOTAL_BUDGET_MS}ms`),
     );
   }, TOTAL_BUDGET_MS);
 
@@ -342,18 +506,18 @@ export async function runSubmit(
       resolved = await uploadAttachments(
         config.endpoint,
         config.projectKey,
-        input.attachments ?? [],
+        attachments,
         controller.signal,
       );
     } catch (e) {
       if (controller.signal.aborted) {
-        return err(
+        return submitError(
           'INGEST_TIMEOUT',
           `submit exceeded ${TOTAL_BUDGET_MS}ms during attachment upload`,
         );
       }
       const message = e instanceof Error ? e.message : String(e);
-      return err('ATTACHMENT_UPLOAD_FAILED', message);
+      return submitError('ATTACHMENT_UPLOAD_FAILED', message);
     }
 
     const payload = composePayload(internal, input, resolved);

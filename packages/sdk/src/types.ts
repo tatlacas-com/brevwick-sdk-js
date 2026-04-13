@@ -45,6 +45,26 @@ export interface FeedbackInput {
   attachments?: Array<Blob | FeedbackAttachment>;
 }
 
+/**
+ * Discriminator for {@link SubmitError}. Every failure path in the submit
+ * pipeline maps to exactly one of these codes.
+ *
+ * - `ATTACHMENT_UPLOAD_FAILED`: client-side validation rejected an
+ *   attachment (count > 5, size > 10 MB, MIME outside the
+ *   image/png|jpeg|webp + video/webm whitelist), or the presign / R2 PUT
+ *   failed before the report POST was reached.
+ * - `INGEST_REJECTED`: the ingest endpoint returned a 4xx (e.g. 422
+ *   QUOTA_EXCEEDED, 413 PAYLOAD_TOO_LARGE). Not retried — the same payload
+ *   would be rejected again. The server-echoed response body (capped at 256
+ *   chars and run through `redact()`) is appended to the message.
+ * - `INGEST_RETRY_EXHAUSTED`: the ingest POST hit the maximum retry count
+ *   (one initial + two backoffs) on 5xx or thrown-fetch responses and never
+ *   succeeded. Also fires for unrecoverable chunk-loading errors.
+ * - `INGEST_TIMEOUT`: the 30 s total-budget AbortController fired before the
+ *   pipeline (presign, PUT, POST, or backoff sleep) completed.
+ * - `INGEST_INVALID_RESPONSE`: the ingest endpoint returned 2xx with a body
+ *   that did not parse as JSON or did not include a string `report_id`.
+ */
 export type SubmitErrorCode =
   | 'ATTACHMENT_UPLOAD_FAILED'
   | 'INGEST_REJECTED'
