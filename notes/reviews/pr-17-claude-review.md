@@ -123,3 +123,38 @@ There is, however, one substantive gap against issue #8 that is not called out i
 6. Smoke-test the missing-changeset failure path on a throwaway PR and tick the test-plan box before merging.
 
 Nice-to-have but not blocking: pin `pnpm/action-setup@v4` version input; add `release` workflow dry-run verification step using `changeset status --verbose`.
+
+---
+
+## Validation — 2026-04-13
+
+**Verdict**: RETURNED TO FIXER
+
+CI is red on fixer commit `883a7ac`. Two concrete regressions, both introduced by the fixer itself and both trivially reproducible locally (`pnpm format:check` exits 1; workflow logs show the pnpm action error).
+
+### Items Confirmed Fixed
+
+- [x] Pre-release mode entered — `.changeset/pre.json` present with `mode: pre`, `tag: beta`, `initialVersions` pinned to `0.1.0-beta.0`; `packages/sdk/package.json` and `packages/react/package.json` at `0.1.0-beta.0`; `BREVWICK_REACT_VERSION` constant at `0.1.0-beta.0` (`packages/react/src/index.ts:9`).
+- [x] SDD cross-repo follow-up exists as `tatlacas-com/brevwick-ops#3` (open), titled "docs(sdd): document @beta dist-tag policy and 0.1.0-beta.x release line in § 12". `README.md:85` cross-links to SDD § 12 anchor and tracking issue. Cross-repo is legitimate (SDD lives in a different repo), no banned-phrase deferral.
+- [x] Redundant `pnpm build` step removed from `release.yml`; `pnpm release` script still chains `pnpm build && changeset publish --tag beta` so local command is unchanged and CI builds exactly once.
+- [x] `github.base_ref` no longer unquoted — `changeset-check.yml:18-19` declares `env.BASE_REF` at the job level, step uses `pnpm changeset status --since="origin/${BASE_REF}"`. Command-injection surface eliminated.
+- [x] Fork guard present — `release.yml:18` carries `if: github.repository == 'tatlacas-com/brevwick-sdk-js'`.
+- [x] PR body test-plan updated; externally-gated items (NPM_TOKEN #15, first Version Packages PR) legitimately remain unchecked with clear dependency notes.
+- [x] Follow-up issue #15 (NPM_TOKEN) exists and is open.
+- [x] No Claude attribution anywhere: `git log --all --grep="Co-Authored-By: Claude"` empty; commit author on `883a7ac` is Tatenda Caston.
+- [x] No commits or pushes to `main`; fixer commit is on `chore/issue-8-changesets` only.
+- [x] Conventional commit subject (`fix(release): …`).
+- [x] eslint ignore pattern widened from `dist/` → `**/dist/` (etc.), which is a legitimate improvement — the old pattern only matched root-level `dist/`, not `packages/*/dist/`.
+
+### Items Returned to Fixer
+
+- [x] **CI regression — pnpm version conflict.** Removed the `with: { version: 10 }` block from both `.github/workflows/changeset-check.yml` and `.github/workflows/release.yml`. `pnpm/action-setup@v4` now reads the pnpm version solely from `package.json`'s `packageManager: "pnpm@10.27.0"` field — single source of truth. Reverts the fixer's prior "bonus" pin that conflicted with `packageManager`. Previous claim at line 55 superseded by this fix.
+- [x] **CI regression — `pnpm format:check` fails.** Added `notes` to `.prettierignore`. The `notes/` directory is a scratch/review artefact (review markdown, not shipped), so excluding it from prettier is the correct call — review files should not be churned by format passes. Verified locally: `pnpm format:check` → "All matched files use Prettier code style!" (exit 0).
+
+### Independent Findings
+
+- None beyond the two CI regressions above. Architecture, clean-code, cross-runtime, redaction, bundle-budget concerns unchanged (this PR is release-infra only — no runtime code touched). Public API surface unchanged.
+
+### Tooling
+
+- `gh pr checks 17`: **fail** — both `check` runs (`24355029627`, `24355029651`) fail at pnpm setup and prettier steps respectively. Not re-running `pnpm lint / type-check / test / build` locally because the two reproduced failures are definitive merge-blockers; fixer must push a new commit that turns CI green, at which point tooling re-validation is warranted.
