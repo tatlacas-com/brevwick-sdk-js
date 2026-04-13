@@ -41,7 +41,8 @@
     "bug-report"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "peerDependencies": {
     "brevwick-sdk": "workspace:*",

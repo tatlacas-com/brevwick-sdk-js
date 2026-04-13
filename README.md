@@ -56,6 +56,39 @@ pnpm type-check
 pnpm format
 ```
 
+## Releasing
+
+Releases are driven by [Changesets](https://github.com/changesets/changesets). The two packages are **linked** (version in lockstep) pre-1.0.
+
+### Contributor flow
+
+1. On any PR that changes `packages/**`, add a changeset:
+
+   ```bash
+   pnpm changeset
+   ```
+
+   Pick the affected package(s), the bump type, and write a short summary. Commit the generated `.changeset/*.md` file.
+
+2. CI (`changeset-check`) fails the PR if no changeset is present.
+
+### Publish flow
+
+- On merge to `main`, the `release` workflow runs `changesets/action@v1`.
+- If pending changesets exist, the action opens (or updates) a **Version Packages** PR that consumes the changesets, bumps both package versions in lockstep, and updates changelogs.
+- **Squash-merging the Version Packages PR** triggers the same workflow on `main`, which then runs `pnpm release` — building and publishing both packages to npm under the `beta` dist-tag with [provenance](https://docs.npmjs.com/generating-provenance-statements).
+- GitHub Releases are generated automatically from the changelog body.
+
+### npm dist-tags
+
+- `npm add brevwick-sdk` resolves to the latest `latest`-tagged version (stable). During the pre-1.0 beta line this may not yet exist.
+- `npm add brevwick-sdk@beta` is the bleeding edge.
+
+### Repo secrets
+
+- `NPM_TOKEN` — automation token with publish rights for `brevwick-sdk` and `brevwick-react`. Set under **Settings → Secrets and variables → Actions**. Required by the `release` workflow; `id-token: write` permission is also granted so npm provenance can attest the build.
+- `GITHUB_TOKEN` — provided by Actions; the workflow requests `contents: write` and `pull-requests: write` so Changesets can open the Version Packages PR and create releases.
+
 ## Status
 
 Phase 0 — scaffolding. The packages publish as `0.0.0` placeholders containing only types and the redaction helpers. Real submit/screenshot/rings land in Phase 4 alongside `brevwick-api` Phase 2.
