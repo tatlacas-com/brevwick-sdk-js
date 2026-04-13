@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  __resetBrevwickRegistry,
-  __setRingsForTesting,
-  createBrevwick,
-} from '../client';
+import { createBrevwick } from '../client';
+import { __resetBrevwickRegistry, __setRingsForTesting } from '../../testing';
 import type { BrevwickInternal, RingDefinition } from '../internal';
 import type { RingEntry } from '../../types';
 

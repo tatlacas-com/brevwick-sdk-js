@@ -8,3 +8,5 @@ Add the network ring: patches `globalThis.fetch` and `XMLHttpRequest.prototype.o
 Grows the public `NetworkEntry` type (all optional fields): `requestBody`, `responseBody`, `requestHeaders`, `responseHeaders`. Existing consumers are source-compatible.
 
 The ring module is dynamic-imported from `install()` and lands in its own async chunk — keeping the eager core bundle under the 2 kB gzip budget mandated by `CLAUDE.md`. Async ring loaders that resolve after `uninstall()` now short-circuit via a generation counter, so late-landing imports never re-patch globals against a terminal instance.
+
+Test-only helpers (`__setRingsForTesting`, `__resetBrevwickRegistry`) moved from the package root to a new `brevwick-sdk/testing` entry point so they never ship in the eager production bundle. Not part of the public contract; consumer code must not import them.

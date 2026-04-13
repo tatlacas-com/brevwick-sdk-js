@@ -189,3 +189,65 @@ None. Network ring architecture is clean (core remains framework-free, React-fre
 - `gh pr checks 21`: **FAIL** — `codecov/project` failing, `check`×2 + `codecov/patch` passing.
 
 NEXT: parent session MUST immediately re-launch `pr-review-fixer` with the regression list — do not wait for user confirmation.
+
+---
+
+## Validation — 2026-04-13 (post-merge)
+
+**Verdict**: RETURNED TO FIXER
+
+HEAD: 84b27b0 (two merge commits from `origin/main` — 1347c29 resolved `tsup.config.ts`, 84b27b0 resolved `client.ts`).
+
+### Items Confirmed Fixed
+
+- [x] All four required GitHub checks pass (`check` ×2, `codecov/patch`, `codecov/project`).
+- [x] Console ring kept lazy-loaded after merge — `DEFAULT_RING_LOADERS` at `packages/sdk/src/core/client.ts:38-41` contains `() => import('../rings/console')` alongside the network loader; no eager import as it was on main.
+- [x] Network ring still lazy-loaded — same array, second entry `() => import('../rings/network')`.
+- [x] Loop guard still origin + path-boundary at `packages/sdk/src/rings/network.ts:253-270` (`makeLoopGuard` closure) — not `startsWith`.
+- [x] XHR uses `load` / `error` / `abort` / `timeout` listeners at `packages/sdk/src/rings/network.ts:499-504` — no `readystatechange`.
+- [x] Header allow-list at `packages/sdk/src/rings/network.ts:28-36` (`HEADER_ALLOWLIST: ReadonlySet<string>`); `sanitiseHeaders` drops anything not in the set.
+- [x] `NetworkEntry` shape unchanged — `requestBody` / `responseBody` / `requestHeaders` / `responseHeaders` at `packages/sdk/src/types.ts:82-88`.
+- [x] 12 coverage tests from 53ce225 all survived the merge (URLSearchParams, ArrayBuffer, TypedArray, FormData, ReadableStream, Request.clone-throw, image/ + octet-stream response, XHR arraybuffer/blob, URL parse catch, async ring loader rejection) — verified by name at `packages/sdk/src/rings/__tests__/network.test.ts` and `packages/sdk/src/core/__tests__/client.test.ts`.
+- [x] Pre-existing regression tests all present (sibling brand host, Request-object body, binary body, XHR loop guard, XHR X-Brevwick-SDK skip, XHR error/abort/timeout, allow-list Forwarded drop, caller-consumes-clone, uninstall-before-async-ring).
+- [x] `pnpm install --frozen-lockfile` / `pnpm type-check` / `pnpm lint` / `pnpm format:check` / `pnpm test` / `pnpm build`: all pass locally.
+- [x] 135 sdk tests + 1 react test pass.
+
+### Items Returned to Fixer
+
+- [x] **Core ESM gzip bundle back under the 2 kB budget: 2043 B (< 2048 B).** Fixer follow-up 2026-04-13:
+
+  **Approach taken**: the validator's Option 3 (separate testing entry) — the cleanest root-cause fix that removes test-only exports from the production bundle without touching PR #20's public surface. Secondary: minor cleanups (inlined `isBrowser()` / `instanceKey()` helpers, shortened the duplicate-createBrevwick warning) to claim the final few bytes.
+
+  - Introduced `packages/sdk/src/core/registry.ts` — pure-data module holding the `RingLoader` type, `DEFAULT_RING_LOADERS` array, `registryState` object (`{ loaders }`), and the `instances` singleton Map. No setter functions.
+  - `packages/sdk/src/core/client.ts` imports only `{ instances, registryState }` from the registry — production code touches *data*, never mutator logic.
+  - New `packages/sdk/src/testing.ts` entry point exports `__setRingsForTesting` / `__resetBrevwickRegistry`. These mutators live only in this entry and never enter the shared chunk that `index.js` imports.
+  - `tsup.config.ts` adds `src/testing.ts` to `entry`; `package.json` `exports` adds `"./testing"` pointing at `dist/testing.{js,cjs,d.ts}`.
+  - Tests updated (`core/__tests__/client.test.ts`, `rings/__tests__/network.test.ts`, `__tests__/screenshot.test.ts`) to import the helpers from `'../../testing'` / `'../testing'`.
+
+  **Why not validator Option 1 (drop standalone `captureScreenshot`)**: the standalone export was added in PR #20 (f6446b5) and, while the package is 0.1.0-beta.0 and unpublished, it is still a documented public surface. Removing it crosses into PR #20's territory; not appropriate here.
+
+  **Why not validator Option 2 alone (inline `DEFAULT_RING_LOADERS`)**: would have saved only ~10–15 B and would not have discharged the full 51-B overshoot. The testing-entry split saves ~40 B of module-level symbols *and* resolves the "test helpers shipping to consumers" code smell at the root.
+
+  **Measurements** (`gzip -c packages/sdk/dist/index.js | wc -c`):
+  - HEAD before fix: **2099 B** (51 B over budget)
+  - After testing-entry split: **2074 B**
+  - After `isBrowser` / `instanceKey` inlining: **2048 B** (equal to budget; still fails "< 2 kB")
+  - After warning-string shorten: **2043 B** ✅ under budget with 5 B headroom
+
+  Changeset updated at `.changeset/network-ring.md` to document the new `brevwick-sdk/testing` entry point.
+
+### Independent Findings
+
+- None beyond the bundle-budget regression above. The merge conflict resolutions in 1347c29 (tsup.config.ts kept main's splitting:true unified config) and 84b27b0 (client.ts converted the eager console import into a loader) are correct on the merits and preserve both PR #19's chunk-split test and PR #21's lazy-loading architecture.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm type-check`: pass
+- `pnpm lint`: pass
+- `pnpm format:check`: pass
+- `pnpm test`: pass (135 sdk + 1 react)
+- `pnpm build`: pass — but core ESM gzip is **2099 B > 2048 B budget** (was 2014 B before merge)
+- `gh pr checks 21`: pass (all four required)
+
+NEXT: parent session MUST immediately re-launch `pr-review-fixer` with the regression list — do not wait for user confirmation.

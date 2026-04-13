@@ -15,58 +15,13 @@ import {
   type BusEventMap,
   type LifecycleState,
   type RingContext,
-  type RingDefinition,
 } from './internal';
+import {
+  instances,
+  registryState,
+  type BrevwickWithInternal,
+} from './registry';
 import { validateConfig, type ValidatedConfig } from './validate';
-
-/**
- * A ring loader is either a ready {@link RingDefinition} or a thunk that
- * resolves to one. The default set uses dynamic-import thunks so each ring
- * module (patching logic, redaction helpers) ships in its own async chunk
- * — keeping the eager core bundle under the 2 kB gzip budget mandated by
- * `CLAUDE.md`. The registry also accepts ready definitions for tests, which
- * inject concrete fakes synchronously via {@link __setRingsForTesting}.
- */
-export type RingLoader = RingDefinition | (() => Promise<RingDefinition>);
-
-/**
- * Rings attached on install, in this order, when their config flag is true.
- * Each entry is lazy-loaded via `import()` so the core eager chunk remains
- * tiny. Order matters: entries emitted while a ring installs must be
- * observable by rings installed later.
- */
-const DEFAULT_RING_LOADERS: readonly RingLoader[] = [
-  () => import('../rings/console').then((m) => m.consoleRing),
-  () => import('../rings/network').then((m) => m.networkRing),
-];
-
-/**
- * Active ring set. Defaults to {@link DEFAULT_RING_LOADERS}; tests swap it
- * via {@link __setRingsForTesting} to inject synchronous fakes without
- * touching module identity.
- */
-let activeRingLoaders: readonly RingLoader[] = DEFAULT_RING_LOADERS;
-
-interface BrevwickWithInternal extends Brevwick {
-  readonly [INTERNAL_KEY]: BrevwickInternal;
-}
-
-/**
- * Singleton registry. Keyed by `projectKey|endpoint` (canonicalised in
- * {@link validateConfig}) so typo-equivalents never spawn shadow instances.
- * Entries are evicted on {@link Brevwick.uninstall} so a subsequent
- * `createBrevwick(sameKey)` call gets a fresh, installable instance — the
- * instance itself stays terminal once torn down.
- */
-const instances = new Map<string, BrevwickWithInternal>();
-
-function instanceKey(config: ValidatedConfig): string {
-  return `${config.projectKey}|${config.endpoint}`;
-}
-
-function isBrowser(): boolean {
-  return typeof window !== 'undefined' && typeof document !== 'undefined';
-}
 
 function build(
   config: ValidatedConfig,
@@ -127,7 +82,8 @@ function build(
         'Brevwick.install() cannot be called after uninstall(); call createBrevwick() again for a fresh instance',
       );
     }
-    if (!isBrowser()) return;
+    if (typeof window === 'undefined' || typeof document === 'undefined')
+      return;
     if (!config.enabled) return;
 
     generation += 1;
@@ -141,7 +97,7 @@ function build(
     state = 'installed';
 
     const pending: Promise<void>[] = [];
-    for (const loader of activeRingLoaders) {
+    for (const loader of registryState.loaders) {
       // Sync loaders resolve immediately; async loaders go through a thunk
       // that we race against the uninstall generation counter.
       if (typeof loader === 'function') {
@@ -223,9 +179,12 @@ function build(
 
 export function createBrevwick(config: BrevwickConfig): Brevwick {
   const validated = validateConfig(config);
-  const key = instanceKey(validated);
+  const key = `${validated.projectKey}|${validated.endpoint}`;
   const existing = instances.get(key);
   if (existing) {
+    // createBrevwick runs before any ring patches console, so the live
+    // binding is still the original. Worth revisiting if that ordering
+    // ever changes.
     // createBrevwick runs before any ring patches console, so the live
     // binding is still the original. Worth revisiting if that ordering
     // ever changes.
@@ -235,7 +194,7 @@ export function createBrevwick(config: BrevwickConfig): Brevwick {
     // key" bug class if a live key ever sneaks into dev output.
     const prefix = validated.projectKey.slice(0, 12);
     originalWarn?.(
-      `[brevwick] createBrevwick called twice for projectKey=${prefix}…; returning existing instance`,
+      `[brevwick] createBrevwick(${prefix}…) called twice; returning existing instance`,
     );
     return existing;
   }
@@ -247,19 +206,4 @@ export function createBrevwick(config: BrevwickConfig): Brevwick {
   });
   instances.set(key, instance);
   return instance;
-}
-
-/** Test-only: drop the singleton registry so each test starts clean. */
-export function __resetBrevwickRegistry(): void {
-  instances.clear();
-}
-
-/**
- * Test-only: swap in a fake ring set (or restore the default with no args).
- * Accepts both sync {@link RingDefinition}s and async loader thunks so
- * tests can choose between "already-loaded fake" and "exercise the real
- * dynamic-import path".
- */
-export function __setRingsForTesting(rings?: readonly RingLoader[]): void {
-  activeRingLoaders = rings ?? DEFAULT_RING_LOADERS;
 }
