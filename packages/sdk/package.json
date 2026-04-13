@@ -43,5 +43,16 @@
   "publishConfig": {
     "access": "public",
     "provenance": true
+  },
+  "peerDependencies": {
+    "modern-screenshot": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "modern-screenshot": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "modern-screenshot": "^4.0.0"
   }
 }
