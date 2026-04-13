@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redact, redactValue } from './redact';
+import { redact, redactValue } from '../redact';
 
 describe('redact', () => {
   it('strips Authorization headers', () => {

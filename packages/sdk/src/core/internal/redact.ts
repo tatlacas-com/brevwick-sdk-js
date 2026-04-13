@@ -2,6 +2,10 @@
  * Client-side redaction. Mirrors the server-side sanitiser in brevwick-api;
  * we redact early so secrets never even leave the device.
  *
+ * Consumed internally by the submit pipeline (issue #4). Not re-exported on
+ * the public surface — callers cannot disable redaction, so there is no
+ * reason for them to reach the primitives.
+ *
  * Patterns:
  * - Authorization / Cookie / Set-Cookie headers
  * - `Bearer <token>`
