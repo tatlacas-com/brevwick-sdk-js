@@ -1,4 +1,4 @@
-# Compilerfish JS SDK
+# Brevwick JS SDK
 
 ## Working Style
 
@@ -29,19 +29,19 @@ If CI is failing, **immediately investigate and fix** — do not ask whether to 
 ```bash
 git fetch origin
 # Branch from origin/main, not local main (may be stale)
-git worktree add ../compilerfish-sdk-js-issue-<N> -b feat/issue-<N>-short-desc origin/main
-cd ../compilerfish-sdk-js-issue-<N>
+git worktree add ../brevwick-sdk-js-issue-<N> -b feat/issue-<N>-short-desc origin/main
+cd ../brevwick-sdk-js-issue-<N>
 ```
 
 **Do not remove worktrees** — the user cleans them up.
 
 ## Project Overview
 
-pnpm workspace publishing two npm packages: `compilerfish-sdk` (core, framework-agnostic) and `compilerfish-react` (React bindings).
+pnpm workspace publishing two npm packages: `brevwick-sdk` (core, framework-agnostic) and `brevwick-react` (React bindings).
 
-The canonical SDK contract lives at [`compilerfish-ops/docs/compilerfish-sdd.md` § 12](https://github.com/tatlacas-com/compilerfish-ops/blob/main/docs/compilerfish-sdd.md#12-client-sdk-contracts). Public API changes require an SDD update in the same PR (cross-repo).
+The canonical SDK contract lives at [`brevwick-ops/docs/brevwick-sdd.md` § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts). Public API changes require an SDD update in the same PR (cross-repo).
 
-**GitHub:** https://github.com/tatlacas-com/compilerfish-sdk-js
+**GitHub:** https://github.com/tatlacas-com/brevwick-sdk-js
 
 ## Common Commands
 
@@ -57,13 +57,13 @@ pnpm format
 Per-package:
 
 ```bash
-pnpm --filter compilerfish-sdk build
-pnpm --filter compilerfish-react test
+pnpm --filter brevwick-sdk build
+pnpm --filter brevwick-react test
 ```
 
 ## Bundle Budget — DO NOT EXCEED
 
-- Core `compilerfish-sdk` initial chunk: **< 2 kB gzip**
+- Core `brevwick-sdk` initial chunk: **< 2 kB gzip**
 - On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
 
 Anything heavy must be dynamic-imported (`await import('modern-screenshot')`) so it doesn't ship until the user clicks the FAB.
