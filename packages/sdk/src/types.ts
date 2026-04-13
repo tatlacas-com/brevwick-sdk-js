@@ -65,6 +65,10 @@ export interface NetworkEntry {
   durationMs?: number;
   error?: string;
   timestamp: number;
+  requestBody?: string;
+  responseBody?: string;
+  requestHeaders?: Record<string, string>;
+  responseHeaders?: Record<string, string>;
 }
 
 export interface RouteEntry {
