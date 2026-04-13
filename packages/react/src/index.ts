@@ -1,12 +1,29 @@
 /**
  * Brevwick React bindings.
  *
- * Phase 0: ships only a placeholder export so the package publishes cleanly.
- * The provider, FAB, and useFeedback hook land in Phase 4 — see
- * brevwick-ops/docs/brevwick-sdd.md § 12 for the React contract.
+ * See brevwick-ops/docs/brevwick-sdd.md § 12 for the React contract.
  */
 
 declare const __BREVWICK_REACT_VERSION__: string;
 
-// Injected at build/test time from packages/react/package.json via tsup/vitest `define`.
+/**
+ * Semantic version of the installed `brevwick-react` package. Surfaced at
+ * runtime so consumers can include it in bug reports or diagnostics.
+ */
 export const BREVWICK_REACT_VERSION: string = __BREVWICK_REACT_VERSION__;
+
+export { BrevwickProvider } from './provider';
+export type { BrevwickProviderProps } from './provider';
+
+export { useFeedback } from './use-feedback';
+export type { FeedbackStatus, UseFeedbackResult } from './use-feedback';
+
+export { FeedbackButton } from './feedback-button';
+export type { FeedbackButtonProps } from './feedback-button';
+
+export type {
+  BrevwickConfig,
+  FeedbackAttachment,
+  FeedbackInput,
+  SubmitResult,
+} from 'brevwick-sdk';

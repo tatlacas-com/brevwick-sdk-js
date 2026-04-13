@@ -23,6 +23,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
+      # Build brevwick-sdk first so brevwick-react's tsc + vitest can resolve
+      # the workspace dep via its published "types"/"import" export entries
+      # (packages/sdk/dist/index.d.ts etc.). Without this, a clean CI checkout
+      # fails type-check with TS2307 on every `from 'brevwick-sdk'` import.
+      - run: pnpm --filter brevwick-sdk build
       - run: pnpm type-check
       - run: pnpm test:cover
       - run: pnpm build
