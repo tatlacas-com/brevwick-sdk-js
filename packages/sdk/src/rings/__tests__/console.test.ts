@@ -234,6 +234,118 @@ describe('console ring', () => {
     expect(console.error).toBe(sentinelError);
   });
 
+  it('coerces non-Error arg types via safeStringify', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    function named(): void {}
+    const sym = Symbol('tag');
+
+    console.error(
+      null,
+      undefined,
+      42,
+      true,
+      1n,
+      named,
+      () => undefined,
+      { a: 1 },
+      circular,
+      sym,
+    );
+
+    expect(entries).toHaveLength(1);
+    const msg = entries[0]?.message ?? '';
+    expect(msg).toContain('null');
+    expect(msg).toContain('undefined');
+    expect(msg).toContain('42');
+    expect(msg).toContain('true');
+    expect(msg).toContain('1');
+    expect(msg).toContain('[function named]');
+    expect(msg).toContain('[function anonymous]');
+    expect(msg).toContain('{"a":1}');
+    expect(msg).toContain('[unserializable]');
+    expect(msg).toContain('Symbol(tag)');
+  });
+
+  it('trims an Error-leader stack while preserving the "Error:" line', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    const fakeStack =
+      'Error: with leader\n' +
+      Array.from(
+        { length: 50 },
+        (_, i) => `    at frame${i} (f.js:${i}:1)`,
+      ).join('\n');
+    const err = new Error('with leader');
+    err.stack = fakeStack;
+    console.error(err);
+
+    const lines = (entries[0]?.stack ?? '').split('\n');
+    expect(lines[0]).toBe('Error: with leader');
+    expect(lines.length).toBe(21); // leader + 20 frames
+  });
+
+  it('trims a frame-leader stack (no "Error:" leader) to 20 frames', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    // Some engines (e.g. Safari) emit stacks whose first line is already a
+    // frame, with no "Error: message" leader. Exercise that branch in trimStack.
+    const fakeStack = Array.from(
+      { length: 50 },
+      (_, i) => `    at frame${i} (f.js:${i}:1)`,
+    ).join('\n');
+    const err = new Error('frame-led');
+    err.stack = fakeStack;
+    console.error(err);
+
+    const lines = (entries[0]?.stack ?? '').split('\n');
+    expect(lines.length).toBe(20);
+    expect(lines[0]).toContain('at frame0');
+    expect(lines[19]).toContain('at frame19');
+  });
+
+  it('dedupes correctly when stacks are absent (firstFrame returns empty)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    // Plain string args have no stack, so firstFrame() hits its "no frame
+    // line" fallback. Two identical stack-less messages should still dedupe.
+    console.error('no-stack');
+    console.error('no-stack');
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.count).toBe(2);
+  });
+
+  it('prunes stale dedupe keys once the map grows past its threshold', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    // Fire 40 distinct messages to push the internal Map past its prune
+    // threshold (32) so the prune branch runs at least once. Entries stay
+    // at 40; the assertion here is that no throw + no dedupe collisions
+    // occurred while the branch executed.
+    for (let i = 0; i < 40; i++) {
+      vi.advanceTimersByTime(1000); // > 500 ms apart so nothing dedupes
+      console.error(`distinct-${i}`);
+    }
+    expect(entries).toHaveLength(40);
+  });
+
   it('never throws from inside console.error even when push misbehaves', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const ctx: RingContext = {
