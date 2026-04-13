@@ -14,7 +14,11 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
@@ -29,7 +33,13 @@
     "url": "git+https://github.com/tatlacas-com/compilerfish-sdk-js.git",
     "directory": "packages/sdk"
   },
-  "keywords": ["compilerfish", "qa", "feedback", "bug-report", "ai"],
+  "keywords": [
+    "compilerfish",
+    "qa",
+    "feedback",
+    "bug-report",
+    "ai"
+  ],
   "publishConfig": {
     "access": "public"
   }

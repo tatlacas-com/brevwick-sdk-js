@@ -55,6 +55,7 @@ pnpm format
 ```
 
 Per-package:
+
 ```bash
 pnpm --filter compilerfish-sdk build
 pnpm --filter compilerfish-react test
@@ -76,6 +77,7 @@ Every payload that leaves the device runs through `redact()` first. Adding a new
 Both packages move together for now (kept in lockstep). Once Phase 4 ships and the API is stable, they may diverge — at that point introduce changesets.
 
 Pre-1.0 (`0.x.y`):
+
 - patch: bug fixes, internal refactors
 - minor: anything else (no SemVer guarantee in 0.x)
 
@@ -89,6 +91,7 @@ main (protected)
 ```
 
 ### Workflow steps
+
 1. `git fetch origin` then create branch from `origin/main` (never from local `main`).
 2. Make changes, commit with conventional commits.
 3. Push branch, create PR with `gh pr create`.
@@ -96,14 +99,17 @@ main (protected)
 5. Wait for CI to pass. Squash-merge into `main` (the only allowed merge method).
 
 ### Rules
+
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - Subject ≤ 72 chars
 - No `Co-Authored-By` headers — no Claude attribution anywhere
 
 ### Branch protection (`main`)
+
 - Squash-merge only; no direct push, no force-push, no deletion.
 - Required status checks: `check`, `codecov/patch`, `codecov/project`.
 - Stale reviews dismissed on new push.
 
 ### Deploy branches
+
 - `beta` and `stable` (if/when introduced) are deploy branches. PRs to them must originate from `main` (enforced by `guard-deploy-branches.yml`).

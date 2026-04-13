@@ -4,10 +4,10 @@ JS/TS SDK for [Compilerfish](https://github.com/tatlacas-com/compilerfish-ops) โ
 
 This is a pnpm workspace publishing two packages to npm:
 
-| Package | Purpose |
-|---------|---------|
-| [`compilerfish-sdk`](./packages/sdk) | Framework-agnostic core. Submit feedback from any browser app. |
-| [`compilerfish-react`](./packages/react) | React provider, floating FAB, `useFeedback` hook. |
+| Package                                  | Purpose                                                        |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| [`compilerfish-sdk`](./packages/sdk)     | Framework-agnostic core. Submit feedback from any browser app. |
+| [`compilerfish-react`](./packages/react) | React provider, floating FAB, `useFeedback` hook.              |
 
 **Canonical contract:** [`compilerfish-ops/docs/compilerfish-sdd.md` ยง 12](https://github.com/tatlacas-com/compilerfish-ops/blob/main/docs/compilerfish-sdd.md#12-client-sdk-contracts).
 
@@ -21,7 +21,7 @@ const cf = createCompilerfish({
   buildSha: process.env.BUILD_SHA,
 });
 
-const uninstall = cf.install();   // installs console + fetch rings
+const uninstall = cf.install(); // installs console + fetch rings
 
 await cf.submit({
   description: 'Customer modal hangs on second open',
@@ -36,7 +36,7 @@ import { CompilerfishProvider, FeedbackButton } from 'compilerfish-react';
 <CompilerfishProvider config={{ projectKey: 'pk_live_...' }}>
   <App />
   <FeedbackButton />
-</CompilerfishProvider>
+</CompilerfishProvider>;
 ```
 
 ## Bundle budget
