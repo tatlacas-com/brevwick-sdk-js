@@ -18,6 +18,7 @@ import {
   type RingDefinition,
 } from './internal';
 import { validateConfig, type ValidatedConfig } from './validate';
+import { consoleRing } from '../rings/console';
 
 /**
  * Rings attached on install, in this order, when their config flag is true.
@@ -28,7 +29,7 @@ import { validateConfig, type ValidatedConfig } from './validate';
  * in production. Order matters: entries emitted while a ring installs must
  * be observable by rings installed later.
  */
-const DEFAULT_RINGS: readonly RingDefinition[] = [];
+const DEFAULT_RINGS: readonly RingDefinition[] = [consoleRing];
 
 /**
  * Active ring set. Defaults to {@link DEFAULT_RINGS}; tests swap it via
