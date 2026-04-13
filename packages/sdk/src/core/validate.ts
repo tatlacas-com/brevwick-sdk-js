@@ -63,6 +63,27 @@ function isEnvironment(value: unknown): value is Environment {
   );
 }
 
+/**
+ * Typed field extractor that enforces runtime type on any optional config
+ * field in one place. Collapses the previous ~8 repeated `if (input.x !==
+ * undefined) { if (typeof x !== '…') throw }` blocks — both a readability
+ * win and the difference between the eager bundle sitting at ~2.0 kB vs
+ * ~2.1 kB gzipped.
+ */
+function expect<T>(
+  obj: Record<string, unknown>,
+  field: string,
+  type: 'string' | 'boolean' | 'function',
+  defaultValue?: T,
+): T | undefined {
+  const v = obj[field];
+  if (v === undefined) return defaultValue;
+  if (typeof v !== type) {
+    throw new BrevwickConfigError(`${field} must be a ${type}`);
+  }
+  return v as T;
+}
+
 export function validateConfig(input: unknown): ValidatedConfig {
   if (!isPlainObject(input)) {
     throw new BrevwickConfigError('config must be an object');
@@ -75,13 +96,12 @@ export function validateConfig(input: unknown): ValidatedConfig {
     );
   }
 
-  let rawEndpoint: string = DEFAULT_ENDPOINT;
-  if (input.endpoint !== undefined) {
-    if (typeof input.endpoint !== 'string') {
-      throw new BrevwickConfigError('endpoint must be a string');
-    }
-    rawEndpoint = input.endpoint;
-  }
+  const rawEndpoint = expect<string>(
+    input,
+    'endpoint',
+    'string',
+    DEFAULT_ENDPOINT,
+  )!;
   const endpoint = canonicaliseHttpsUrl(rawEndpoint, 'endpoint');
 
   let environment: Environment | undefined;
@@ -94,45 +114,20 @@ export function validateConfig(input: unknown): ValidatedConfig {
     environment = input.environment;
   }
 
-  let buildSha: string | undefined;
-  if (input.buildSha !== undefined) {
-    if (typeof input.buildSha !== 'string') {
-      throw new BrevwickConfigError('buildSha must be a string');
-    }
-    buildSha = input.buildSha;
-  }
-
-  let release: string | undefined;
-  if (input.release !== undefined) {
-    if (typeof input.release !== 'string') {
-      throw new BrevwickConfigError('release must be a string');
-    }
-    release = input.release;
-  }
-
-  let enabled = true;
-  if (input.enabled !== undefined) {
-    if (typeof input.enabled !== 'boolean') {
-      throw new BrevwickConfigError('enabled must be a boolean');
-    }
-    enabled = input.enabled;
-  }
-
-  let fingerprintOptOut = false;
-  if (input.fingerprintOptOut !== undefined) {
-    if (typeof input.fingerprintOptOut !== 'boolean') {
-      throw new BrevwickConfigError('fingerprintOptOut must be a boolean');
-    }
-    fingerprintOptOut = input.fingerprintOptOut;
-  }
-
-  let userContext: BrevwickConfig['userContext'];
-  if (input.userContext !== undefined) {
-    if (typeof input.userContext !== 'function') {
-      throw new BrevwickConfigError('userContext must be a function');
-    }
-    userContext = input.userContext as BrevwickConfig['userContext'];
-  }
+  const buildSha = expect<string>(input, 'buildSha', 'string');
+  const release = expect<string>(input, 'release', 'string');
+  const enabled = expect<boolean>(input, 'enabled', 'boolean', true)!;
+  const fingerprintOptOut = expect<boolean>(
+    input,
+    'fingerprintOptOut',
+    'boolean',
+    false,
+  )!;
+  const userContext = expect<BrevwickConfig['userContext']>(
+    input,
+    'userContext',
+    'function',
+  );
 
   let user: BrevwickConfig['user'];
   if (input.user !== undefined) {

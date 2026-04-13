@@ -18,25 +18,33 @@ import {
   type RingDefinition,
 } from './internal';
 import { validateConfig, type ValidatedConfig } from './validate';
-import { networkRing } from '../rings/network';
+
+/**
+ * A ring loader is either a ready {@link RingDefinition} or a thunk that
+ * resolves to one. The default set uses dynamic-import thunks so the ring
+ * module (patching logic, redaction helpers) ships in its own async chunk
+ * — keeping the eager core bundle under the 2 kB gzip budget mandated by
+ * `CLAUDE.md`. The registry also accepts ready definitions for tests, which
+ * inject concrete fakes synchronously via {@link __setRingsForTesting}.
+ */
+export type RingLoader = RingDefinition | (() => Promise<RingDefinition>);
 
 /**
  * Rings attached on install, in this order, when their config flag is true.
- * Deliberately populated by direct import from ring modules in #2 / #3
- * rather than by side-effect self-registration: the SDK package declares
- * `"sideEffects": false`, so any registration-on-import pattern would be
- * tree-shaken away in consumer builds and the rings would silently vanish
- * in production. Order matters: entries emitted while a ring installs must
- * be observable by rings installed later.
+ * Each entry is lazy-loaded via `import()` so the core eager chunk remains
+ * tiny. Order matters: entries emitted while a ring installs must be
+ * observable by rings installed later.
  */
-const DEFAULT_RINGS: readonly RingDefinition[] = [networkRing];
+const DEFAULT_RING_LOADERS: readonly RingLoader[] = [
+  () => import('../rings/network').then((m) => m.networkRing),
+];
 
 /**
- * Active ring set. Defaults to {@link DEFAULT_RINGS}; tests swap it via
- * {@link __setRingsForTesting} to inject fakes without touching module
- * identity.
+ * Active ring set. Defaults to {@link DEFAULT_RING_LOADERS}; tests swap it
+ * via {@link __setRingsForTesting} to inject synchronous fakes without
+ * touching module identity.
  */
-let activeRings: readonly RingDefinition[] = DEFAULT_RINGS;
+let activeRingLoaders: readonly RingLoader[] = DEFAULT_RING_LOADERS;
 
 interface BrevwickWithInternal extends Brevwick {
   readonly [INTERNAL_KEY]: BrevwickInternal;
@@ -72,6 +80,15 @@ function build(
 
   let state: LifecycleState = 'idle';
   let teardowns: Array<() => void> = [];
+  // Generation counter: incremented on every install so an async ring
+  // loader that resolves AFTER uninstall was called can detect the flip
+  // and skip installation. Without this, a dynamic import landing late
+  // would silently re-patch globals against an already-torn-down instance.
+  let generation = 0;
+  // Resolved when every async ring loader from the most recent install
+  // has either mounted or been skipped. Tests await this so they can
+  // safely exercise patched globals; production callers never touch it.
+  let ready: Promise<void> = Promise.resolve();
 
   const internal: BrevwickInternal = {
     buffers,
@@ -95,6 +112,7 @@ function build(
       bus.emit('entry', entry);
     },
     state: () => state,
+    ready: () => ready,
   };
 
   function install(): void {
@@ -111,16 +129,45 @@ function build(
     if (!isBrowser()) return;
     if (!config.enabled) return;
 
+    generation += 1;
+    const thisGeneration = generation;
+
     const ctx: RingContext = {
       config,
       bus,
       push: internal.push,
     };
-    for (const ring of activeRings) {
-      if (!config.rings[ring.name]) continue;
-      teardowns.push(ring.install(ctx));
-    }
     state = 'installed';
+
+    const pending: Promise<void>[] = [];
+    for (const loader of activeRingLoaders) {
+      // Sync loaders resolve immediately; async loaders go through a thunk
+      // that we race against the uninstall generation counter.
+      if (typeof loader === 'function') {
+        pending.push(
+          loader().then(
+            (ring) => {
+              if (generation !== thisGeneration) return;
+              if (state !== 'installed') return;
+              if (!config.rings[ring.name]) return;
+              teardowns.push(ring.install(ctx));
+            },
+            (err: unknown) => {
+              // A single failed ring loader must not take out the SDK.
+              const w = (globalThis as { console?: Console }).console?.warn;
+              w?.(`[brevwick] ring loader failed: ${String(err)}`);
+            },
+          ),
+        );
+      } else {
+        if (!config.rings[loader.name]) continue;
+        teardowns.push(loader.install(ctx));
+      }
+    }
+    ready =
+      pending.length === 0
+        ? Promise.resolve()
+        : Promise.all(pending).then(() => undefined);
   }
 
   function uninstall(): void {
@@ -137,6 +184,9 @@ function build(
       }
     }
     teardowns = [];
+    // Bump generation so any still-pending async loader from this install
+    // short-circuits when it resolves.
+    generation += 1;
     buffers.console.clear();
     buffers.network.clear();
     buffers.route.clear();
@@ -204,9 +254,10 @@ export function __resetBrevwickRegistry(): void {
 
 /**
  * Test-only: swap in a fake ring set (or restore the default with no args).
- * Replaces the older `__registerRing` side-effect seam, which was unsafe
- * under the package's `sideEffects: false` contract.
+ * Accepts both sync {@link RingDefinition}s and async loader thunks so
+ * tests can choose between "already-loaded fake" and "exercise the real
+ * dynamic-import path".
  */
-export function __setRingsForTesting(rings?: readonly RingDefinition[]): void {
-  activeRings = rings ?? DEFAULT_RINGS;
+export function __setRingsForTesting(rings?: readonly RingLoader[]): void {
+  activeRingLoaders = rings ?? DEFAULT_RING_LOADERS;
 }
