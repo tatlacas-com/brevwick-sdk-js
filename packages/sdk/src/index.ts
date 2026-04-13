@@ -10,6 +10,7 @@ export { createBrevwick } from './core/client';
 export type {
   Brevwick,
   BrevwickConfig,
+  Environment,
   FeedbackAttachment,
   FeedbackInput,
   SubmitResult,

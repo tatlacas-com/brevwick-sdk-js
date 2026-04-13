@@ -1,11 +1,11 @@
 export type Environment = 'dev' | 'stg' | 'prod';
 
 export interface BrevwickRingsConfig {
-  /** Patch console.error / window.onerror to capture console entries. Default true. */
+  /** Capture uncaught errors and console.error calls for inclusion in submitted reports. Default true. */
   console?: boolean;
-  /** Patch fetch / XMLHttpRequest to capture failed network calls. Default true. */
+  /** Capture failed network calls so triagers see the request context of the bug. Default true. */
   network?: boolean;
-  /** Track history pushState / popstate transitions. Default true. */
+  /** Record route transitions so reproduction steps include the path the user was on. Default true. */
   route?: boolean;
 }
 
@@ -84,7 +84,8 @@ export interface Brevwick {
   install(): void;
   /**
    * Restore every patched global, drain internal buffers, and move the instance
-   * to the `uninstalled` state. A second call is a no-op.
+   * to the `uninstalled` state. A second call is a no-op. After `uninstall()`,
+   * calling `install()` again is not supported and will throw.
    */
   uninstall(): void;
   submit(input: FeedbackInput): Promise<SubmitResult>;

@@ -1,4 +1,4 @@
-import type { BrevwickConfig } from '../types';
+import type { BrevwickConfig, Environment } from '../types';
 
 export const INVALID_CONFIG_CODE = 'BREVWICK_INVALID_CONFIG';
 
@@ -12,7 +12,7 @@ export class BrevwickConfigError extends Error {
 
 const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
 const DEFAULT_ENDPOINT = 'https://api.brevwick.com';
-const VALID_ENVIRONMENTS = ['dev', 'stg', 'prod'] as const;
+const VALID_ENVIRONMENTS = ['dev', 'stg', 'prod'] as const satisfies readonly Environment[];
 
 export interface ValidatedConfig extends Required<
   Pick<BrevwickConfig, 'projectKey' | 'endpoint'>
@@ -20,7 +20,7 @@ export interface ValidatedConfig extends Required<
   enabled: boolean;
   fingerprintOptOut: boolean;
   rings: { console: boolean; network: boolean; route: boolean };
-  environment?: BrevwickConfig['environment'];
+  environment?: Environment;
   buildSha?: string;
   release?: string;
   userContext?: BrevwickConfig['userContext'];
@@ -43,6 +43,13 @@ function assertHttpsUrl(value: string, field: string): void {
   }
 }
 
+function isEnvironment(value: unknown): value is Environment {
+  return (
+    typeof value === 'string' &&
+    (VALID_ENVIRONMENTS as readonly string[]).includes(value)
+  );
+}
+
 export function validateConfig(input: unknown): ValidatedConfig {
   if (!isPlainObject(input)) {
     throw new BrevwickConfigError('config must be an object');
@@ -55,55 +62,71 @@ export function validateConfig(input: unknown): ValidatedConfig {
     );
   }
 
-  const endpoint = input.endpoint ?? DEFAULT_ENDPOINT;
-  if (typeof endpoint !== 'string') {
-    throw new BrevwickConfigError('endpoint must be a string');
+  let endpoint: string = DEFAULT_ENDPOINT;
+  if (input.endpoint !== undefined) {
+    if (typeof input.endpoint !== 'string') {
+      throw new BrevwickConfigError('endpoint must be a string');
+    }
+    endpoint = input.endpoint;
   }
   assertHttpsUrl(endpoint, 'endpoint');
 
+  let environment: Environment | undefined;
   if (input.environment !== undefined) {
-    if (
-      typeof input.environment !== 'string' ||
-      !VALID_ENVIRONMENTS.includes(
-        input.environment as (typeof VALID_ENVIRONMENTS)[number],
-      )
-    ) {
+    if (!isEnvironment(input.environment)) {
       throw new BrevwickConfigError(
         `environment must be one of ${VALID_ENVIRONMENTS.join(', ')}`,
       );
     }
+    environment = input.environment;
   }
 
-  if (input.buildSha !== undefined && typeof input.buildSha !== 'string') {
-    throw new BrevwickConfigError('buildSha must be a string');
+  let buildSha: string | undefined;
+  if (input.buildSha !== undefined) {
+    if (typeof input.buildSha !== 'string') {
+      throw new BrevwickConfigError('buildSha must be a string');
+    }
+    buildSha = input.buildSha;
   }
 
-  if (input.release !== undefined && typeof input.release !== 'string') {
-    throw new BrevwickConfigError('release must be a string');
+  let release: string | undefined;
+  if (input.release !== undefined) {
+    if (typeof input.release !== 'string') {
+      throw new BrevwickConfigError('release must be a string');
+    }
+    release = input.release;
   }
 
-  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
-    throw new BrevwickConfigError('enabled must be a boolean');
+  let enabled = true;
+  if (input.enabled !== undefined) {
+    if (typeof input.enabled !== 'boolean') {
+      throw new BrevwickConfigError('enabled must be a boolean');
+    }
+    enabled = input.enabled;
   }
 
-  if (
-    input.fingerprintOptOut !== undefined &&
-    typeof input.fingerprintOptOut !== 'boolean'
-  ) {
-    throw new BrevwickConfigError('fingerprintOptOut must be a boolean');
+  let fingerprintOptOut = false;
+  if (input.fingerprintOptOut !== undefined) {
+    if (typeof input.fingerprintOptOut !== 'boolean') {
+      throw new BrevwickConfigError('fingerprintOptOut must be a boolean');
+    }
+    fingerprintOptOut = input.fingerprintOptOut;
   }
 
-  if (
-    input.userContext !== undefined &&
-    typeof input.userContext !== 'function'
-  ) {
-    throw new BrevwickConfigError('userContext must be a function');
+  let userContext: BrevwickConfig['userContext'];
+  if (input.userContext !== undefined) {
+    if (typeof input.userContext !== 'function') {
+      throw new BrevwickConfigError('userContext must be a function');
+    }
+    userContext = input.userContext as BrevwickConfig['userContext'];
   }
 
+  let user: BrevwickConfig['user'];
   if (input.user !== undefined) {
     if (!isPlainObject(input.user) || typeof input.user.id !== 'string') {
       throw new BrevwickConfigError('user must be an object with a string id');
     }
+    user = input.user as BrevwickConfig['user'];
   }
 
   const rawRings = input.rings;
@@ -111,27 +134,31 @@ export function validateConfig(input: unknown): ValidatedConfig {
     throw new BrevwickConfigError('rings must be an object');
   }
   const ringsIn = (rawRings ?? {}) as Record<string, unknown>;
+  const rings: ValidatedConfig['rings'] = {
+    console: true,
+    network: true,
+    route: true,
+  };
   for (const key of ['console', 'network', 'route'] as const) {
-    if (ringsIn[key] !== undefined && typeof ringsIn[key] !== 'boolean') {
-      throw new BrevwickConfigError(`rings.${key} must be a boolean`);
+    const value = ringsIn[key];
+    if (value !== undefined) {
+      if (typeof value !== 'boolean') {
+        throw new BrevwickConfigError(`rings.${key} must be a boolean`);
+      }
+      rings[key] = value;
     }
   }
 
   return {
     projectKey,
     endpoint,
-    enabled: (input.enabled as boolean | undefined) ?? true,
-    fingerprintOptOut:
-      (input.fingerprintOptOut as boolean | undefined) ?? false,
-    rings: {
-      console: (ringsIn.console as boolean | undefined) ?? true,
-      network: (ringsIn.network as boolean | undefined) ?? true,
-      route: (ringsIn.route as boolean | undefined) ?? true,
-    },
-    environment: input.environment as BrevwickConfig['environment'],
-    buildSha: input.buildSha as string | undefined,
-    release: input.release as string | undefined,
-    userContext: input.userContext as BrevwickConfig['userContext'],
-    user: input.user as BrevwickConfig['user'],
+    enabled,
+    fingerprintOptOut,
+    rings,
+    environment,
+    buildSha,
+    release,
+    userContext,
+    user,
   };
 }
