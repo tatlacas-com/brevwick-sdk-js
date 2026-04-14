@@ -28,7 +28,12 @@ Next.js 16 (App Router) example wired up with
 
 ## Environment
 
-| Variable                   | Default                 | Purpose                   |
-| -------------------------- | ----------------------- | ------------------------- |
-| `NEXT_PUBLIC_BREVWICK_KEY` | —                       | Public ingest key         |
-| `NEXT_PUBLIC_API_BASE`     | `http://localhost:8080` | Overrides ingest endpoint |
+Both variables are **required** for this example — it fails closed in-page if
+either is missing. The SDK's own `endpoint` default (`https://api.brevwick.com`)
+is the production SaaS; this example is explicitly scoped to a local
+`brevwick-api` and refuses to fall through to production.
+
+| Variable                   | Required | Purpose                                                              |
+| -------------------------- | -------- | -------------------------------------------------------------------- |
+| `NEXT_PUBLIC_BREVWICK_KEY` | yes      | Public ingest key (`pk_test_…`) — must match the SDK regex.          |
+| `NEXT_PUBLIC_API_BASE`     | yes      | Ingest endpoint, e.g. `http://localhost:8080` for a local container. |

@@ -28,6 +28,14 @@ describe('validateConfig', () => {
       { projectKey: VALID_KEY, endpoint: 123 as unknown as string },
     ],
     ['non-https endpoint', { projectKey: VALID_KEY, endpoint: 'http://x.com' }],
+    [
+      'http with non-loopback subdomain',
+      { projectKey: VALID_KEY, endpoint: 'http://api.example.com' },
+    ],
+    [
+      'ftp endpoint',
+      { projectKey: VALID_KEY, endpoint: 'ftp://localhost:8080' },
+    ],
     ['invalid URL endpoint', { projectKey: VALID_KEY, endpoint: 'not-a-url' }],
     ['bad environment', { projectKey: VALID_KEY, environment: 'production' }],
     ['buildSha not string', { projectKey: VALID_KEY, buildSha: 42 }],
@@ -112,5 +120,38 @@ describe('validateConfig', () => {
   it('accepts enabled=false', () => {
     const cfg = validateConfig({ projectKey: VALID_KEY, enabled: false });
     expect(cfg.enabled).toBe(false);
+  });
+
+  // Loopback HTTP is explicitly allowed so integrators can point the SDK at a
+  // local `brevwick-api` without standing up TLS. Every non-loopback http:
+  // URL still throws via the rejection table above — this block pins the
+  // carve-out. Limited to literal loopback hostnames (`localhost`,
+  // `127.0.0.1`, `[::1]`); `*.localhost` aliases are deliberately NOT
+  // supported because the extra regex branch would blow the < 2.2 kB eager
+  // gzip budget — integrators who need `api.localhost` should use
+  // `127.0.0.1` instead or switch to HTTPS.
+  it.each([
+    ['http://localhost:8080', 'http://localhost:8080'],
+    ['http://localhost', 'http://localhost'],
+    ['http://127.0.0.1:3000', 'http://127.0.0.1:3000'],
+    ['http://[::1]:8080', 'http://[::1]:8080'],
+    // Canonicalisation still strips trailing slashes and lowercases the host.
+    ['http://LocalHost:8080/', 'http://localhost:8080'],
+  ])('accepts loopback http endpoint %s', (endpoint, expected) => {
+    const cfg = validateConfig({ projectKey: VALID_KEY, endpoint });
+    expect(cfg.endpoint).toBe(expected);
+  });
+
+  // Pin the narrower contract: `.localhost` subdomains are NOT accepted.
+  it('rejects http://api.localhost (not in the loopback carve-out)', () => {
+    try {
+      validateConfig({
+        projectKey: VALID_KEY,
+        endpoint: 'http://api.localhost:8080',
+      });
+      throw new Error('expected validateConfig to throw');
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe(INVALID_CONFIG_CODE);
+    }
   });
 });

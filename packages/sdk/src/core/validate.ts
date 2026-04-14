@@ -39,21 +39,32 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * Parse + canonicalise so `https://api.brevwick.com` and
  * `https://API.Brevwick.com/` collapse to the same singleton key. Without
  * this, a typo in config on the second `createBrevwick` call spawns a
- * shadow instance that silently diverges from the first.
+ * shadow instance that silently diverges from the first. `http:` is allowed
+ * only on loopback (`localhost`, `127.0.0.1`, `[::1]`) so integrators can
+ * point at a local `brevwick-api` without standing up TLS; the `URL` parser
+ * lowercases `hostname`/`host` for us. Three inline equality checks beat a
+ * regex by a few gzipped bytes — deliberate, see SDD § 12 bundle budget.
+ * `.localhost` aliases are NOT accepted; use `127.0.0.1` instead.
  */
 function canonicaliseHttpsUrl(value: string, field: string): string {
-  let parsed: URL;
+  let p: URL;
   try {
-    parsed = new URL(value);
+    p = new URL(value);
   } catch {
     throw new BrevwickConfigError(`${field} must be a valid URL`);
   }
-  if (parsed.protocol !== 'https:') {
+  const proto = p.protocol;
+  const h = p.hostname;
+  if (
+    proto !== 'https:' &&
+    !(
+      proto === 'http:' &&
+      (h === 'localhost' || h === '127.0.0.1' || h === '[::1]')
+    )
+  ) {
     throw new BrevwickConfigError(`${field} must use https`);
   }
-  const host = parsed.host.toLowerCase();
-  const path = parsed.pathname.replace(/\/+$/, '');
-  return `https://${host}${path}${parsed.search}`;
+  return `${proto}//${p.host}${p.pathname.replace(/\/+$/, '')}${p.search}`;
 }
 
 function isEnvironment(value: unknown): value is Environment {
