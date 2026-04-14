@@ -1,8 +1,13 @@
 import type { ReactElement } from 'react';
 import { ConfiguredWidget } from './configured-widget';
 
+const PLACEHOLDER_KEY = 'pk_test_replace_me';
+
 export default function Home(): ReactElement {
-  const projectKey = process.env.NEXT_PUBLIC_BREVWICK_KEY ?? '';
+  const rawKey = process.env.NEXT_PUBLIC_BREVWICK_KEY ?? '';
+  // Treat the unedited placeholder as "missing" so integrators don't silently
+  // hit the ingest endpoint with a sentinel key and see 401s.
+  const projectKey = rawKey === PLACEHOLDER_KEY ? '' : rawKey;
 
   return (
     <main
@@ -33,8 +38,8 @@ export default function Home(): ReactElement {
         {!projectKey && (
           <p style={{ color: '#b42318' }}>
             Missing <code>NEXT_PUBLIC_BREVWICK_KEY</code>. Copy{' '}
-            <code>.env.example</code> to <code>.env.local</code>, seed a test
-            key, and restart <code>pnpm dev</code>.
+            <code>.env.example</code> to <code>.env.local</code>, seed a real
+            test key, and reload this page.
           </p>
         )}
       </section>

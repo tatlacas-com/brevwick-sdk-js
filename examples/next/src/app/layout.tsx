@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 export const metadata: Metadata = {
   title: 'Brevwick — Next.js example',
@@ -15,7 +15,7 @@ export default function RootLayout({
   children,
 }: {
   children: ReactNode;
-}): React.ReactElement {
+}): ReactElement {
   return (
     <html lang="en">
       <body
