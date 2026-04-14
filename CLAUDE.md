@@ -63,7 +63,7 @@ pnpm --filter brevwick-react test
 
 ## Bundle Budget — DO NOT EXCEED
 
-- Core `brevwick-sdk` initial chunk: **< 2 kB gzip**
+- Core `brevwick-sdk` initial chunk: **< 2.2 kB gzip** (bumped from 2 kB in issue-9 with the loopback-http carve-out in `canonicaliseHttpsUrl`; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and mirrored in SDD § 12)
 - On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
 
 Anything heavy must be dynamic-imported (`await import('modern-screenshot')`) so it doesn't ship until the user clicks the FAB.
