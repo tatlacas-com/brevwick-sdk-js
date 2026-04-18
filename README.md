@@ -56,6 +56,37 @@ pnpm type-check
 pnpm format
 ```
 
+## Local testing in a host app (pre-publish)
+
+Before a package hits npm, you can consume it from a sibling app checkout (e.g. `tradekit-web`). On Next.js 16+ the `link:` / symlink route does **not** work — Turbopack refuses to resolve packages outside the consumer's project root, even with `transpilePackages` or `turbopack.resolveAlias`. Use a tarball install instead.
+
+**One-shot sync (build → pack → reinstall in the consumer):**
+
+```bash
+scripts/sync-to-tradekit-web.sh
+```
+
+The script defaults to `/home/tatlacas/repos/tradekit/tradekit-web`. Override with `BREVWICK_CONSUMER=/path/to/other/app scripts/sync-to-tradekit-web.sh`. Tarballs land at `packages/{sdk,react}/*.tgz` (git-ignored).
+
+**Consumer-side wiring** (one-time, in the host app's `package.json`):
+
+```json
+{
+  "dependencies": {
+    "brevwick-sdk": "0.1.0-beta.0",
+    "brevwick-react": "0.1.0-beta.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "brevwick-sdk": "file:/abs/path/to/brevwick-sdk-js/packages/sdk/brevwick-sdk-0.1.0-beta.0.tgz",
+      "brevwick-react": "file:/abs/path/to/brevwick-sdk-js/packages/react/brevwick-react-0.1.0-beta.0.tgz"
+    }
+  }
+}
+```
+
+The `dependencies` entries stay after the package publishes to npm; the `pnpm.overrides` block **must be deleted before merging the consumer's PR** (CI installs from npm, not from a local path). Re-run the sync script whenever you change SDK code — there is no live-reload through a tarball.
+
 ## Releasing
 
 Releases are driven by [Changesets](https://github.com/changesets/changesets). The two packages are **linked** (version in lockstep) pre-1.0 and currently in **pre-release mode** (`beta`) — `.changeset/pre.json` pins the tag so `changeset version` emits `0.1.0-beta.x` suffixes until the next `changeset pre exit` (planned for the `0.1.0` stabilisation / tradekit cutover, per issue #8).
