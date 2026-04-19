@@ -221,6 +221,7 @@ Adds a small AI on/off toggle inside the composer footer from WT-A. Widget calls
 **Scope:** `packages/sdk/src/types.ts` adds `use_ai` + `ProjectConfig`; new `packages/sdk/src/config.ts` (dynamic-imported) with `getConfig()`; `packages/sdk/src/submit.ts` `composePayload()` threads `use_ai`; `packages/react/src/feedback-button.tsx` lazy-fetches config on first open and conditionally renders the toggle; tests for the three config states (disabled / forced-on / submitter-choice).
 
 **Depends on:**
+
 - **WT-A (#25)** merged — this worktree mounts its toggle inside the composer footer WT-A created.
 - **brevwick-api#54** merged — adds `use_ai` to the ingest payload contract.
 - **brevwick-api#56** merged — adds the `GET /v1/ingest/config` endpoint.
