@@ -28,6 +28,11 @@ echo "→ packing tarballs"
 
 echo "→ reinstalling in $CONSUMER"
 rm -rf "$CONSUMER/node_modules/brevwick-sdk" "$CONSUMER/node_modules/brevwick-react"
+# pnpm hard-links from its content-addressed store; same filename + same version
+# means it will happily reuse a stale copy. Wipe the .pnpm cache entries and
+# prune the store so the freshly-packed tarball is actually unpacked.
+rm -rf "$CONSUMER"/node_modules/.pnpm/brevwick-sdk@* "$CONSUMER"/node_modules/.pnpm/brevwick-react@*
+pnpm --dir "$CONSUMER" store prune >/dev/null
 pnpm --dir "$CONSUMER" install --no-frozen-lockfile
 
 echo "✓ synced. Restart the consumer's dev server to pick up the new bundle."
