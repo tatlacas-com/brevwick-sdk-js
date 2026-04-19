@@ -323,7 +323,7 @@ describe('<FeedbackButton>', () => {
     fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
     // Panel remains open, confirm inline renders.
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    const confirm = screen.getByRole('alertdialog', {
+    const confirm = screen.getByRole('alert', {
       name: /discard draft/i,
     });
     expect(
@@ -332,7 +332,7 @@ describe('<FeedbackButton>', () => {
 
     // Keep → confirm disappears, draft remains.
     fireEvent.click(within(confirm).getByRole('button', { name: /keep/i }));
-    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('alert', { name: /discard draft/i })).toBeNull();
     expect(getComposer().value).toBe('draft-content');
 
     // Close again → Discard → panel closes and reopens empty.
@@ -608,7 +608,7 @@ describe('<FeedbackButton>', () => {
     // × on the success-state panel: no confirm dialog, panel closes,
     // next open is empty.
     fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
-    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('alert', { name: /discard draft/i })).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
 
     openPanel();
@@ -652,7 +652,7 @@ describe('<FeedbackButton>', () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
-    const confirm = screen.getByRole('alertdialog', {
+    const confirm = screen.getByRole('alert', {
       name: /discard draft/i,
     });
     expect(confirm).toBeInTheDocument();
@@ -745,5 +745,63 @@ describe('<FeedbackButton>', () => {
       name: /hide expected vs actual/i,
     });
     expect(toggleOpen).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('disclosure uses a per-instance id so two buttons do not collide', () => {
+    render(
+      <BrevwickProvider config={{ projectKey: 'pk_test_dupe' }}>
+        <FeedbackButton />
+        <FeedbackButton position="bottom-left" />
+      </BrevwickProvider>,
+    );
+    const fabs = screen.getAllByRole('button', {
+      name: /open feedback form/i,
+    });
+    fireEvent.click(fabs[0]!);
+    fireEvent.click(fabs[1]!);
+    const toggles = screen.getAllByRole('button', {
+      name: /add expected vs actual/i,
+    });
+    const ids = toggles.map((t) => t.getAttribute('aria-controls'));
+    expect(ids[0]).toBeTruthy();
+    expect(ids[1]).toBeTruthy();
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it('file input carries an accessible name directly (not only via <label>)', () => {
+    mount();
+    openPanel();
+    const fileInput = screen
+      .getByRole('dialog')
+      .querySelector('input[type="file"]') as HTMLInputElement;
+    expect(fileInput).toBeTruthy();
+    expect(fileInput).toHaveAttribute('aria-label', 'Attach file');
+  });
+
+  it('discard confirm moves focus to Keep so Enter preserves the draft', () => {
+    mount();
+    openPanel();
+    typeDraft('precious');
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    const keep = screen.getByRole('button', { name: /keep/i });
+    expect(keep).toHaveFocus();
+  });
+
+  it('submits the raw draft so the bubble and payload stay in sync', async () => {
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_ws' });
+    mount();
+    openPanel();
+    // Trailing newlines and whitespace — the user's intentional formatting.
+    typeDraft('  hello world\n\n');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as {
+      description: string;
+      title?: string;
+    };
+    expect(input.description).toBe('  hello world\n\n');
+    // Title still derived from the first non-empty line so it remains useful.
+    expect(input.title).toBe('hello world');
   });
 });

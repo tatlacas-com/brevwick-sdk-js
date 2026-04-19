@@ -109,3 +109,40 @@ The UX rewrite itself is clean — readable subcomponent split, sensible state s
 | `.changeset/chat-panel-redesign.md`                          | added           | Minor bump for `brevwick-react` + lockstep `brevwick-sdk`.                                                                                                                                                                                                     |
 | `brevwick-ops/docs/brevwick-sdd.md` § 12                     | updated         | Sibling PR: https://github.com/tatlacas-com/brevwick-ops/pull/17.                                                                                                                                                                                             |
 | `ai-worktree.md`                                             | formatted       | `pnpm format` applied — prettier clean.                                                                                                                                                                                                                        |
+
+## Validation — 2026-04-19
+
+**Verdict**: APPROVED
+
+### Items Confirmed Fixed
+
+- [x] Missing changeset — `.changeset/chat-panel-redesign.md` present with `brevwick-react: minor` + `brevwick-sdk: minor` lockstep bump; confirmed at changeset file lines 1-4.
+- [x] SDD § 12 updated — cross-repo PR tatlacas-com/brevwick-ops#17 open (not draft); `gh pr diff` confirms all four documented changes (no title form field, derived from description's first line capped at 120 chars; no 1.5s auto-close / persistent success + Send another; no Dialog.Overlay line; Esc/outside-press → minimize-with-preserve). PR body cross-links `brevwick-sdk-js#27`.
+- [x] `pnpm format` — ai-worktree.md diff is one trailing blank line before a markdown list (prettier-clean).
+- [x] `onInteractOutside` double-fire removed — `feedback-button.tsx:333-337`: `Dialog.Content` has no `onInteractOutside` prop. Radix default routes outside-press through `onOpenChange(false)` → `handleMinimize` via `handleOpenChange` (lines 171-180). Minimize fires exactly once.
+- [x] Attachment stable keys — `feedback-button.tsx:86-89` introduces `FileAttachment { id, file }`; `fileIdRef` is a monotonic counter (line 114); `handleFiles` (lines 211-220) increments per file; `removeFile` takes the id (lines 229-231); `Thread` keys by `id` (line 483). Test at `__tests__/feedback-button.test.tsx:683-711` asserts middle-removal of duplicate-named files leaves survivors intact.
+- [x] Enter modifier guard — `feedback-button.tsx:658-670` excludes Shift, Ctrl, Meta, Alt, and `isComposing`. Test at `__tests__/feedback-button.test.tsx:664-681` asserts modifier-plus-Enter does not submit and plain Enter still submits.
+- [x] `COMPOSER_MAX_HEIGHT_PX = 120` exported from `styles.ts:17`, interpolated into CSS at `styles.ts:295`, used in autogrow JS clamp at `feedback-button.tsx:655`. Single source of truth confirmed.
+- [x] Module-level `hasInjectedStyles` dropped — `feedback-button.tsx:59-68` now only probes `document.getElementById(BREVWICK_STYLE_ID)`. HMR-safe.
+- [x] `Thread` imports `FeedbackStatus` from `./use-feedback` — `feedback-button.tsx:21` imports the type alias; `ThreadProps.status` uses it (line 434).
+- [x] × disabled while submitting — `feedback-button.tsx:416` sets `disabled={submitting}`. Success path bypasses dirty-confirm at lines 182-192 (`handleCloseClick` → `handleFullClose` when `succeeded`). Tests at `__tests__/feedback-button.test.tsx:598-617` and `619-639` confirm both behaviours.
+- [x] Submit-resolve-while-minimized pops panel — `feedback-button.tsx:271` (success), `276` (`result.ok === false`), `285` (thrown) all `setOpen(true)`. Tests at `__tests__/feedback-button.test.tsx:518-547` (success pop) and `549-579` (failure pop) prove the behaviour end-to-end.
+- [x] Focus-return on Send another — pending-focus flag at line 292, `handleSendAnother` at 299-302 sets the flag, layout effect at 304-309 consumes it after `SuccessState` unmounts. Test at `__tests__/feedback-button.test.tsx:581-596` asserts `document.activeElement === textarea`.
+- [x] Dark-mode `--brw-chip-bg` bumped to `#253044` — `styles.ts:53` confirmed distinct from `--brw-border: #1e293b` at line 44. Test at `__tests__/feedback-button.test.tsx:713-727` grep-asserts the two CSS vars are different.
+- [x] New tests — 44/44 react tests pass; 172/172 sdk tests pass (216 total). Coverage on `feedback-button.tsx`: 95.37% lines / 81.08% branches — exceeds 80% patch-coverage gate.
+
+### Independent Findings
+
+None. Architecture untouched (sdk/ unchanged, `packages/sdk` gzip still 2.02 kB / 2068 bytes under the 2.2 kB budget), public API unchanged, no new deps, `"use client"` preserved, no `any`, no DOM leaks into core, redaction path untouched (no new payload fields). PR body's "NO new dependencies" rationale for omitting `vitest-axe` is a legitimate constraint-driven trade-off (bundle + dep budget), not scope-dodging — invariants replicated by hand in the suite.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass (lockfile up to date)
+- `pnpm lint`: pass (clean)
+- `pnpm type-check`: pass (sdk + react)
+- `pnpm test`: pass (172 + 44 = 216 green)
+- `pnpm test --coverage` on `brevwick-react`: pass (96.09% lines / 81.73% branches overall, 95.37% / 81.08% on `feedback-button.tsx`)
+- `pnpm build`: pass (react ESM 30.27 kB raw / 7.10 kB gzip; sdk core 2.02 kB gzip; Next.js example builds + type-checks)
+- `gh pr checks 27`: pass on all four required checks (`check` Changeset + `check` CI + `codecov/patch` + `codecov/project`)
+- `gh pr view 17 --repo tatlacas-com/brevwick-ops`: open (not draft); diff confirms the four § 12 changes
+- No Claude attribution in the fix commit, the feature commit, the PR body, the SDD PR body, or code comments (grep clean — only negative mentions in worktree scaffold docs)

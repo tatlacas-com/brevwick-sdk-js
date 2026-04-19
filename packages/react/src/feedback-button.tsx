@@ -5,6 +5,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -249,11 +250,14 @@ export function FeedbackButton({
     for (const { file } of files)
       attachments.push({ blob: file, filename: file.name });
 
-    const trimmed = draft.trim();
-    const derivedTitle = trimmed.split('\n', 1)[0]!.slice(0, 120);
+    // Submit what the user actually sees in their bubble — trimming here
+    // would drop the user's intentional whitespace/newlines on the wire.
+    // `draft.trim().length > 0` above already rejects the whitespace-only
+    // case; for title derivation we still want the first non-empty line.
+    const derivedTitle = draft.trim().split('\n', 1)[0]!.slice(0, 120);
     const input: FeedbackInput = {
       title: derivedTitle,
-      description: trimmed,
+      description: draft,
       expected: expected.trim() || undefined,
       actual: actual.trim() || undefined,
       attachments: attachments.length ? attachments : undefined,
@@ -505,24 +509,49 @@ function Thread({
         </AssistantBubble>
       )}
       {confirmClose && (
-        <div
-          className="brw-confirm"
-          role="alertdialog"
-          aria-label="Discard draft?"
-        >
-          <span className="brw-confirm-msg">Discard your feedback?</span>
-          <button type="button" className="brw-btn" onClick={onCancelClose}>
-            Keep
-          </button>
-          <button
-            type="button"
-            className="brw-btn brw-btn-primary"
-            onClick={onConfirmDiscard}
-          >
-            Discard
-          </button>
-        </div>
+        <DiscardConfirm onCancel={onCancelClose} onConfirm={onConfirmDiscard} />
       )}
+    </div>
+  );
+}
+
+interface DiscardConfirmProps {
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+/**
+ * Inline `role="alert"` confirm — not a true modal dialog. Focus moves to
+ * "Keep" on appearance so a keyboard user can dismiss with Enter without
+ * having to Tab through the surrounding chrome; "Keep" is the non-destructive
+ * default so an accidental Enter preserves the draft.
+ */
+function DiscardConfirm({
+  onCancel,
+  onConfirm,
+}: DiscardConfirmProps): ReactElement {
+  const keepRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    keepRef.current?.focus();
+  }, []);
+  return (
+    <div className="brw-confirm" role="alert" aria-label="Discard draft?">
+      <span className="brw-confirm-msg">Discard your feedback?</span>
+      <button
+        ref={keepRef}
+        type="button"
+        className="brw-btn"
+        onClick={onCancel}
+      >
+        Keep
+      </button>
+      <button
+        type="button"
+        className="brw-btn brw-btn-primary"
+        onClick={onConfirm}
+      >
+        Discard
+      </button>
     </div>
   );
 }
@@ -582,7 +611,9 @@ function DisclosureExpectedActual({
   onExpectedChange,
   onActualChange,
 }: DisclosureProps): ReactElement {
-  const panelId = 'brw-extras-panel';
+  // Per-instance id so rendering multiple <FeedbackButton>s (or two panels
+  // mid-animation) doesn't collide on a shared DOM id and break aria-controls.
+  const panelId = useId();
   return (
     <>
       <button
@@ -680,11 +711,12 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
         >
           <CameraIcon />
         </button>
-        <label className="brw-icon-btn" aria-label="Attach file">
+        <label className="brw-icon-btn">
           <PaperclipIcon />
           <input
             type="file"
             multiple
+            aria-label="Attach file"
             className="brw-file-input"
             onChange={(e) => {
               onAttachFiles(e.target.files);
