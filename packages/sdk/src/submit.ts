@@ -462,6 +462,12 @@ function composePayload(
     description: redact(input.description),
     expected: redactOptional(input.expected),
     actual: redactOptional(input.actual),
+    // Submitter's per-report AI preference (widget toggle). The key is
+    // present only when the caller supplied it so the in-memory payload
+    // matches the wire shape — a later `'use_ai' in payload` check should
+    // mean the same thing before and after JSON.stringify. Booleans are
+    // intentionally NOT run through redact().
+    ...(input.use_ai !== undefined ? { use_ai: input.use_ai } : {}),
     route_path: routePath,
     build_sha: config.buildSha,
     release: config.release,

@@ -13,6 +13,7 @@ export type {
   Environment,
   FeedbackAttachment,
   FeedbackInput,
+  ProjectConfig,
   SubmitError,
   SubmitErrorCode,
   SubmitResult,

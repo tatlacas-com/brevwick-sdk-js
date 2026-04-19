@@ -677,6 +677,51 @@ describe('submit — ingest retry / failure modes', () => {
   });
 });
 
+describe('submit — use_ai threading', () => {
+  it.each([['true', true] as const, ['false', false] as const])(
+    'passes use_ai=%s through to the ingest payload when provided',
+    async (_label, flag) => {
+      installUploadHandlers();
+      let reportBody: Record<string, unknown> | undefined;
+      server.use(
+        http.post(REPORTS_URL, async ({ request }) => {
+          reportBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(
+            { report_id: 'rep_ai', status: 'received' },
+            { status: 202 },
+          );
+        }),
+      );
+      const instance = createBrevwick({ projectKey: KEY });
+      const result = await instance.submit({
+        description: 'd',
+        use_ai: flag,
+      });
+      expect(result.ok).toBe(true);
+      expect(reportBody?.use_ai).toBe(flag);
+    },
+  );
+
+  it('omits use_ai from the payload when not provided', async () => {
+    installUploadHandlers();
+    let reportBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(REPORTS_URL, async ({ request }) => {
+        reportBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { report_id: 'rep_no_ai', status: 'received' },
+          { status: 202 },
+        );
+      }),
+    );
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({ description: 'd' });
+    expect(result.ok).toBe(true);
+    expect(reportBody).toBeDefined();
+    expect('use_ai' in (reportBody ?? {})).toBe(false);
+  });
+});
+
 describe('submit — userContext throw safety', () => {
   it('treats a throwing userContext() as empty extras and still succeeds', async () => {
     installUploadHandlers();

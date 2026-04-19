@@ -43,6 +43,22 @@ export interface FeedbackInput {
   expected?: string;
   actual?: string;
   attachments?: Array<Blob | FeedbackAttachment>;
+  /**
+   * Submitter's per-report AI preference. Only set by the widget when the
+   * project enables `ai_enabled` AND `ai_submitter_choice_allowed`. Omitted
+   * otherwise — the server-side default applies. See SDD § 12.
+   */
+  use_ai?: boolean;
+}
+
+/**
+ * Project-level AI configuration, surfaced by `GET /v1/ingest/config`. The
+ * React widget uses these two booleans to decide whether to show the
+ * submitter-facing "Format with AI" toggle.
+ */
+export interface ProjectConfig {
+  ai_enabled: boolean;
+  ai_submitter_choice_allowed: boolean;
 }
 
 /**
@@ -155,4 +171,12 @@ export interface Brevwick {
   uninstall(): void;
   submit(input: FeedbackInput): Promise<SubmitResult>;
   captureScreenshot(): Promise<Blob>;
+  /**
+   * Fetch project-level AI config from `GET /v1/ingest/config`. Resolves to
+   * `null` on non-2xx, malformed JSON, or thrown fetch — callers should treat
+   * `null` as "no submitter choice, no toggle". Cached per session: the
+   * result of the first invocation is reused for every subsequent call on
+   * the same instance.
+   */
+  getConfig(): Promise<ProjectConfig | null>;
 }

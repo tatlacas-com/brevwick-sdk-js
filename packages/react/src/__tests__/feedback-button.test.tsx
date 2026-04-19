@@ -7,10 +7,16 @@ import {
   within,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Brevwick, BrevwickConfig, SubmitResult } from 'brevwick-sdk';
+import type {
+  Brevwick,
+  BrevwickConfig,
+  ProjectConfig,
+  SubmitResult,
+} from 'brevwick-sdk';
 
 const submit = vi.fn<(input: unknown) => Promise<SubmitResult>>();
 const captureScreenshot = vi.fn<() => Promise<Blob>>();
+const getConfig = vi.fn<() => Promise<ProjectConfig | null>>();
 const install = vi.fn();
 const uninstall = vi.fn();
 
@@ -25,6 +31,7 @@ vi.mock('brevwick-sdk', async () => {
         uninstall,
         submit,
         captureScreenshot,
+        getConfig,
       }) as unknown as Brevwick,
   };
 });
@@ -46,6 +53,9 @@ beforeEach(() => {
       URL as unknown as { revokeObjectURL: (u: string) => void }
     ).revokeObjectURL = () => undefined;
   }
+  // Existing render tests expect the AI toggle to stay hidden unless they
+  // opt into a config shape that enables it, so default getConfig to null.
+  getConfig.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -803,5 +813,170 @@ describe('<FeedbackButton>', () => {
     expect(input.description).toBe('  hello world\n\n');
     // Title still derived from the first non-empty line so it remains useful.
     expect(input.title).toBe('hello world');
+  });
+});
+
+describe('<FeedbackButton> — Use AI toggle', () => {
+  async function mountAndOpen(): Promise<void> {
+    mount();
+    openPanel();
+    // Flush the getConfig() microtask so the ProjectConfig state settles.
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  function queryAiToggle(): HTMLElement | null {
+    return screen.queryByRole('switch', { name: /format with ai/i });
+  }
+
+  it('does not fetch config on mount — only on first panel open', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    mount();
+    // Mount alone must not touch the network-bound config endpoint — the
+    // "zero-cost until opened" property is the whole point of lazy fetch.
+    expect(getConfig).not.toHaveBeenCalled();
+    openPanel();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('only fetches once across multiple opens (cache reused)', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    await mountAndOpen();
+    expect(getConfig).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /^minimize$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    openPanel();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the toggle when ai_enabled=false and omits use_ai from submit', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: false,
+      ai_submitter_choice_allowed: true,
+    });
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_disabled' });
+    await mountAndOpen();
+    expect(queryAiToggle()).toBeNull();
+    typeDraft('hi');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as Record<string, unknown>;
+    expect('use_ai' in input).toBe(false);
+  });
+
+  it('hides the toggle when choice is not allowed and omits use_ai', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_forced_on' });
+    await mountAndOpen();
+    expect(queryAiToggle()).toBeNull();
+    typeDraft('admin-forced');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as Record<string, unknown>;
+    expect('use_ai' in input).toBe(false);
+  });
+
+  it('renders the toggle default-on when ai_enabled + choice_allowed, payload carries use_ai=true', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_choice_on' });
+    await mountAndOpen();
+    const toggle = queryAiToggle();
+    expect(toggle).not.toBeNull();
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(toggle!.className).toMatch(/brw-aitoggle--on/);
+
+    typeDraft('with ai');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as Record<string, unknown>;
+    expect(input.use_ai).toBe(true);
+  });
+
+  it('click flips the toggle off and payload carries use_ai=false', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_choice_off' });
+    await mountAndOpen();
+    const toggle = queryAiToggle()!;
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle.className).not.toMatch(/brw-aitoggle--on/);
+
+    typeDraft('without ai');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as Record<string, unknown>;
+    expect(input.use_ai).toBe(false);
+  });
+
+  it('Space toggles when focused (keyboard a11y)', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    await mountAndOpen();
+    const toggle = queryAiToggle()!;
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: ' ' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    fireEvent.keyDown(toggle, { key: ' ' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('config fetch resolves to null → widget still works, no toggle, use_ai omitted', async () => {
+    getConfig.mockResolvedValue(null);
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_null_cfg' });
+    await mountAndOpen();
+    expect(queryAiToggle()).toBeNull();
+    typeDraft('fallback');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    expect(onSubmitSpy).toHaveBeenCalledWith({
+      ok: true,
+      report_id: 'rep_null_cfg',
+    });
+    const input = submit.mock.calls[0]![0] as Record<string, unknown>;
+    expect('use_ai' in input).toBe(false);
+  });
+
+  it('config fetch rejects → no toggle, submit still works and omits use_ai', async () => {
+    getConfig.mockRejectedValueOnce(new Error('cfg boom'));
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_cfg_err' });
+    await mountAndOpen();
+    expect(queryAiToggle()).toBeNull();
+    typeDraft('cfg error path');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as Record<string, unknown>;
+    expect('use_ai' in input).toBe(false);
   });
 });
