@@ -179,9 +179,14 @@ function build(
       ),
     getConfig: (): Promise<ProjectConfig | null> => {
       if (configPromise) return configPromise;
-      configPromise = import('../config').then((m) =>
-        m.fetchConfig(config.endpoint, config.projectKey),
-      );
+      // `.catch(() => null)` covers the dynamic-import failure path
+      // (offline / CDN / deploy mismatch) so the public "never throws,
+      // resolves to null on failure" contract in types.ts holds. Without
+      // this, a one-time chunk-load failure would be cached as a rejected
+      // promise and every subsequent call would keep rejecting.
+      configPromise = import('../config')
+        .then((m) => m.fetchConfig(config.endpoint, config.projectKey))
+        .catch(() => null);
       return configPromise;
     },
   };
