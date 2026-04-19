@@ -6,6 +6,16 @@
  */
 export const BREVWICK_STYLE_ID = 'brevwick-react-styles';
 
+/**
+ * Maximum autogrow height of the composer textarea in pixels.
+ *
+ * Shared between JS (the autogrow effect sets `style.height` against
+ * `scrollHeight` bounded by this) and CSS (`.brw-composer-input` uses
+ * the same value as `max-height`). Single source of truth so a designer
+ * bumping the ceiling does not drift the two out of sync.
+ */
+export const COMPOSER_MAX_HEIGHT_PX = 120;
+
 export const BREVWICK_CSS = `
 .brw-root {
   --brw-bg: #ffffff;
@@ -38,7 +48,9 @@ export const BREVWICK_CSS = `
     --brw-bubble-assistant-bg: #1e293b;
     --brw-bubble-user-bg: #f8fafc;
     --brw-bubble-user-fg: #0f172a;
-    --brw-chip-bg: #1e293b;
+    /* chip bg is one step brighter than --brw-border (#1e293b) so the chip's
+       1px border stays visible against the chip body in dark mode. */
+    --brw-chip-bg: #253044;
     --brw-composer-bg: #0b1220;
     --brw-divider: #1e293b;
   }
@@ -280,7 +292,7 @@ export const BREVWICK_CSS = `
 .brw-composer-input {
   flex: 1;
   min-height: 34px;
-  max-height: 120px;
+  max-height: ${COMPOSER_MAX_HEIGHT_PX}px;
   box-sizing: border-box;
   padding: 8px 10px;
   font: inherit;

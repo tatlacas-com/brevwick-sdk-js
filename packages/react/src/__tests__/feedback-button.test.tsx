@@ -482,6 +482,268 @@ describe('<FeedbackButton>', () => {
     expect(BREVWICK_CSS).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.brw-panel[^{]*\{[^}]*animation:\s*none/,
     );
+    // FAB hover transition must also be disabled under reduced-motion so a
+    // CSS edit that drops the `.brw-fab { transition: none; }` rule is
+    // caught by the test suite.
+    expect(BREVWICK_CSS).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.brw-fab[^{]*\{[^}]*transition:\s*none/,
+    );
     expect(BREVWICK_STYLE_ID).toBe('brevwick-react-styles');
+  });
+
+  it('Esc minimizes (preserves draft + attachments), does not destroy state', async () => {
+    const blob = new Blob(['x'], { type: 'image/png' });
+    captureScreenshot.mockResolvedValueOnce(blob);
+    mount();
+    openPanel();
+    typeDraft('draft survives esc');
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /attach screenshot/i }),
+      );
+    });
+
+    // Radix's dialog listens on the document; target the dialog content.
+    const dialog = screen.getByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    openPanel();
+    expect(getComposer().value).toBe('draft survives esc');
+    expect(
+      screen.getByRole('button', { name: /remove screenshot/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('submit resolving while minimized pops the panel back open with success', async () => {
+    let release: (r: SubmitResult) => void = () => undefined;
+    submit.mockReturnValueOnce(
+      new Promise<SubmitResult>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    typeDraft('hello while hidden');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+
+    // Minimize mid-submit.
+    fireEvent.click(screen.getByRole('button', { name: /^minimize$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // Resolve the in-flight submit successfully. The panel must pop back
+    // open so the user actually sees the confirmation — a silent success
+    // while hidden is the worst-of-three outcomes.
+    await act(async () => {
+      release({ ok: true, report_id: 'rep_after_min' });
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(/on its way/i),
+    );
+  });
+
+  it('submit failure resolving while minimized pops the panel back open with alert', async () => {
+    let release: (r: SubmitResult) => void = () => undefined;
+    submit.mockReturnValueOnce(
+      new Promise<SubmitResult>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    typeDraft('hello failure');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^minimize$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await act(async () => {
+      release({
+        ok: false,
+        error: { code: 'INGEST_REJECTED', message: 'quota' },
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByText(/quota/i, { selector: '[role="alert"]' }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('"Send another" returns focus to the composer textarea', async () => {
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_focus' });
+    mount();
+    openPanel();
+    typeDraft('will send');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /send another/i }));
+    });
+    const textarea = getComposer();
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it('close on a success-state panel dismisses without a confirm', async () => {
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_succ_close' });
+    mount();
+    openPanel();
+    typeDraft('landing');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    // × on the success-state panel: no confirm dialog, panel closes,
+    // next open is empty.
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    openPanel();
+    expect(getComposer().value).toBe('');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('close button is disabled while a submit is in flight', async () => {
+    let release: (r: SubmitResult) => void = () => undefined;
+    submit.mockReturnValueOnce(
+      new Promise<SubmitResult>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    typeDraft('pending');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    expect(
+      screen.getByRole('button', { name: /^close$/i }) as HTMLButtonElement,
+    ).toBeDisabled();
+    await act(async () => {
+      release({ ok: true, report_id: 'rep_unblock' });
+      await Promise.resolve();
+    });
+  });
+
+  it('submit rejects → × shows the discard confirm with the draft still populated', async () => {
+    submit.mockRejectedValueOnce(new Error('ingest down'));
+    mount();
+    openPanel();
+    typeDraft('will fail');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    // Status is back to 'error', close should no longer be disabled.
+    expect(
+      screen.getByText(/ingest down/i, { selector: '[role="alert"]' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    const confirm = screen.getByRole('alertdialog', {
+      name: /discard draft/i,
+    });
+    expect(confirm).toBeInTheDocument();
+    // Keep → the draft is still in the composer.
+    fireEvent.click(within(confirm).getByRole('button', { name: /keep/i }));
+    expect(getComposer().value).toBe('will fail');
+  });
+
+  it('Enter+Ctrl/Meta/Alt does not submit (reserved for platform shortcuts)', async () => {
+    mount();
+    openPanel();
+    typeDraft('modifier guard');
+    const textarea = getComposer();
+
+    fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
+    fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true });
+    fireEvent.keyDown(textarea, { key: 'Enter', altKey: true });
+    expect(submit).not.toHaveBeenCalled();
+
+    // Plain Enter still submits.
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_mod' });
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+    });
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('attachment chips use stable keys (removing a middle duplicate-named file keeps survivors)', () => {
+    mount();
+    openPanel();
+
+    const input = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    expect(input).toBeTruthy();
+    const a = new File(['a'], 'log.txt', { type: 'text/plain' });
+    const b = new File(['bb'], 'log.txt', { type: 'text/plain' });
+    const c = new File(['ccc'], 'log.txt', { type: 'text/plain' });
+    // happy-dom FileList: build via DataTransfer
+    const dt = new DataTransfer();
+    dt.items.add(a);
+    dt.items.add(b);
+    dt.items.add(c);
+    fireEvent.change(input, { target: { files: dt.files } });
+
+    const removeButtons = screen.getAllByRole('button', {
+      name: /remove log\.txt/i,
+    });
+    expect(removeButtons).toHaveLength(3);
+
+    // Remove the middle chip. Survivors (0 and 2) must still render.
+    fireEvent.click(removeButtons[1]!);
+    expect(
+      screen.getAllByRole('button', { name: /remove log\.txt/i }),
+    ).toHaveLength(2);
+  });
+
+  it('dark-mode chip background is distinct from the border colour (contrast)', () => {
+    // Pull the dark-mode block out and assert --brw-chip-bg is not the same
+    // as --brw-border — a regression where they match hides the chip's 1px
+    // border in dark mode.
+    const darkBlock = BREVWICK_CSS.match(
+      /@media \(prefers-color-scheme: dark\)[\s\S]*?\n\s*\}\n\s*\}/,
+    );
+    expect(darkBlock).not.toBeNull();
+    const block = darkBlock![0];
+    const borderMatch = block.match(/--brw-border:\s*([^;]+);/);
+    const chipBgMatch = block.match(/--brw-chip-bg:\s*([^;]+);/);
+    expect(borderMatch).not.toBeNull();
+    expect(chipBgMatch).not.toBeNull();
+    expect(chipBgMatch![1]!.trim()).not.toBe(borderMatch![1]!.trim());
+  });
+
+  it('composer textarea carries an accessible name (aria-label)', () => {
+    mount();
+    openPanel();
+    const textarea = getComposer();
+    expect(textarea).toHaveAttribute('aria-label', 'Feedback message');
+  });
+
+  it('disclosure toggle flips aria-expanded in both states', () => {
+    mount();
+    openPanel();
+    const toggle = screen.getByRole('button', {
+      name: /add expected vs actual/i,
+    });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    const toggleOpen = screen.getByRole('button', {
+      name: /hide expected vs actual/i,
+    });
+    expect(toggleOpen).toHaveAttribute('aria-expanded', 'true');
   });
 });

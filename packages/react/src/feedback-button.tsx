@@ -2,8 +2,10 @@
 
 import * as Dialog from '@radix-ui/react-dialog';
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useState,
@@ -16,8 +18,12 @@ import type {
   FeedbackInput,
   SubmitResult,
 } from 'brevwick-sdk';
-import { useFeedback } from './use-feedback';
-import { BREVWICK_CSS, BREVWICK_STYLE_ID } from './styles';
+import { useFeedback, type FeedbackStatus } from './use-feedback';
+import {
+  BREVWICK_CSS,
+  BREVWICK_STYLE_ID,
+  COMPOSER_MAX_HEIGHT_PX,
+} from './styles';
 
 /**
  * Props for {@link FeedbackButton}. See SDD § 12 for the React contract.
@@ -44,26 +50,20 @@ const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 /**
- * Module-level guard so the <style> tag is inserted at most once per session
- * regardless of how many <FeedbackButton>s mount. React does not dedupe
- * `<style>` by id, so render-time injection would produce duplicates for
- * consumers who render multiple buttons.
+ * Injects the bundled <style> tag on first mount. The DOM probe by id is
+ * the single source of truth: React does not dedupe `<style>` by id, so the
+ * guard prevents duplicates when multiple <FeedbackButton>s mount, and it is
+ * robust under Fast Refresh / HMR (which would otherwise read a stale
+ * module-level flag against a teardown'd style node).
  */
-let hasInjectedStyles = false;
-
 function useBrevwickStyles(): void {
   useIsomorphicLayoutEffect(() => {
-    if (hasInjectedStyles) return;
     if (typeof document === 'undefined') return;
-    if (document.getElementById(BREVWICK_STYLE_ID)) {
-      hasInjectedStyles = true;
-      return;
-    }
+    if (document.getElementById(BREVWICK_STYLE_ID)) return;
     const el = document.createElement('style');
     el.id = BREVWICK_STYLE_ID;
     el.textContent = BREVWICK_CSS;
     document.head.appendChild(el);
-    hasInjectedStyles = true;
   }, []);
 }
 
@@ -76,6 +76,16 @@ function formatSize(bytes: number): string {
 interface ScreenshotAttachment {
   readonly blob: Blob;
   readonly url: string;
+}
+
+/**
+ * Monotonic id attached to each uploaded file at insert time. Using `name` or
+ * the index as the React key would cause duplicate-named files or removals
+ * of middle items to reconcile surviving chips against the wrong slots.
+ */
+interface FileAttachment {
+  readonly id: number;
+  readonly file: File;
 }
 
 export function FeedbackButton({
@@ -95,12 +105,14 @@ export function FeedbackButton({
   const [screenshot, setScreenshot] = useState<ScreenshotAttachment | null>(
     null,
   );
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<readonly FileAttachment[]>([]);
   const [confirmClose, setConfirmClose] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [succeeded, setSucceeded] = useState(false);
   const mountedRef = useRef(true);
   const screenshotUrlRef = useRef<string | null>(null);
+  const fileIdRef = useRef(0);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   useBrevwickStyles();
 
@@ -198,7 +210,13 @@ export function FeedbackButton({
 
   const handleFiles = useCallback((list: FileList | null) => {
     if (!list || list.length === 0) return;
-    setFiles((prev) => [...prev, ...Array.from(list)]);
+    setFiles((prev) => {
+      const next = Array.from(list).map<FileAttachment>((file) => ({
+        id: ++fileIdRef.current,
+        file,
+      }));
+      return [...prev, ...next];
+    });
   }, []);
 
   const removeScreenshot = useCallback(() => {
@@ -208,8 +226,8 @@ export function FeedbackButton({
     });
   }, []);
 
-  const removeFile = useCallback((index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+  const removeFile = useCallback((id: number) => {
+    setFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
   const doSubmit = useCallback(async () => {
@@ -228,7 +246,8 @@ export function FeedbackButton({
         filename: `screenshot.${ext}`,
       });
     }
-    for (const f of files) attachments.push({ blob: f, filename: f.name });
+    for (const { file } of files)
+      attachments.push({ blob: file, filename: file.name });
 
     const trimmed = draft.trim();
     const derivedTitle = trimmed.split('\n', 1)[0]!.slice(0, 120);
@@ -246,8 +265,15 @@ export function FeedbackButton({
       onSubmit?.(result);
       if (result.ok) {
         setSucceeded(true);
+        // If the user minimized mid-submit, pop the panel back open so the
+        // success confirmation is actually seen. A silent success while
+        // hidden leaves the user unsure whether their report landed.
+        setOpen(true);
       } else {
         setSubmitError(result.error.message);
+        // Same reasoning for a failed submit: the error alert belongs in
+        // front of the user, not buried behind a minimized panel.
+        setOpen(true);
       }
     } catch (err) {
       if (!mountedRef.current) return;
@@ -256,8 +282,31 @@ export function FeedbackButton({
           ? err.message
           : 'We could not submit your feedback. Please try again.';
       setSubmitError(message);
+      setOpen(true);
     }
   }, [actual, draft, expected, files, onSubmit, screenshot, status, submit]);
+
+  // Pending-focus flag: "Send another" needs to focus the composer, but the
+  // composer only remounts after the SuccessState unmounts. A layout effect
+  // below consumes the flag after the composer is in the tree.
+  const [focusComposerPending, setFocusComposerPending] = useState(false);
+
+  /**
+   * "Send another" — reset back to the empty Thread+Composer and move focus
+   * into the composer textarea so keyboard users aren't dumped onto whatever
+   * Radix's focus-trap picks next (the close button, in practice).
+   */
+  const handleSendAnother = useCallback(() => {
+    resetAll();
+    setFocusComposerPending(true);
+  }, [resetAll]);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!focusComposerPending) return;
+    if (!composerRef.current) return;
+    composerRef.current.focus();
+    setFocusComposerPending(false);
+  }, [focusComposerPending, succeeded]);
 
   if (hidden) return null;
 
@@ -285,16 +334,14 @@ export function FeedbackButton({
           data-brevwick-skip=""
           className={`${rootClassName} brw-panel ${panelPosClass}`}
           aria-describedby={undefined}
-          onInteractOutside={(e) => {
-            // Overlay-click semantics: treat the same as Esc (minimize, preserve).
-            // Radix already routes through onOpenChange, so no extra state work.
-            e.preventDefault();
-            handleMinimize();
-          }}
         >
-          <PanelHeader onMinimize={handleMinimize} onClose={handleCloseClick} />
+          <PanelHeader
+            submitting={status === 'submitting'}
+            onMinimize={handleMinimize}
+            onClose={handleCloseClick}
+          />
           {succeeded ? (
-            <SuccessState onSendAnother={resetAll} />
+            <SuccessState onSendAnother={handleSendAnother} />
           ) : (
             <Thread
               greeting={GREETING}
@@ -318,6 +365,7 @@ export function FeedbackButton({
           )}
           {!succeeded && (
             <Composer
+              ref={composerRef}
               draft={draft}
               submitting={status === 'submitting'}
               onDraftChange={setDraft}
@@ -333,11 +381,16 @@ export function FeedbackButton({
 }
 
 interface PanelHeaderProps {
+  submitting: boolean;
   onMinimize: () => void;
   onClose: () => void;
 }
 
-function PanelHeader({ onMinimize, onClose }: PanelHeaderProps): ReactElement {
+function PanelHeader({
+  submitting,
+  onMinimize,
+  onClose,
+}: PanelHeaderProps): ReactElement {
   return (
     <div className="brw-panel-header">
       <span className="brw-panel-avatar" aria-hidden="true">
@@ -357,6 +410,10 @@ function PanelHeader({ onMinimize, onClose }: PanelHeaderProps): ReactElement {
         className="brw-icon-btn"
         aria-label="Close"
         onClick={onClose}
+        /* Disable close while a submit is in flight — clicking "Discard"
+           mid-request would otherwise throw the confirmation away while the
+           callback still resolves into the parent. */
+        disabled={submitting}
       >
         <CloseIcon />
       </button>
@@ -368,18 +425,18 @@ interface ThreadProps {
   greeting: string;
   draft: string;
   screenshot: ScreenshotAttachment | null;
-  files: readonly File[];
+  files: readonly FileAttachment[];
   showExtras: boolean;
   expected: string;
   actual: string;
   confirmClose: boolean;
   submitError: string | null;
-  status: 'idle' | 'submitting' | 'success' | 'error';
+  status: FeedbackStatus;
   onToggleExtras: () => void;
   onExpectedChange: (v: string) => void;
   onActualChange: (v: string) => void;
   onRemoveScreenshot: () => void;
-  onRemoveFile: (index: number) => void;
+  onRemoveFile: (id: number) => void;
   onConfirmDiscard: () => void;
   onCancelClose: () => void;
 }
@@ -421,12 +478,12 @@ function Thread({
           onRemove={onRemoveScreenshot}
         />
       )}
-      {files.map((f, i) => (
+      {files.map(({ id, file }) => (
         <AttachmentChip
-          key={`${f.name}-${i}`}
-          name={f.name}
-          size={f.size}
-          onRemove={() => onRemoveFile(i)}
+          key={id}
+          name={file.name}
+          size={file.size}
+          onRemove={() => onRemoveFile(id)}
         />
       ))}
       <DisclosureExpectedActual
@@ -572,78 +629,93 @@ interface ComposerProps {
   onAttachFiles: (list: FileList | null) => void;
 }
 
-function Composer({
-  draft,
-  submitting,
-  onDraftChange,
-  onSubmit,
-  onAttachScreenshot,
-  onAttachFiles,
-}: ComposerProps): ReactElement {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
+  function Composer(
+    {
+      draft,
+      submitting,
+      onDraftChange,
+      onSubmit,
+      onAttachScreenshot,
+      onAttachFiles,
+    },
+    forwardedRef,
+  ): ReactElement {
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    useImperativeHandle(forwardedRef, () => textareaRef.current!, []);
 
-  // Autogrow between ~1 and ~5 rows. Max-height from CSS bounds it; measuring
-  // scrollHeight each keystroke is cheap next to React's own render cost.
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [draft]);
+    // Autogrow between ~1 and ~5 rows. The CSS `max-height` on the input
+    // bounds this visually; the JS mirror keeps the height animating up as
+    // the user types. Both come from the same COMPOSER_MAX_HEIGHT_PX
+    // constant so bumping the ceiling is a single edit.
+    useEffect(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT_PX)}px`;
+    }, [draft]);
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      onSubmit();
-    }
-  };
+    const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+      if (
+        e.key === 'Enter' &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.nativeEvent.isComposing
+      ) {
+        e.preventDefault();
+        onSubmit();
+      }
+    };
 
-  return (
-    <div className="brw-composer">
-      <button
-        type="button"
-        className="brw-icon-btn"
-        aria-label="Attach screenshot"
-        onClick={onAttachScreenshot}
-        disabled={submitting}
-      >
-        <CameraIcon />
-      </button>
-      <label className="brw-icon-btn" aria-label="Attach file">
-        <PaperclipIcon />
-        <input
-          type="file"
-          multiple
-          className="brw-file-input"
-          onChange={(e) => {
-            onAttachFiles(e.target.files);
-            e.target.value = '';
-          }}
+    return (
+      <div className="brw-composer">
+        <button
+          type="button"
+          className="brw-icon-btn"
+          aria-label="Attach screenshot"
+          onClick={onAttachScreenshot}
           disabled={submitting}
+        >
+          <CameraIcon />
+        </button>
+        <label className="brw-icon-btn" aria-label="Attach file">
+          <PaperclipIcon />
+          <input
+            type="file"
+            multiple
+            className="brw-file-input"
+            onChange={(e) => {
+              onAttachFiles(e.target.files);
+              e.target.value = '';
+            }}
+            disabled={submitting}
+          />
+        </label>
+        <textarea
+          ref={textareaRef}
+          className="brw-composer-input"
+          rows={1}
+          placeholder="Describe the bug or feedback…"
+          value={draft}
+          onChange={(e) => onDraftChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          aria-label="Feedback message"
         />
-      </label>
-      <textarea
-        ref={textareaRef}
-        className="brw-composer-input"
-        rows={1}
-        placeholder="Describe the bug or feedback…"
-        value={draft}
-        onChange={(e) => onDraftChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        aria-label="Feedback message"
-      />
-      <button
-        type="button"
-        className="brw-send-btn"
-        aria-label="Send"
-        disabled={submitting || draft.trim().length === 0}
-        onClick={onSubmit}
-      >
-        <SendIcon />
-      </button>
-    </div>
-  );
-}
+        <button
+          type="button"
+          className="brw-send-btn"
+          aria-label="Send"
+          disabled={submitting || draft.trim().length === 0}
+          onClick={onSubmit}
+        >
+          <SendIcon />
+        </button>
+      </div>
+    );
+  },
+);
 
 interface SuccessStateProps {
   onSendAnother: () => void;
