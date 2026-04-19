@@ -4,6 +4,7 @@ import type {
   ConsoleEntry,
   FeedbackInput,
   NetworkEntry,
+  ProjectConfig,
   RouteEntry,
   SubmitResult,
 } from '../types';
@@ -152,6 +153,13 @@ function build(
     onUninstall();
   }
 
+  // Per-instance cache of the GET /v1/ingest/config round-trip. The SDD
+  // contract is "per session" — once the first fetch resolves (success or
+  // null), every subsequent call returns the same promise. Storing the
+  // promise rather than the resolved value also collapses concurrent
+  // callers into a single network request.
+  let configPromise: Promise<ProjectConfig | null> | undefined;
+
   const instance: Brevwick = {
     install,
     uninstall,
@@ -169,6 +177,13 @@ function build(
       import('../screenshot').then((m) =>
         m.captureScreenshotForInstance(internal),
       ),
+    getConfig: (): Promise<ProjectConfig | null> => {
+      if (configPromise) return configPromise;
+      configPromise = import('../config').then((m) =>
+        m.fetchConfig(config.endpoint, config.projectKey),
+      );
+      return configPromise;
+    },
   };
 
   Object.defineProperty(instance, INTERNAL_KEY, {

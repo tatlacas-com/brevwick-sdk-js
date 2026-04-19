@@ -17,8 +17,10 @@ import {
 import type {
   FeedbackAttachment,
   FeedbackInput,
+  ProjectConfig,
   SubmitResult,
 } from 'brevwick-sdk';
+import { useBrevwickInternal } from './context';
 import { useFeedback, type FeedbackStatus } from './use-feedback';
 import {
   BREVWICK_CSS,
@@ -79,6 +81,60 @@ interface ScreenshotAttachment {
   readonly url: string;
 }
 
+type ProjectConfigStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+interface ProjectConfigState {
+  status: ProjectConfigStatus;
+  config: ProjectConfig | null;
+}
+
+/**
+ * Lazy project-config fetch, triggered on the FIRST panel open for the
+ * lifetime of this FeedbackButton. Subsequent opens reuse the in-memory
+ * result — the core SDK also caches per session, so the second call would
+ * be a no-op anyway, but tracking here avoids an extra awaited microtask
+ * on every open.
+ *
+ * Explicitly does NOT fetch on mount — the widget's "zero-cost until
+ * opened" property must hold for users who never engage the FAB.
+ */
+function useProjectConfig(open: boolean): ProjectConfigState {
+  const { brevwick } = useBrevwickInternal();
+  const triggeredRef = useRef(false);
+  const [state, setState] = useState<ProjectConfigState>({
+    status: 'idle',
+    config: null,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    if (triggeredRef.current) return;
+    triggeredRef.current = true;
+
+    let cancelled = false;
+    setState({ status: 'loading', config: null });
+    brevwick
+      .getConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setState({ status: 'ready', config });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // getConfig never rejects in the documented contract, but we stay
+        // defensive so a future regression cannot wedge the widget in
+        // 'loading' forever.
+        setState({ status: 'error', config: null });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [brevwick, open]);
+
+  return state;
+}
+
 /**
  * Monotonic id attached to each uploaded file at insert time. Using `name` or
  * the index as the React key would cause duplicate-named files or removals
@@ -110,12 +166,27 @@ export function FeedbackButton({
   const [confirmClose, setConfirmClose] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [succeeded, setSucceeded] = useState(false);
+  // Submitter's per-report AI preference. Defaults to true so the toggle
+  // renders "on" the first time; only read on submit when the render-policy
+  // matrix below says the toggle should be visible.
+  const [useAi, setUseAi] = useState(true);
   const mountedRef = useRef(true);
   const screenshotUrlRef = useRef<string | null>(null);
   const fileIdRef = useRef(0);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   useBrevwickStyles();
+
+  const projectConfig = useProjectConfig(open);
+  // Render-policy matrix, SDD § 12. The toggle is visible exactly when the
+  // config has loaded successfully, AI is enabled for the project, AND the
+  // admin has opted submitters into the choice. Any other state (loading,
+  // error, disabled, admin-forced) hides the toggle and the payload omits
+  // `use_ai` so the server-side default applies.
+  const showAiToggle =
+    projectConfig.status === 'ready' &&
+    projectConfig.config?.ai_enabled === true &&
+    projectConfig.config.ai_submitter_choice_allowed === true;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -152,6 +223,7 @@ export function FeedbackButton({
     setConfirmClose(false);
     setSubmitError(null);
     setSucceeded(false);
+    setUseAi(true);
     reset();
   }, [reset]);
 
@@ -261,6 +333,10 @@ export function FeedbackButton({
       expected: expected.trim() || undefined,
       actual: actual.trim() || undefined,
       attachments: attachments.length ? attachments : undefined,
+      // use_ai rides the payload only when the submitter has been given
+      // the choice; in every other render state we leave the server-side
+      // default alone.
+      ...(showAiToggle ? { use_ai: useAi } : {}),
     };
 
     try {
@@ -288,7 +364,18 @@ export function FeedbackButton({
       setSubmitError(message);
       setOpen(true);
     }
-  }, [actual, draft, expected, files, onSubmit, screenshot, status, submit]);
+  }, [
+    actual,
+    draft,
+    expected,
+    files,
+    onSubmit,
+    screenshot,
+    showAiToggle,
+    status,
+    submit,
+    useAi,
+  ]);
 
   // Pending-focus flag: "Send another" needs to focus the composer, but the
   // composer only remounts after the SuccessState unmounts. A layout effect
@@ -372,10 +459,13 @@ export function FeedbackButton({
               ref={composerRef}
               draft={draft}
               submitting={status === 'submitting'}
+              showAiToggle={showAiToggle}
+              useAi={useAi}
               onDraftChange={setDraft}
               onSubmit={doSubmit}
               onAttachScreenshot={handleCaptureScreenshot}
               onAttachFiles={handleFiles}
+              onUseAiChange={setUseAi}
             />
           )}
         </Dialog.Content>
@@ -654,10 +744,13 @@ function DisclosureExpectedActual({
 interface ComposerProps {
   draft: string;
   submitting: boolean;
+  showAiToggle: boolean;
+  useAi: boolean;
   onDraftChange: (v: string) => void;
   onSubmit: () => void;
   onAttachScreenshot: () => void;
   onAttachFiles: (list: FileList | null) => void;
+  onUseAiChange: (v: boolean) => void;
 }
 
 const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
@@ -665,10 +758,13 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
     {
       draft,
       submitting,
+      showAiToggle,
+      useAi,
       onDraftChange,
       onSubmit,
       onAttachScreenshot,
       onAttachFiles,
+      onUseAiChange,
     },
     forwardedRef,
   ): ReactElement {
@@ -735,6 +831,9 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
           onKeyDown={handleKeyDown}
           aria-label="Feedback message"
         />
+        {showAiToggle && (
+          <AIToggle on={useAi} disabled={submitting} onChange={onUseAiChange} />
+        )}
         <button
           type="button"
           className="brw-send-btn"
@@ -748,6 +847,44 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
     );
   },
 );
+
+interface AIToggleProps {
+  on: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}
+
+/**
+ * Inline pill/switch surfaced in the composer footer when the project allows
+ * submitters to opt in/out of AI formatting per report. role="switch" +
+ * aria-checked is the narrow semantic the WCAG a11y matrix wants; Space
+ * toggles when focused (default browser behaviour on role="button" is Enter
+ * and Space, but Space carries fewer collisions with the composer's
+ * Enter-to-send shortcut).
+ */
+function AIToggle({ on, disabled, onChange }: AIToggleProps): ReactElement {
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
+    if (e.key === ' ') {
+      e.preventDefault();
+      onChange(!on);
+    }
+  };
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label="Format with AI"
+      className={`brw-aitoggle${on ? ' brw-aitoggle--on' : ''}`}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      onKeyDown={handleKeyDown}
+    >
+      <span className="brw-aitoggle-dot" aria-hidden="true" />
+      <span>AI</span>
+    </button>
+  );
+}
 
 interface SuccessStateProps {
   onSendAnother: () => void;

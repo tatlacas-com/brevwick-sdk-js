@@ -462,6 +462,10 @@ function composePayload(
     description: redact(input.description),
     expected: redactOptional(input.expected),
     actual: redactOptional(input.actual),
+    // Submitter's per-report AI preference (widget toggle). Only present
+    // when the widget is configured to expose the choice; booleans are
+    // intentionally NOT run through redact().
+    use_ai: input.use_ai,
     route_path: routePath,
     build_sha: config.buildSha,
     release: config.release,

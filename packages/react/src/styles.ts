@@ -317,6 +317,43 @@ export const BREVWICK_CSS = `
   cursor: pointer;
   flex-shrink: 0;
 }
+.brw-aitoggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--brw-border);
+  background: var(--brw-chip-bg);
+  color: var(--brw-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
+}
+.brw-aitoggle:focus-visible { outline: 2px solid var(--brw-accent); outline-offset: 1px; }
+.brw-aitoggle:disabled { opacity: 0.5; cursor: not-allowed; }
+.brw-aitoggle-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--brw-muted);
+  transition: background-color 120ms ease-out;
+}
+.brw-aitoggle--on {
+  background: var(--brw-accent);
+  color: var(--brw-accent-fg);
+  border-color: var(--brw-accent);
+}
+.brw-aitoggle--on .brw-aitoggle-dot {
+  background: var(--brw-accent-fg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .brw-aitoggle, .brw-aitoggle-dot { transition: none; }
+}
 .brw-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .brw-send-btn svg { width: 16px; height: 16px; }
 .brw-file-input { display: none; }
