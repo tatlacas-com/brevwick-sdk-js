@@ -1557,6 +1557,20 @@ describe('<FeedbackButton> — region capture overlay', () => {
     expect(captureScreenshot).not.toHaveBeenCalled();
   });
 
+  // Radix Dialog.Content logs a console.error when no Dialog.Title
+  // descendant is present. The overlay used to rely on aria-label alone,
+  // which triggered the warning on every screenshot button click. Pin a
+  // visually-hidden Dialog.Title so the primitive stays satisfied without
+  // changing the announced name (aria-label still wins).
+  it('renders a Dialog.Title descendant so Radix does not warn', () => {
+    mount();
+    openOverlay();
+    const title = within(getOverlay()).getByText(/select screenshot region/i, {
+      selector: 'h2,[role="heading"]',
+    });
+    expect(title).toHaveClass('brw-sr-only');
+  });
+
   it('vitest-axe is clean on an idle region overlay', async () => {
     mount();
     openOverlay();
