@@ -1,8 +1,15 @@
 /**
  * Styles are injected via a single <style> tag rendered into the tree so the
  * package has zero CSS-loader requirements — consumers can drop the package
- * into any bundler (Next.js, Vite, Webpack) without config. Theming is done
- * through CSS variables and `prefers-color-scheme`.
+ * into any bundler (Next.js, Vite, Webpack) without config.
+ *
+ * Theming is done through `--brw-*` CSS custom properties. Defaults live on
+ * `:where(:root)` so the widget's declarations sit at specificity 0 — any
+ * host rule (including a normal `:root { --brw-accent: hotpink }`, a
+ * `body { ... }`, or any widget ancestor) wins without `!important`. Dark
+ * palette is swapped via `@media (prefers-color-scheme: dark)`; host
+ * overrides persist across modes because they're set on a different
+ * element / higher specificity.
  */
 export const BREVWICK_STYLE_ID = 'brevwick-react-styles';
 
@@ -17,33 +24,35 @@ export const BREVWICK_STYLE_ID = 'brevwick-react-styles';
 export const COMPOSER_MAX_HEIGHT_PX = 120;
 
 export const BREVWICK_CSS = `
-.brw-root {
-  --brw-bg: #ffffff;
-  --brw-fg: #0f172a;
-  --brw-muted: #64748b;
-  --brw-border: #e2e8f0;
-  --brw-accent: #0f172a;
-  --brw-accent-fg: #ffffff;
-  --brw-error: #b91c1c;
-  --brw-success: #047857;
+:where(:root) {
+  /* Surfaces */
   --brw-panel-bg: #ffffff;
   --brw-bubble-assistant-bg: #f1f5f9;
   --brw-bubble-user-bg: #0f172a;
   --brw-bubble-user-fg: #ffffff;
   --brw-chip-bg: #f1f5f9;
   --brw-composer-bg: #ffffff;
+  /* Text */
+  --brw-fg: #0f172a;
+  --brw-fg-muted: #64748b;
+  /* Border / focus */
+  --brw-border: #e2e8f0;
+  --brw-border-focus: #0f172a;
   --brw-divider: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  color: var(--brw-fg);
+  /* Accent */
+  --brw-accent: #0f172a;
+  --brw-accent-fg: #ffffff;
+  /* Shadow */
+  --brw-shadow: 0 20px 48px rgba(15, 23, 42, 0.18), 0 6px 12px rgba(15, 23, 42, 0.08);
+  /* Status colour — not exposed in the public token list; widget-internal.
+     Carried through dark mode (same hue reads adequately on the dark
+     --brw-panel-bg); override in the dark block if design ever wants a
+     tuned variant. */
+  --brw-error: #b91c1c;
 }
 @media (prefers-color-scheme: dark) {
-  .brw-root {
-    --brw-bg: #0f172a;
-    --brw-fg: #f8fafc;
-    --brw-muted: #94a3b8;
-    --brw-border: #1e293b;
-    --brw-accent: #f8fafc;
-    --brw-accent-fg: #0f172a;
+  :where(:root) {
+    /* Surfaces */
     --brw-panel-bg: #0b1220;
     --brw-bubble-assistant-bg: #1e293b;
     --brw-bubble-user-bg: #f8fafc;
@@ -52,8 +61,23 @@ export const BREVWICK_CSS = `
        1px border stays visible against the chip body in dark mode. */
     --brw-chip-bg: #253044;
     --brw-composer-bg: #0b1220;
+    /* Text */
+    --brw-fg: #f8fafc;
+    --brw-fg-muted: #94a3b8;
+    /* Border / focus */
+    --brw-border: #1e293b;
+    --brw-border-focus: #f8fafc;
     --brw-divider: #1e293b;
+    /* Accent */
+    --brw-accent: #f8fafc;
+    --brw-accent-fg: #0f172a;
+    /* Shadow — deeper alpha so the panel still reads as lifted over a dark host */
+    --brw-shadow: 0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 12px rgba(0, 0, 0, 0.35);
   }
+}
+.brw-root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--brw-fg);
 }
 .brw-fab {
   position: fixed;
@@ -72,12 +96,13 @@ export const BREVWICK_CSS = `
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.18), 0 2px 4px rgba(0,0,0,0.08);
-  transition: transform 120ms ease-out, box-shadow 120ms ease-out;
+  box-shadow: var(--brw-shadow);
+  /* Only transform animates on hover; box-shadow is static so it is
+     intentionally excluded from the transition list. */
+  transition: transform 120ms ease-out;
 }
 .brw-fab:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(0,0,0,0.22), 0 3px 6px rgba(0,0,0,0.1);
 }
 .brw-fab:disabled { cursor: not-allowed; opacity: 0.5; }
 .brw-fab-br { right: 24px; }
@@ -95,7 +120,7 @@ export const BREVWICK_CSS = `
   color: var(--brw-fg);
   border: 1px solid var(--brw-border);
   border-radius: 16px 16px 12px 12px;
-  box-shadow: 0 20px 48px rgba(0,0,0,0.25), 0 6px 12px rgba(0,0,0,0.12);
+  box-shadow: var(--brw-shadow);
   overflow: hidden;
   animation: brw-slide-up 200ms ease-out;
 }
@@ -149,14 +174,14 @@ export const BREVWICK_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--brw-muted);
+  color: var(--brw-fg-muted);
   border-radius: 6px;
   cursor: pointer;
   font: inherit;
   line-height: 1;
 }
 .brw-icon-btn:hover:not(:disabled) { background: var(--brw-chip-bg); color: var(--brw-fg); }
-.brw-icon-btn:focus-visible { outline: 2px solid var(--brw-accent); outline-offset: 1px; }
+.brw-icon-btn:focus-visible { outline: 2px solid var(--brw-border-focus); outline-offset: 1px; }
 .brw-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .brw-icon-btn svg { width: 16px; height: 16px; }
 .brw-thread {
@@ -209,7 +234,7 @@ export const BREVWICK_CSS = `
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px 6px 10px;
+  padding: 6px 10px;
   background: var(--brw-chip-bg);
   color: var(--brw-fg);
   border: 1px solid var(--brw-border);
@@ -224,14 +249,14 @@ export const BREVWICK_CSS = `
   flex-shrink: 0;
 }
 .brw-chip-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
-.brw-chip-size { color: var(--brw-muted); }
+.brw-chip-size { color: var(--brw-fg-muted); }
 .brw-chip-remove {
   width: 20px; height: 20px;
   padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   border: none;
   background: transparent;
-  color: var(--brw-muted);
+  color: var(--brw-fg-muted);
   border-radius: 999px;
   cursor: pointer;
   font: inherit;
@@ -243,7 +268,7 @@ export const BREVWICK_CSS = `
   background: transparent;
   border: none;
   padding: 0;
-  color: var(--brw-muted);
+  color: var(--brw-fg-muted);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -263,7 +288,7 @@ export const BREVWICK_CSS = `
 .brw-disclosure-label {
   font-size: 11px;
   font-weight: 600;
-  color: var(--brw-muted);
+  color: var(--brw-fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -282,30 +307,47 @@ export const BREVWICK_CSS = `
 }
 .brw-composer {
   flex-shrink: 0;
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
   padding: 8px 10px;
   background: var(--brw-composer-bg);
   border-top: 1px solid var(--brw-divider);
+}
+/* Rounded shell that groups the textarea + icon buttons + send + AI toggle
+   into a single visual input affordance. Border colour lifts to
+   --brw-border-focus when any descendant takes focus, so the whole shell
+   reads as focused without a per-child outline. align-items: flex-end keeps
+   the send button pinned to the bottom as the textarea autogrows. */
+.brw-composer-shell {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--brw-composer-bg);
+  border: 1px solid var(--brw-border);
+  border-radius: 12px;
+  transition: border-color 120ms ease-out;
+}
+.brw-composer-shell:focus-within {
+  border-color: var(--brw-border-focus);
+}
+@media (prefers-reduced-motion: reduce) {
+  .brw-composer-shell { transition: none; }
 }
 .brw-composer-input {
   flex: 1;
   min-height: 34px;
   max-height: ${COMPOSER_MAX_HEIGHT_PX}px;
   box-sizing: border-box;
-  padding: 8px 10px;
+  padding: 8px 4px;
   font: inherit;
   font-size: 13px;
   color: var(--brw-fg);
-  background: var(--brw-panel-bg);
-  border: 1px solid var(--brw-border);
-  border-radius: 10px;
+  background: transparent;
+  border: none;
   resize: none;
   overflow-y: auto;
   line-height: 1.4;
 }
-.brw-composer-input:focus-visible { outline: 2px solid var(--brw-accent); outline-offset: -1px; }
+.brw-composer-input:focus-visible { outline: none; }
 .brw-send-btn {
   width: 34px; height: 34px;
   padding: 0;
@@ -327,20 +369,20 @@ export const BREVWICK_CSS = `
   border-radius: 999px;
   border: 1px solid var(--brw-border);
   background: var(--brw-chip-bg);
-  color: var(--brw-muted);
+  color: var(--brw-fg-muted);
   font: inherit;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
 }
-.brw-aitoggle:focus-visible { outline: 2px solid var(--brw-accent); outline-offset: 1px; }
+.brw-aitoggle:focus-visible { outline: 2px solid var(--brw-border-focus); outline-offset: 1px; }
 .brw-aitoggle:disabled { opacity: 0.5; cursor: not-allowed; }
 .brw-aitoggle-dot {
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: var(--brw-muted);
+  background: var(--brw-fg-muted);
   transition: background-color 120ms ease-out;
 }
 .brw-aitoggle--on {

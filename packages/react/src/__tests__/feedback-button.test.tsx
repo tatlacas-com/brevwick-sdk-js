@@ -7,6 +7,11 @@ import {
   within,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// `expect.extend(vitest-axe/matchers)` runs once per process in
+// `vitest.setup.ts`; the matching type augmentation lives in
+// `src/__tests__/vitest-axe.d.ts` so `toHaveNoViolations()` type-checks
+// without per-call casts.
+import { axe } from 'vitest-axe';
 import type {
   Brevwick,
   BrevwickConfig,
@@ -61,6 +66,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 const mount = (props: FeedbackButtonProps = {}) =>
@@ -980,3 +986,309 @@ describe('<FeedbackButton> — Use AI toggle', () => {
     expect('use_ai' in input).toBe(false);
   });
 });
+
+describe('<FeedbackButton> — theming + composer shell', () => {
+  /**
+   * The widget's default tokens live in a `:where(:root) { --brw-*: ... }`
+   * declaration at specificity 0, so any host rule (including a direct
+   * inline `style.setProperty` on body) beats it without `!important`. These
+   * tests assert the consumption contract: every surface / accent / focus
+   * affordance must read through a `var(--brw-*)` so host overrides take
+   * effect at mount time.
+   */
+
+  afterEach(() => {
+    // Clean up any host-level token overrides set by individual tests so
+    // they don't leak across the file.
+    const html = document.documentElement;
+    const body = document.body;
+    for (const el of [html, body]) {
+      for (let i = el.style.length - 1; i >= 0; i--) {
+        const prop = el.style.item(i)!;
+        if (prop.startsWith('--brw-')) el.style.removeProperty(prop);
+      }
+      for (const cls of [
+        'brw-test-panel-light',
+        'brw-test-panel-dark',
+      ] as const) {
+        el.classList.remove(cls);
+      }
+    }
+    document
+      .querySelectorAll('style[data-brw-test-stylesheet]')
+      .forEach((el) => el.remove());
+  });
+
+  function injectTestSheet(css: string): void {
+    const el = document.createElement('style');
+    el.setAttribute('data-brw-test-stylesheet', '');
+    el.textContent = css;
+    document.head.appendChild(el);
+  }
+
+  it('send button background reads from --brw-accent set on a widget ancestor', () => {
+    // Radix Portal mounts the dialog into document.body, so setting the
+    // token on body propagates via inheritance to the portaled content.
+    document.body.style.setProperty('--brw-accent', 'rgb(255, 0, 0)');
+    mount();
+    openPanel();
+    const sendBtn = screen.getByRole('button', { name: /^send$/i });
+    expect(getComputedStyle(sendBtn).backgroundColor).toBe('rgb(255, 0, 0)');
+  });
+
+  it('panel background reads from --brw-panel-bg (light / dark sentinels swap independently)', () => {
+    // Test-only stylesheet that defines two ancestor classes with distinct
+    // --brw-panel-bg values. Toggling the class on body must flip the
+    // widget panel's computed backgroundColor, proving the consumption path.
+    injectTestSheet(`
+      .brw-test-panel-light { --brw-panel-bg: rgb(1, 2, 3); }
+      .brw-test-panel-dark  { --brw-panel-bg: rgb(4, 5, 6); }
+    `);
+
+    document.body.classList.add('brw-test-panel-light');
+    const lightView = mount();
+    openPanel();
+    expect(getComputedStyle(screen.getByRole('dialog')).backgroundColor).toBe(
+      'rgb(1, 2, 3)',
+    );
+    lightView.unmount();
+
+    document.body.classList.remove('brw-test-panel-light');
+    document.body.classList.add('brw-test-panel-dark');
+    mount();
+    openPanel();
+    expect(getComputedStyle(screen.getByRole('dialog')).backgroundColor).toBe(
+      'rgb(4, 5, 6)',
+    );
+  });
+
+  it('composer children are wrapped in a single .brw-composer-shell div', () => {
+    mount();
+    openPanel();
+    const textarea = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    });
+    const shell = textarea.parentElement as HTMLElement;
+    expect(shell.className).toMatch(/brw-composer-shell/);
+    // All composer controls share this shell parent.
+    expect(
+      within(shell).getByRole('button', { name: /attach screenshot/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(shell).getByRole('button', { name: /^send$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('composer shell declares a :focus-within rule on --brw-border-focus', () => {
+    // happy-dom's computed-style engine does not evaluate the :focus-within
+    // pseudo-class, so the behaviour is pinned via a string guard on the
+    // emitted stylesheet. A regression that drops the rule (or hardcodes a
+    // colour) is caught here.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-composer-shell:focus-within[^{]*\{[^}]*border-color:\s*var\(--brw-border-focus\)/,
+    );
+  });
+
+  it('composer textarea autogrows — input events apply an inline height', async () => {
+    mount();
+    openPanel();
+    const textarea = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    }) as HTMLTextAreaElement;
+    // happy-dom reports `scrollHeight === 0` for unmeasured textareas, so
+    // asserting only `/px$/` passes vacuously for `"0px"`. Spy on the
+    // prototype getter so the autogrow effect sees a realistic scrollHeight
+    // and we can assert the exact clamped value applied by the effect.
+    const { COMPOSER_MAX_HEIGHT_PX } = await import('../styles');
+    const fakeScrollHeight = 400; // deliberately above the clamp ceiling
+    const scrollHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+      .mockReturnValue(fakeScrollHeight);
+    try {
+      fireEvent.change(textarea, {
+        target: { value: 'line 1\nline 2\nline 3\nline 4\nline 5' },
+      });
+      // Effect sets height to `min(scrollHeight, COMPOSER_MAX_HEIGHT_PX)`.
+      // With scrollHeight > ceiling, the inline style must equal the
+      // ceiling — catches a regression that silently removes the clamp
+      // OR drops the effect (`style.height === ''`).
+      expect(textarea.style.height).toBe(`${COMPOSER_MAX_HEIGHT_PX}px`);
+    } finally {
+      scrollHeightSpy.mockRestore();
+    }
+  });
+
+  it('every themeable declaration reads from a --brw-* token (no hardcoded hex in class rules)', () => {
+    // Acceptance-criterion guard: shadows, colours, and backgrounds in
+    // class rules must flow through `var(--brw-*)`. Hex literals inside a
+    // class-rule body break the host-override contract. We strip the
+    // `:where(:root)` token blocks first (those are ALLOWED to hold hex
+    // defaults) via a balanced-brace walker, so a future refactor that
+    // reformats the block (single-line, extra nesting, etc.) doesn't
+    // silently break the guard.
+    const stripped = stripTokenBlocks(BREVWICK_CSS);
+    expect(stripped).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+  });
+
+  // The two axe specs below guard structural a11y only (role / aria /
+  // accessible-name). happy-dom does not re-evaluate
+  // `@media (prefers-color-scheme: dark)` against the stubbed matchMedia,
+  // and axe-core's `color-contrast` rule reports `inapplicable` under
+  // happy-dom since the non-layout-engine environment can't resolve
+  // cascaded `color` values. Contrast for the default light + dark
+  // palettes is pinned separately via `dark-mode bubble-user / accent
+  // pairs meet WCAG AA contrast` below, which works directly off the
+  // emitted CSS strings and does not need a layout engine.
+  it('vitest-axe is clean on the rendered panel in a light matchMedia stub', async () => {
+    stubMatchMedia(false);
+    mount();
+    openPanel();
+    const results = await axe(screen.getByRole('dialog'));
+    expect(results).toHaveNoViolations();
+  });
+
+  it('vitest-axe is clean on the rendered panel in a dark matchMedia stub', async () => {
+    stubMatchMedia(true);
+    mount();
+    openPanel();
+    const results = await axe(screen.getByRole('dialog'));
+    expect(results).toHaveNoViolations();
+  });
+
+  it('dark-mode bubble-user / accent pairs meet WCAG AA contrast', () => {
+    // Guard the default dark palette against silent regressions. Pulls the
+    // hex values straight out of the emitted CSS and computes the WCAG 2.x
+    // relative-luminance contrast ratio. Both the user-bubble and the
+    // accent (send button) need ≥ 4.5:1 for body-text AA.
+    const dark = extractDarkTokenBlock(BREVWICK_CSS);
+    const bubblePair = contrastRatio(
+      dark['--brw-bubble-user-bg']!,
+      dark['--brw-bubble-user-fg']!,
+    );
+    const accentPair = contrastRatio(
+      dark['--brw-accent']!,
+      dark['--brw-accent-fg']!,
+    );
+    expect(bubblePair).toBeGreaterThanOrEqual(4.5);
+    expect(accentPair).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+/**
+ * Stub window.matchMedia so `(prefers-color-scheme: dark)` reports the
+ * chosen value. happy-dom doesn't re-evaluate `@media` CSS rules against a
+ * stubbed matchMedia, so this is intended for callers that check matchMedia
+ * themselves (e.g. axe's own UA detection). Restored automatically via the
+ * top-level `afterEach` that clears mocks / unstubs globals.
+ */
+function stubMatchMedia(prefersDark: boolean): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark') ? prefersDark : false,
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
+}
+
+/**
+ * Remove every `:where(:root) { ... }` token-default block from the
+ * emitted CSS using a balanced-brace walker. Survives whitespace and
+ * newline refactors that a `[\s\S]*?\n\s*}` regex would silently
+ * mis-strip; used by the "no hardcoded hex in class rules" guard.
+ */
+function stripTokenBlocks(css: string): string {
+  const out: string[] = [];
+  let i = 0;
+  while (i < css.length) {
+    const match = css.slice(i).match(/:where\(:root\)\s*\{/);
+    if (!match) {
+      out.push(css.slice(i));
+      break;
+    }
+    const blockStart = i + match.index!;
+    out.push(css.slice(i, blockStart));
+    // Walk forward from the opening `{`, tracking nesting until the
+    // matching `}` closes this block.
+    let depth = 0;
+    let j = blockStart + match[0].length - 1; // points AT the `{`
+    for (; j < css.length; j++) {
+      const ch = css[j];
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          j++; // consume the closing brace
+          break;
+        }
+      }
+    }
+    i = j;
+  }
+  return out.join('');
+}
+
+/**
+ * Parse the `@media (prefers-color-scheme: dark) :where(:root) { ... }`
+ * block out of the emitted CSS and return every `--brw-*` declaration as
+ * a plain object. Used by the dark-palette contrast guard. Throws on a
+ * missing block so a future refactor that removes the dark palette fails
+ * loudly instead of silently skipping the check.
+ */
+function extractDarkTokenBlock(css: string): Record<string, string> {
+  const openRe = /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{/;
+  const openMatch = css.match(openRe);
+  if (!openMatch) throw new Error('dark media block not found in BREVWICK_CSS');
+  const start = openMatch.index! + openMatch[0].length;
+  // Walk to the matching `}` of the @media wrapper.
+  let depth = 1;
+  let end = start;
+  for (; end < css.length; end++) {
+    const ch = css[end];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  const body = css.slice(start, end);
+  const tokens: Record<string, string> = {};
+  const declRe = /(--brw-[\w-]+)\s*:\s*([^;]+);/g;
+  let m: RegExpExecArray | null;
+  while ((m = declRe.exec(body)) !== null) {
+    tokens[m[1]!] = m[2]!.trim();
+  }
+  return tokens;
+}
+
+/**
+ * WCAG 2.x contrast ratio between two `#RRGGBB` hex colours. Returns a
+ * number in [1, 21]; ≥ 4.5 is the AA bar for body text. The function is
+ * symmetric in its arguments (lighter / darker is resolved internally), so
+ * parameters are named `aHex` / `bHex` rather than `fg` / `bg`.
+ */
+function contrastRatio(aHex: string, bHex: string): number {
+  const lum = (hex: string): number => {
+    const cleaned = hex.trim().replace(/^#/, '');
+    const full =
+      cleaned.length === 3
+        ? cleaned
+            .split('')
+            .map((c) => c + c)
+            .join('')
+        : cleaned;
+    const r = parseInt(full.slice(0, 2), 16) / 255;
+    const g = parseInt(full.slice(2, 4), 16) / 255;
+    const b = parseInt(full.slice(4, 6), 16) / 255;
+    const ch = (c: number): number =>
+      c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
+  };
+  const L1 = lum(aHex);
+  const L2 = lum(bHex);
+  const [lighter, darker] = L1 > L2 ? [L1, L2] : [L2, L1];
+  return (lighter + 0.05) / (darker + 0.05);
+}

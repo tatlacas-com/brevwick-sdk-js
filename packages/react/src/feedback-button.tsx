@@ -145,6 +145,49 @@ interface FileAttachment {
   readonly file: File;
 }
 
+/**
+ * Brevwick feedback widget — a FAB plus a dialog-based submission form.
+ *
+ * ## Theming
+ *
+ * The widget exposes a set of CSS custom properties (`--brw-*`) that any
+ * ancestor can override to re-theme without a rebuild. Light defaults ship
+ * out of the box; a `@media (prefers-color-scheme: dark)` block swaps the
+ * palette when the host OS is in dark mode. Set these as CSS custom
+ * properties on any ancestor (e.g. `:root` or your app shell) to re-theme
+ * the widget without a rebuild — the widget's own `.brw-root` scope never
+ * uses `!important`, so normal cascade wins.
+ *
+ * Surfaces
+ * - `--brw-panel-bg` — dialog panel background
+ * - `--brw-bubble-assistant-bg` — assistant bubble background
+ * - `--brw-bubble-user-bg` — user bubble background
+ * - `--brw-bubble-user-fg` — foreground on top of `--brw-bubble-user-bg`
+ *   (set as a pair with `--brw-bubble-user-bg` to keep bubble contrast
+ *   WCAG-adequate)
+ * - `--brw-chip-bg` — attachment chip + inline panel background
+ * - `--brw-composer-bg` — composer shell background
+ *
+ * Text
+ * - `--brw-fg` — primary foreground text
+ * - `--brw-fg-muted` — muted / secondary text
+ *
+ * Border / focus
+ * - `--brw-border` — default border colour
+ * - `--brw-border-focus` — colour applied on composer `:focus-within`
+ * - `--brw-divider` — hairline between panel header / composer and thread
+ *
+ * Accent
+ * - `--brw-accent` — send button + active AI toggle colour
+ * - `--brw-accent-fg` — foreground on top of accent (set as a pair
+ *   with `--brw-accent` so accent + accent-fg stay contrast-safe; e.g.
+ *   a bright `--brw-accent` must pair with a dark `--brw-accent-fg`)
+ *
+ * Shadow
+ * - `--brw-shadow` — composite drop shadow for FAB + panel
+ *
+ * @see SDD § 12 for the React contract.
+ */
 export function FeedbackButton({
   position = 'bottom-right',
   disabled = false,
@@ -798,51 +841,57 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
 
     return (
       <div className="brw-composer">
-        <button
-          type="button"
-          className="brw-icon-btn"
-          aria-label="Attach screenshot"
-          onClick={onAttachScreenshot}
-          disabled={submitting}
-        >
-          <CameraIcon />
-        </button>
-        <label className="brw-icon-btn">
-          <PaperclipIcon />
-          <input
-            type="file"
-            multiple
-            aria-label="Attach file"
-            className="brw-file-input"
-            onChange={(e) => {
-              onAttachFiles(e.target.files);
-              e.target.value = '';
-            }}
+        <div className="brw-composer-shell">
+          <button
+            type="button"
+            className="brw-icon-btn"
+            aria-label="Attach screenshot"
+            onClick={onAttachScreenshot}
             disabled={submitting}
+          >
+            <CameraIcon />
+          </button>
+          <label className="brw-icon-btn">
+            <PaperclipIcon />
+            <input
+              type="file"
+              multiple
+              aria-label="Attach file"
+              className="brw-file-input"
+              onChange={(e) => {
+                onAttachFiles(e.target.files);
+                e.target.value = '';
+              }}
+              disabled={submitting}
+            />
+          </label>
+          <textarea
+            ref={textareaRef}
+            className="brw-composer-input"
+            rows={1}
+            placeholder="Describe the bug or feedback…"
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            aria-label="Feedback message"
           />
-        </label>
-        <textarea
-          ref={textareaRef}
-          className="brw-composer-input"
-          rows={1}
-          placeholder="Describe the bug or feedback…"
-          value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          aria-label="Feedback message"
-        />
-        {showAiToggle && (
-          <AIToggle on={useAi} disabled={submitting} onChange={onUseAiChange} />
-        )}
-        <button
-          type="button"
-          className="brw-send-btn"
-          aria-label="Send"
-          disabled={submitting || draft.trim().length === 0}
-          onClick={onSubmit}
-        >
-          <SendIcon />
-        </button>
+          {showAiToggle && (
+            <AIToggle
+              on={useAi}
+              disabled={submitting}
+              onChange={onUseAiChange}
+            />
+          )}
+          <button
+            type="button"
+            className="brw-send-btn"
+            aria-label="Send"
+            disabled={submitting || draft.trim().length === 0}
+            onClick={onSubmit}
+          >
+            <SendIcon />
+          </button>
+        </div>
       </div>
     );
   },
