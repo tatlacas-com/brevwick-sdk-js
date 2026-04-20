@@ -18,6 +18,7 @@ import type {
   ProjectConfig,
   SubmitResult,
 } from 'brevwick-sdk';
+import pkg from '../../package.json' with { type: 'json' };
 
 const submit = vi.fn<(input: unknown) => Promise<SubmitResult>>();
 const captureScreenshot = vi.fn<() => Promise<Blob>>();
@@ -113,6 +114,37 @@ describe('<FeedbackButton>', () => {
     expect(
       screen.getByText(/Hi! Tell us what's happening/i),
     ).toBeInTheDocument();
+  });
+
+  it('renders a Brevwick credit footer linking to brevwick.dev on open', () => {
+    mount();
+    openPanel();
+
+    const link = screen.getByRole('link', { name: /brevwick v/i });
+    expect(link).toHaveAttribute('href', 'https://brevwick.dev');
+    expect(link).toHaveAttribute('target', '_blank');
+    // noopener is a hard requirement for external target=_blank links — without
+    // it the opened tab can hijack window.opener on older engines. rel must
+    // carry both tokens, in either order.
+    expect(link.getAttribute('rel')).toMatch(/noopener/);
+    expect(link.getAttribute('rel')).toMatch(/noreferrer/);
+    expect(link).toHaveTextContent(`Brevwick v${pkg.version}`);
+  });
+
+  it('keeps the credit footer visible in the success state', async () => {
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_footer' });
+    mount();
+    openPanel();
+    typeDraft('Hello');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+
+    expect(screen.getByRole('link', { name: /brevwick v/i })).toHaveAttribute(
+      'href',
+      'https://brevwick.dev',
+    );
   });
 
   it('applies the bottom-left position class to FAB and panel', () => {
