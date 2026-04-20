@@ -7,6 +7,9 @@ import {
   within,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { axe } from 'vitest-axe';
+import * as axeMatchers from 'vitest-axe/matchers';
+expect.extend(axeMatchers);
 import type {
   Brevwick,
   BrevwickConfig,
@@ -61,6 +64,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 const mount = (props: FeedbackButtonProps = {}) =>
@@ -980,3 +984,179 @@ describe('<FeedbackButton> — Use AI toggle', () => {
     expect('use_ai' in input).toBe(false);
   });
 });
+
+describe('<FeedbackButton> — theming + composer shell', () => {
+  /**
+   * The widget's default tokens live in a `:where(:root) { --brw-*: ... }`
+   * declaration at specificity 0, so any host rule (including a direct
+   * inline `style.setProperty` on body) beats it without `!important`. These
+   * tests assert the consumption contract: every surface / accent / focus
+   * affordance must read through a `var(--brw-*)` so host overrides take
+   * effect at mount time.
+   */
+
+  afterEach(() => {
+    // Clean up any host-level token overrides set by individual tests so
+    // they don't leak across the file.
+    const html = document.documentElement;
+    const body = document.body;
+    for (const el of [html, body]) {
+      for (let i = el.style.length - 1; i >= 0; i--) {
+        const prop = el.style.item(i)!;
+        if (prop.startsWith('--brw-')) el.style.removeProperty(prop);
+      }
+      for (const cls of [
+        'brw-test-panel-light',
+        'brw-test-panel-dark',
+      ] as const) {
+        el.classList.remove(cls);
+      }
+    }
+    document
+      .querySelectorAll('style[data-brw-test-stylesheet]')
+      .forEach((el) => el.remove());
+  });
+
+  function injectTestSheet(css: string): void {
+    const el = document.createElement('style');
+    el.setAttribute('data-brw-test-stylesheet', '');
+    el.textContent = css;
+    document.head.appendChild(el);
+  }
+
+  it('send button background reads from --brw-accent set on a widget ancestor', () => {
+    // Radix Portal mounts the dialog into document.body, so setting the
+    // token on body propagates via inheritance to the portaled content.
+    document.body.style.setProperty('--brw-accent', 'rgb(255, 0, 0)');
+    mount();
+    openPanel();
+    const sendBtn = screen.getByRole('button', { name: /^send$/i });
+    expect(getComputedStyle(sendBtn).backgroundColor).toBe('rgb(255, 0, 0)');
+  });
+
+  it('panel background reads from --brw-panel-bg (light / dark sentinels swap independently)', () => {
+    // Test-only stylesheet that defines two ancestor classes with distinct
+    // --brw-panel-bg values. Toggling the class on body must flip the
+    // widget panel's computed backgroundColor, proving the consumption path.
+    injectTestSheet(`
+      .brw-test-panel-light { --brw-panel-bg: rgb(1, 2, 3); }
+      .brw-test-panel-dark  { --brw-panel-bg: rgb(4, 5, 6); }
+    `);
+
+    document.body.classList.add('brw-test-panel-light');
+    const lightView = mount();
+    openPanel();
+    expect(getComputedStyle(screen.getByRole('dialog')).backgroundColor).toBe(
+      'rgb(1, 2, 3)',
+    );
+    lightView.unmount();
+
+    document.body.classList.remove('brw-test-panel-light');
+    document.body.classList.add('brw-test-panel-dark');
+    mount();
+    openPanel();
+    expect(getComputedStyle(screen.getByRole('dialog')).backgroundColor).toBe(
+      'rgb(4, 5, 6)',
+    );
+  });
+
+  it('composer children are wrapped in a single .brw-composer-shell div', () => {
+    mount();
+    openPanel();
+    const textarea = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    });
+    const shell = textarea.parentElement as HTMLElement;
+    expect(shell.className).toMatch(/brw-composer-shell/);
+    // All composer controls share this shell parent.
+    expect(
+      within(shell).getByRole('button', { name: /attach screenshot/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(shell).getByRole('button', { name: /^send$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('composer shell declares a :focus-within rule on --brw-border-focus', () => {
+    // happy-dom's computed-style engine does not evaluate the :focus-within
+    // pseudo-class, so the behaviour is pinned via a string guard on the
+    // emitted stylesheet. A regression that drops the rule (or hardcodes a
+    // colour) is caught here.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-composer-shell:focus-within[^{]*\{[^}]*border-color:\s*var\(--brw-border-focus\)/,
+    );
+  });
+
+  it('composer textarea autogrows — input events apply an inline height', () => {
+    mount();
+    openPanel();
+    const textarea = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    }) as HTMLTextAreaElement;
+    // The autogrow effect runs on draft change, setting height to
+    // min(scrollHeight, COMPOSER_MAX_HEIGHT_PX). Regardless of happy-dom's
+    // scrollHeight value (typically 0), the inline style must be applied —
+    // a regression that drops the effect would leave `style.height` empty.
+    fireEvent.change(textarea, {
+      target: { value: 'line 1\nline 2\nline 3\nline 4\nline 5' },
+    });
+    expect(textarea.style.height).toMatch(/px$/);
+  });
+
+  it('every themeable declaration reads from a --brw-* token (no hardcoded hex in class rules)', () => {
+    // Acceptance-criterion guard: shadows, colours, and backgrounds in
+    // class rules must flow through `var(--brw-*)`. Hex literals inside a
+    // class-rule body break the host-override contract. We strip the token
+    // blocks first (those are ALLOWED to hold hex defaults), then assert
+    // the remainder has no hex literals.
+    const stripped = BREVWICK_CSS.replace(
+      /:where\(:root\)\s*\{[\s\S]*?\n\s*\}/g,
+      '',
+    );
+    expect(stripped).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+  });
+
+  it('vitest-axe is clean on the rendered panel in a light matchMedia stub', async () => {
+    stubMatchMedia(false);
+    mount();
+    openPanel();
+    const results = await axe(screen.getByRole('dialog'));
+    // vitest-axe's matcher type declarations target the legacy `Vi` namespace
+    // that vitest 4 no longer uses, so the matcher is valid at runtime but
+    // invisible to tsc. Cast through an interface that names the matcher
+    // shape explicitly — more legible than a blanket `as any`.
+    (
+      expect(results) as unknown as { toHaveNoViolations: () => void }
+    ).toHaveNoViolations();
+  });
+
+  it('vitest-axe is clean on the rendered panel in a dark matchMedia stub', async () => {
+    stubMatchMedia(true);
+    mount();
+    openPanel();
+    const results = await axe(screen.getByRole('dialog'));
+    (
+      expect(results) as unknown as { toHaveNoViolations: () => void }
+    ).toHaveNoViolations();
+  });
+});
+
+/**
+ * Stub window.matchMedia so `(prefers-color-scheme: dark)` reports the
+ * chosen value. happy-dom doesn't re-evaluate `@media` CSS rules against a
+ * stubbed matchMedia, so this is intended for callers that check matchMedia
+ * themselves (e.g. axe's own UA detection). Restored automatically via the
+ * top-level `afterEach` that clears mocks / unstubs globals.
+ */
+function stubMatchMedia(prefersDark: boolean): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark') ? prefersDark : false,
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
+}
