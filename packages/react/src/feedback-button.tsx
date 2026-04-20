@@ -1111,17 +1111,42 @@ function RegionCaptureOverlay({
   const [drag, setDrag] = useState<DragState | null>(null);
   const [shake, setShake] = useState(false);
   const draggingRef = useRef(false);
+  // Tracks the in-flight "shake settle" setTimeout. We keep the handle so
+  // (a) the effect below can cancel it when the overlay closes — otherwise
+  // a shake queued immediately before Esc would fire a setState on an
+  // unmounted subtree (strict-mode warning) — and (b) rapid-fire Capture
+  // clicks on a degenerate selection replace the timer instead of stacking.
+  const shakeTimerRef = useRef<number | null>(null);
+
+  const clearShakeTimer = (): void => {
+    if (shakeTimerRef.current !== null) {
+      window.clearTimeout(shakeTimerRef.current);
+      shakeTimerRef.current = null;
+    }
+  };
 
   // Reset both the drag state and the transient shake flag whenever the
   // overlay closes, so a re-open starts from a clean slate rather than the
-  // last session's selection.
+  // last session's selection. Also cancels any in-flight shake timer so
+  // the setState does not fire into a torn-down subtree.
   useEffect(() => {
     if (!open) {
       setDrag(null);
       setShake(false);
       draggingRef.current = false;
+      clearShakeTimer();
     }
   }, [open]);
+
+  // Belt-and-braces unmount cleanup: the overlay normally closes via
+  // `open=false` before unmount (handled above), but an upstream tree
+  // tear-down could unmount us mid-shake — cancel the timer so React
+  // doesn't log a "state update on unmounted component" warning.
+  useEffect(() => {
+    return () => {
+      clearShakeTimer();
+    };
+  }, []);
 
   const handlePointerDown = (e: PointerEvent<HTMLDivElement>): void => {
     // Ignore non-primary buttons (right-click / middle-click). pointerType
@@ -1160,17 +1185,29 @@ function RegionCaptureOverlay({
   const confirm = (): void => {
     if (!drag || drag.w <= REGION_MIN_SIDE_PX || drag.h <= REGION_MIN_SIDE_PX) {
       setShake(true);
-      window.setTimeout(() => setShake(false), 320);
+      // Replace any in-flight settle timer so rapid-fire clicks don't stack.
+      clearShakeTimer();
+      shakeTimerRef.current = window.setTimeout(() => {
+        shakeTimerRef.current = null;
+        setShake(false);
+      }, 320);
       return;
     }
     onConfirmRegion({ x: drag.x, y: drag.y, w: drag.w, h: drag.h });
   };
 
+  // Enter-on-Dialog.Content must only confirm the region when the overlay
+  // root itself has focus. Tab-focusing a button inside the overlay and
+  // pressing Enter bubbles up here; without this guard we would hijack the
+  // button's own Enter activation (Cancel, Capture full page) and run the
+  // region-confirm path instead — a real a11y defect. `e.target === e.currentTarget`
+  // restricts the shortcut to the overlay root (focused via Radix focus-trap
+  // when the Dialog opens and no button is yet tabbed into).
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      confirm();
-    }
+    if (e.key !== 'Enter') return;
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    confirm();
   };
 
   return (
@@ -1185,7 +1222,7 @@ function RegionCaptureOverlay({
         <Dialog.Content
           className={`brw-root brw-region-layer${shake ? ' brw-region-shake' : ''}`}
           data-brevwick-skip=""
-          data-brevwick-region-open="true"
+          data-testid="brw-region-overlay"
           aria-label="Select screenshot region"
           aria-describedby={undefined}
           onPointerDown={handlePointerDown}

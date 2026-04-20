@@ -1303,7 +1303,10 @@ describe('<FeedbackButton> — region capture overlay', () => {
     mount();
     openOverlay();
     const overlay = getOverlay();
-    expect(overlay).toHaveAttribute('data-brevwick-region-open', 'true');
+    // `data-testid` (not `data-brevwick-*`) — this hook is test-only, not a
+    // public stability selector. The SDK's capture scrub reads
+    // `data-brevwick-skip`, which is still present.
+    expect(overlay).toHaveAttribute('data-testid', 'brw-region-overlay');
     expect(overlay).toHaveAttribute('data-brevwick-skip');
   });
 
@@ -1521,6 +1524,98 @@ describe('<FeedbackButton> — region capture overlay', () => {
     expect(BREVWICK_CSS).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.brw-region-shake[^{]*\{[^}]*animation:\s*none/,
     );
+  });
+
+  // Regression for a11y bug: `onKeyDown` on `Dialog.Content` used to
+  // unconditionally preventDefault + confirm() on Enter, hijacking Cancel
+  // and Capture-full-page when a keyboard user tabbed to them and pressed
+  // Enter. Guard is `e.target !== e.currentTarget` — the region-confirm
+  // shortcut only fires when the overlay root itself has focus.
+  it('Enter while Cancel has focus closes the overlay (does not confirm region)', async () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    // Build a non-degenerate selection: if Enter wrongly bubbled to the
+    // overlay-level handler, this would trigger a region capture (and
+    // we'd see captureScreenshot invoked) rather than the Cancel click.
+    drag(overlay, { x: 20, y: 30 }, { x: 220, y: 230 });
+    const cancelBtn = screen.getByRole('button', { name: /^cancel$/i });
+    cancelBtn.focus();
+    await act(async () => {
+      // `keyDown` targets the focused button. The click that Enter would
+      // normally synthesize on a native button doesn't fire from
+      // `fireEvent.keyDown` alone in happy-dom — so dispatch both: the
+      // keyDown verifies the overlay handler does NOT preventDefault, and
+      // the click simulates the native Enter→click behaviour. If the old
+      // handler were still in place, it would call preventDefault here and
+      // run confirm() before the click.
+      fireEvent.keyDown(cancelBtn, { key: 'Enter' });
+      fireEvent.click(cancelBtn);
+    });
+    expect(queryOverlay()).toBeNull();
+    expect(captureScreenshot).not.toHaveBeenCalled();
+  });
+
+  it('Enter while Capture-full-page has focus runs the full-page capture', async () => {
+    const fullBlob = new Blob(['uncropped-enter'], { type: 'image/webp' });
+    captureScreenshot.mockResolvedValueOnce(fullBlob);
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    // Drag a non-degenerate selection to prove the region path is NOT
+    // the one that fires (if Enter leaked to the overlay handler, the
+    // region would crop rather than the full-page blob passing through).
+    drag(overlay, { x: 20, y: 30 }, { x: 220, y: 230 });
+    const fullBtn = screen.getByRole('button', { name: /capture full page/i });
+    fullBtn.focus();
+    await act(async () => {
+      fireEvent.keyDown(fullBtn, { key: 'Enter' });
+      fireEvent.click(fullBtn);
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /remove screenshot/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(queryOverlay()).toBeNull();
+    expect(captureScreenshot).toHaveBeenCalledTimes(1);
+    typeDraft('enter full cap');
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_enter_full' });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as {
+      attachments: Array<{ blob: Blob; filename: string }>;
+    };
+    // Blob identity confirms no crop happened — the full-page path was taken.
+    expect(input.attachments[0]!.blob).toBe(fullBlob);
+  });
+
+  // Region-path error: if `captureScreenshot()` rejects on a region confirm,
+  // the composer's `setSubmitError` banner must surface the message and
+  // no screenshot chip must render. The existing 'canvas tainted' test
+  // covers the full-page branch only; this pins the region branch.
+  it('surfaces an error in the panel when captureScreenshot rejects on a region confirm', async () => {
+    captureScreenshot.mockRejectedValueOnce(new Error('region canvas tainted'));
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    drag(overlay, { x: 12, y: 24 }, { x: 212, y: 224 });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+    });
+    // Overlay closes synchronously before the await inside performCapture.
+    expect(queryOverlay()).toBeNull();
+    await waitFor(() =>
+      expect(
+        screen.getByText(/region canvas tainted/i, {
+          selector: '[role="alert"]',
+        }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole('button', { name: /remove screenshot/i }),
+    ).toBeNull();
   });
 });
 
