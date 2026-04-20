@@ -1649,6 +1649,325 @@ describe('<FeedbackButton> — region capture overlay', () => {
       screen.queryByRole('button', { name: /remove screenshot/i }),
     ).toBeNull();
   });
+
+  // Coverage for the `OffscreenCanvas` branch of `cropToRegion`. The main
+  // crop test forces the `<canvas>` fallback (happy-dom's stock
+  // `OffscreenCanvas`, where present, has no `convertToBlob`). This test
+  // installs a minimal `OffscreenCanvas` shim with `getContext('2d')` +
+  // `convertToBlob` and confirms the crop blob (stamped by the shim) lands
+  // in the composer.
+  it('uses OffscreenCanvas when available and delivers its convertToBlob output', async () => {
+    const originalImageSrc = Object.getOwnPropertyDescriptor(
+      HTMLImageElement.prototype,
+      'src',
+    );
+    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+      configurable: true,
+      get() {
+        return (this as { _brwSrc?: string })._brwSrc ?? '';
+      },
+      set(value: string) {
+        (this as { _brwSrc?: string })._brwSrc = value;
+        queueMicrotask(() => {
+          const self = this as HTMLImageElement & {
+            onload?: ((ev: Event) => void) | null;
+          };
+          self.onload?.(new Event('load'));
+        });
+      },
+    });
+
+    const drawImageCalls: unknown[][] = [];
+    class OffscreenCanvasStub {
+      public readonly width: number;
+      public readonly height: number;
+      constructor(width: number, height: number) {
+        this.width = width;
+        this.height = height;
+      }
+      getContext(
+        kind: string,
+      ): { drawImage: (...args: unknown[]) => void } | null {
+        if (kind !== '2d') return null;
+        return {
+          drawImage: (...args: unknown[]) => {
+            drawImageCalls.push(args);
+          },
+        };
+      }
+      convertToBlob(options: { type: string }): Promise<Blob> {
+        const blob = new Blob([`offscreen:${this.width}x${this.height}`], {
+          type: options.type,
+        });
+        (
+          blob as Blob & {
+            _brwOffscreen: boolean;
+            _brwW: number;
+            _brwH: number;
+          }
+        )._brwOffscreen = true;
+        (
+          blob as Blob & {
+            _brwOffscreen: boolean;
+            _brwW: number;
+            _brwH: number;
+          }
+        )._brwW = this.width;
+        (
+          blob as Blob & {
+            _brwOffscreen: boolean;
+            _brwW: number;
+            _brwH: number;
+          }
+        )._brwH = this.height;
+        return Promise.resolve(blob);
+      }
+    }
+
+    const originalOffscreen = (globalThis as { OffscreenCanvas?: unknown })
+      .OffscreenCanvas;
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+      OffscreenCanvasStub;
+
+    try {
+      const fullBlob = new Blob(['full'], { type: 'image/webp' });
+      captureScreenshot.mockResolvedValueOnce(fullBlob);
+      vi.stubGlobal('devicePixelRatio', 2);
+      submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_offscreen' });
+      mount();
+      openOverlay();
+      drag(getOverlay(), { x: 10, y: 20 }, { x: 210, y: 120 });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /remove screenshot/i }),
+        ).toBeInTheDocument(),
+      );
+      expect(drawImageCalls).toHaveLength(1);
+      const [, sx, sy, sw, sh, dx, dy, dw, dh] = drawImageCalls[0]!;
+      expect(sx).toBe(20);
+      expect(sy).toBe(40);
+      expect(sw).toBe(400);
+      expect(sh).toBe(200);
+      expect(dx).toBe(0);
+      expect(dy).toBe(0);
+      expect(dw).toBe(200);
+      expect(dh).toBe(100);
+      // Drive a submit so we can read the attachment blob off the spy and
+      // confirm the OffscreenCanvas stub's output (not the <canvas>
+      // fallback) is what the composer received.
+      typeDraft('offscreen crop');
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+      });
+      const input = submit.mock.calls[0]![0] as {
+        attachments: Array<{ blob: Blob; filename: string }>;
+      };
+      const delivered = input.attachments[0]!.blob as Blob & {
+        _brwOffscreen?: boolean;
+        _brwW?: number;
+        _brwH?: number;
+      };
+      expect(delivered._brwOffscreen).toBe(true);
+      expect(delivered._brwW).toBe(200);
+      expect(delivered._brwH).toBe(100);
+      expect(input.attachments[0]!.filename).toBe('screenshot.png');
+    } finally {
+      if (originalImageSrc) {
+        Object.defineProperty(
+          HTMLImageElement.prototype,
+          'src',
+          originalImageSrc,
+        );
+      }
+      if (originalOffscreen !== undefined) {
+        (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+          originalOffscreen;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (globalThis as any).OffscreenCanvas;
+      }
+    }
+  });
+
+  // Coverage for the `<canvas>.toBlob` null branch. `installCropStub`
+  // always resolves with a stamped Blob; this override forces the
+  // `reject(new Error('Canvas produced no blob'))` path and confirms the
+  // composer surfaces the error and renders no screenshot chip.
+  it('surfaces an error when the canvas toBlob path yields null', async () => {
+    const stub = installCropStub();
+    // Override toBlob to hand `null` to the callback so the internal
+    // Promise rejects with the 'Canvas produced no blob' error.
+    HTMLCanvasElement.prototype.toBlob = function toBlobNull(cb: BlobCallback) {
+      queueMicrotask(() => cb(null));
+    };
+    try {
+      const fullBlob = new Blob(['full'], { type: 'image/webp' });
+      captureScreenshot.mockResolvedValueOnce(fullBlob);
+      mount();
+      openOverlay();
+      drag(getOverlay(), { x: 15, y: 25 }, { x: 215, y: 225 });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByText(/canvas produced no blob/i, {
+            selector: '[role="alert"]',
+          }),
+        ).toBeInTheDocument(),
+      );
+      expect(
+        screen.queryByRole('button', { name: /remove screenshot/i }),
+      ).toBeNull();
+    } finally {
+      stub.restore();
+    }
+  });
+
+  // Coverage for `handlePointerDown` non-primary-button early return
+  // (e.button !== 0). A right-click must not initialise the drag state,
+  // so a subsequent pointerMove produces no selection rectangle.
+  it('ignores non-primary pointer buttons (right-click does not start a drag)', () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    fireEvent.pointerDown(overlay, {
+      clientX: 40,
+      clientY: 60,
+      pointerId: 1,
+      button: 2,
+    });
+    fireEvent.pointerMove(overlay, {
+      clientX: 140,
+      clientY: 160,
+      pointerId: 1,
+    });
+    expect(screen.queryByTestId('brw-region-selection')).toBeNull();
+  });
+
+  // Coverage for `handlePointerMove` `!draggingRef.current` early return
+  // and `handlePointerUp` `!draggingRef.current` early return. A stray
+  // move / up without a preceding down must not crash nor render a rect.
+  it('ignores pointer move / up without a preceding pointer down', () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    fireEvent.pointerMove(overlay, {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+    });
+    expect(screen.queryByTestId('brw-region-selection')).toBeNull();
+    // Lone pointerUp must also no-op (covers `!draggingRef.current` in
+    // handlePointerUp). happy-dom's releasePointerCapture stub would
+    // throw without the early return, giving us a second signal.
+    fireEvent.pointerUp(overlay, {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+    });
+    expect(screen.queryByTestId('brw-region-selection')).toBeNull();
+  });
+
+  // Coverage for `handleKeyDown` `e.key !== 'Enter'` early return.
+  // Pressing any non-Enter key on the overlay root must not run
+  // `confirm()` (no captureScreenshot call, overlay stays open, no
+  // shake class).
+  it('non-Enter key on the overlay root does not confirm the region', async () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    drag(overlay, { x: 30, y: 40 }, { x: 230, y: 240 });
+    await act(async () => {
+      fireEvent.keyDown(overlay, { key: 'a' });
+      fireEvent.keyDown(overlay, { key: 'Tab' });
+    });
+    expect(captureScreenshot).not.toHaveBeenCalled();
+    expect(queryOverlay()).toBeInTheDocument();
+    expect(overlay.className).not.toMatch(/brw-region-shake/);
+  });
+
+  // Coverage for the Enter-with-target===currentTarget branch of
+  // `handleKeyDown`. The existing Enter tests press Enter on focused
+  // buttons (which hit the `e.target !== e.currentTarget` guard);
+  // this test focuses the overlay root directly and confirms the
+  // region-confirm path runs from there.
+  it('Enter on the focused overlay root confirms a non-degenerate region', async () => {
+    const stub = installCropStub();
+    try {
+      const fullBlob = new Blob(['full-enter'], { type: 'image/webp' });
+      captureScreenshot.mockResolvedValueOnce(fullBlob);
+      vi.stubGlobal('devicePixelRatio', 1);
+      mount();
+      openOverlay();
+      const overlay = getOverlay();
+      drag(overlay, { x: 20, y: 30 }, { x: 220, y: 230 });
+      overlay.focus();
+      await act(async () => {
+        fireEvent.keyDown(overlay, { key: 'Enter' });
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /remove screenshot/i }),
+        ).toBeInTheDocument(),
+      );
+      expect(captureScreenshot).toHaveBeenCalledTimes(1);
+      expect(stub.drawImageArgs).toHaveLength(1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  // Coverage for the shake settle timer body (lines 1191-1192): triggers
+  // a degenerate Capture, advances fake timers past the 320ms settle, and
+  // confirms `setShake(false)` fired (the shake class drops off the root).
+  it('shake settle timer clears the shake flag after the animation window', async () => {
+    vi.useFakeTimers();
+    try {
+      mount();
+      openOverlay();
+      const overlay = getOverlay();
+      drag(overlay, { x: 50, y: 50 }, { x: 51, y: 51 });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+      });
+      // The shake flag is set synchronously on the Capture click.
+      expect(getOverlay().className).toMatch(/brw-region-shake/);
+      await act(async () => {
+        vi.advanceTimersByTime(320);
+      });
+      expect(getOverlay().className).not.toMatch(/brw-region-shake/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Coverage for the unmount cleanup effect. Triggering a degenerate
+  // Capture schedules the 320ms shake-settle timer; unmounting before
+  // the timer fires must clear it so React does not log a 'state update
+  // on unmounted component' warning (and so the handle doesn't leak).
+  it('unmounting during an active shake clears the in-flight settle timer', async () => {
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+    const view = mount();
+    openOverlay();
+    const overlay = getOverlay();
+    drag(overlay, { x: 50, y: 50 }, { x: 51, y: 51 });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+    });
+    expect(getOverlay().className).toMatch(/brw-region-shake/);
+    const beforeUnmount = clearTimeoutSpy.mock.calls.length;
+    view.unmount();
+    // The cleanup effect (or the close-path reset effect, whichever runs
+    // first during teardown) must call clearTimeout for the handle we
+    // scheduled on the Capture click. One extra call is enough to prove
+    // the timer was cancelled.
+    expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(beforeUnmount);
+    clearTimeoutSpy.mockRestore();
+  });
 });
 
 /**

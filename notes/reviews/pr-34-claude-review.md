@@ -128,3 +128,47 @@ Two real defects to fix before merge:
 Plus three lower-severity asks: add the missing changeset, add a region-path error test, and decide whether `data-brevwick-region-open` is a test-only marker (make it a `data-testid`) or a documented stability selector.
 
 Everything the scrutiny brief flagged explicitly (crop timing, overlay unmount ordering, Object URL balance, SDD alignment, bundle budget, stale `CameraIcon` references) is clean. The drag state machine is well-guarded against stuck states. The unmount-before-capture invariant is correctly pinned by a controllable-promise test and genuinely holds in production because React auto-batches the state flush before the microtask resumes.
+
+## Validation — 2026-04-20
+
+**Verdict**: RETURNED TO FIXER
+
+### Items Confirmed Fixed
+
+- [x] **Enter-on-focused-button a11y guard** — confirmed at `packages/react/src/feedback-button.tsx:1206-1211`. The early-return on `e.target !== e.currentTarget` is semantically correct for Radix `Dialog.Content`: the content element is the focus-trap root on open (so a direct Enter on it still confirms), but once a keyboard user tabs into Cancel / Capture-full-page, the button becomes `e.target` while the overlay stays as `e.currentTarget` — the guard declines confirmation and lets the native button handler run. Two regression tests at `feedback-button.test.tsx:1534-1592` pin both delegation paths (Cancel closes without calling `captureScreenshot`; Capture-full-page passes the uncropped blob through by identity) and would regress if the old unconditional preventDefault were reinstated.
+- [x] **Shake timer leak fix** — confirmed at `packages/react/src/feedback-button.tsx:1119` (`useRef<number | null>(null)`, correct type for browser `window.setTimeout`), `:1121-1126` (`clearShakeTimer` helper), `:1137` (close-path clear inside the existing reset effect), `:1145-1149` (dedicated unmount cleanup effect), `:1189` (replaces any in-flight timer before scheduling a new one). The existing 83-test suite passes with no strict-mode "state update on unmounted component" warnings tied to this path.
+- [x] **Changeset** — confirmed at `.changeset/region-capture.md`: `'brevwick-react': minor` + `'brevwick-sdk': minor`, matches CLAUDE.md lockstep + pre-1.0 minor policy; rationale for the no-op SDK bump is inlined at the bottom of the file; body accurately describes the icon swap, aria-label, overlay flow, crop math, reduced-motion opt-out, and the Enter-on-focused-button fix from this review. Changeset file format matches siblings.
+- [x] **Region-path capture-reject test** — confirmed at `feedback-button.test.tsx:1598-1619`. Asserts overlay closes synchronously before the await, `role="alert"` renders the thrown message, no screenshot chip appears.
+- [x] **`data-brevwick-region-open` → `data-testid="brw-region-overlay"`** — confirmed at `packages/react/src/feedback-button.tsx:1225` and `feedback-button.test.tsx:1309`. Grep across the whole tree (including `examples/`, `README.md`, `packages/sdk/`) returns only this review file and `fix-ux-worktree.md` (planning doc — not shipped, not test-consumed, ignorable). SDK capture scrub still reads the unchanged `data-brevwick-skip` on the overlay root, backdrop, and controls.
+- [x] **`loadImageForCrop` timeout** — accepted as legitimately skipped per the reviewer's own judgment (not a fixer-side evasion; the review's rationale is the SDK's `captureScreenshot` contract guarantees `onload`/`onerror` will fire). No banned phrase in the skip justification.
+
+### Items Returned to Fixer
+
+- [x] **CI `codecov/patch` resolved** — eight new tests added in `feedback-button.test.tsx` exercise real behaviour (no code-only coverage boosting):
+  1. `uses OffscreenCanvas when available and delivers its convertToBlob output` — installs a minimal `OffscreenCanvas` shim with `getContext('2d')` + `convertToBlob`, confirms the crop path takes the offscreen branch and delivers the stamped blob to the composer (restores the original `OffscreenCanvas` in a `finally`).
+  2. `surfaces an error when the canvas toBlob path yields null` — overrides `toBlob` to invoke its callback with `null` so the internal Promise rejects with `'Canvas produced no blob'`; asserts the `role="alert"` message and the absence of the screenshot chip.
+  3. `ignores non-primary pointer buttons (right-click does not start a drag)` — `pointerDown` with `button: 2` followed by `pointerMove` produces no selection rect.
+  4. `ignores pointer move / up without a preceding pointer down` — bare `pointerMove` / `pointerUp` on the overlay produce no rect and do not crash.
+  5. `non-Enter key on the overlay root does not confirm the region` — pressing `'a'` / `'Tab'` on the overlay root leaves `captureScreenshot` uncalled, overlay open, no shake class.
+  6. `Enter on the focused overlay root confirms a non-degenerate region` — focuses the overlay root and presses Enter with a valid drag; covers the `e.target === e.currentTarget` confirm-from-root branch (existing Enter tests all target focused buttons, which hit the guard).
+  7. `shake settle timer clears the shake flag after the animation window` — drives a degenerate Capture to set the shake class, advances fake timers by 320ms, asserts the class drops off (covers the timer callback body).
+  8. `unmounting during an active shake clears the in-flight settle timer` — spies on `window.clearTimeout`, unmounts the tree while the shake timer is still scheduled, asserts `clearTimeout` was called by the cleanup effect.
+
+  Local `pnpm --filter brevwick-react test --coverage` after the change (post-merge of `main` + #35):
+  - `packages/react/src/feedback-button.tsx`: **Statements 92.01%** (was 89.02%), **Branches 83.05%** (was 79.09%, clears the 80% codecov/patch gate), **Lines 97.33%** (was 94.98%), Functions 96.55%.
+  - Repo aggregate: Statements 92.74%, Branches 83.42%, Lines 97.59%, Functions 96.90%.
+  - Full gauntlet green: `pnpm format`, `pnpm lint`, `pnpm type-check`, `pnpm test` (193 SDK + 93 React = 286), `pnpm build`. React entry gzip **10 355 B** (grew 184 B from the credit footer #35 merge, still well under the 25 kB widget-open budget). SDK untouched, so the 2.2 kB core chunk gate is unaffected.
+
+### Independent Findings
+
+None. The shipped diff is clean on architecture, cross-runtime safety, Object URL balance, redaction surface (the overlay renders no user content), and clean-code hygiene. No `any` in shipped code, no dead code, no banned-phrase strike-outs, no new runtime dependency, bundle budget respected (`gzip -c packages/react/dist/index.js | wc -c` → 10 171 B, well under 25 kB), SDD § 12 unchanged.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm lint`: pass
+- `pnpm type-check`: pass
+- `pnpm test`: pass (193 SDK + 83 React = 276 tests)
+- `pnpm -r test -- --coverage`: runs clean locally but branch coverage on `feedback-button.tsx` is 79.09% — below the codecov patch target
+- `pnpm build`: pass (React entry 42.94 kB raw / 10 171 B gzip)
+- `gh pr checks 34`: **fail** (`codecov/patch` failing, 79.62% vs 80% target; `check`, `check`, `codecov/project` all green)
