@@ -7,9 +7,11 @@ import {
   within,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// `expect.extend(vitest-axe/matchers)` runs once per process in
+// `vitest.setup.ts`; the matching type augmentation lives in
+// `src/__tests__/vitest-axe.d.ts` so `toHaveNoViolations()` type-checks
+// without per-call casts.
 import { axe } from 'vitest-axe';
-import * as axeMatchers from 'vitest-axe/matchers';
-expect.extend(axeMatchers);
 import type {
   Brevwick,
   BrevwickConfig,
@@ -1087,47 +1089,62 @@ describe('<FeedbackButton> — theming + composer shell', () => {
     );
   });
 
-  it('composer textarea autogrows — input events apply an inline height', () => {
+  it('composer textarea autogrows — input events apply an inline height', async () => {
     mount();
     openPanel();
     const textarea = screen.getByRole('textbox', {
       name: /feedback message/i,
     }) as HTMLTextAreaElement;
-    // The autogrow effect runs on draft change, setting height to
-    // min(scrollHeight, COMPOSER_MAX_HEIGHT_PX). Regardless of happy-dom's
-    // scrollHeight value (typically 0), the inline style must be applied —
-    // a regression that drops the effect would leave `style.height` empty.
-    fireEvent.change(textarea, {
-      target: { value: 'line 1\nline 2\nline 3\nline 4\nline 5' },
-    });
-    expect(textarea.style.height).toMatch(/px$/);
+    // happy-dom reports `scrollHeight === 0` for unmeasured textareas, so
+    // asserting only `/px$/` passes vacuously for `"0px"`. Spy on the
+    // prototype getter so the autogrow effect sees a realistic scrollHeight
+    // and we can assert the exact clamped value applied by the effect.
+    const { COMPOSER_MAX_HEIGHT_PX } = await import('../styles');
+    const fakeScrollHeight = 400; // deliberately above the clamp ceiling
+    const scrollHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+      .mockReturnValue(fakeScrollHeight);
+    try {
+      fireEvent.change(textarea, {
+        target: { value: 'line 1\nline 2\nline 3\nline 4\nline 5' },
+      });
+      // Effect sets height to `min(scrollHeight, COMPOSER_MAX_HEIGHT_PX)`.
+      // With scrollHeight > ceiling, the inline style must equal the
+      // ceiling — catches a regression that silently removes the clamp
+      // OR drops the effect (`style.height === ''`).
+      expect(textarea.style.height).toBe(`${COMPOSER_MAX_HEIGHT_PX}px`);
+    } finally {
+      scrollHeightSpy.mockRestore();
+    }
   });
 
   it('every themeable declaration reads from a --brw-* token (no hardcoded hex in class rules)', () => {
     // Acceptance-criterion guard: shadows, colours, and backgrounds in
     // class rules must flow through `var(--brw-*)`. Hex literals inside a
-    // class-rule body break the host-override contract. We strip the token
-    // blocks first (those are ALLOWED to hold hex defaults), then assert
-    // the remainder has no hex literals.
-    const stripped = BREVWICK_CSS.replace(
-      /:where\(:root\)\s*\{[\s\S]*?\n\s*\}/g,
-      '',
-    );
+    // class-rule body break the host-override contract. We strip the
+    // `:where(:root)` token blocks first (those are ALLOWED to hold hex
+    // defaults) via a balanced-brace walker, so a future refactor that
+    // reformats the block (single-line, extra nesting, etc.) doesn't
+    // silently break the guard.
+    const stripped = stripTokenBlocks(BREVWICK_CSS);
     expect(stripped).not.toMatch(/#[0-9a-fA-F]{3,8}/);
   });
 
+  // The two axe specs below guard structural a11y only (role / aria /
+  // accessible-name). happy-dom does not re-evaluate
+  // `@media (prefers-color-scheme: dark)` against the stubbed matchMedia,
+  // and axe-core's `color-contrast` rule reports `inapplicable` under
+  // happy-dom since the non-layout-engine environment can't resolve
+  // cascaded `color` values. Contrast for the default light + dark
+  // palettes is pinned separately via `dark-mode bubble-user / accent
+  // pairs meet WCAG AA contrast` below, which works directly off the
+  // emitted CSS strings and does not need a layout engine.
   it('vitest-axe is clean on the rendered panel in a light matchMedia stub', async () => {
     stubMatchMedia(false);
     mount();
     openPanel();
     const results = await axe(screen.getByRole('dialog'));
-    // vitest-axe's matcher type declarations target the legacy `Vi` namespace
-    // that vitest 4 no longer uses, so the matcher is valid at runtime but
-    // invisible to tsc. Cast through an interface that names the matcher
-    // shape explicitly — more legible than a blanket `as any`.
-    (
-      expect(results) as unknown as { toHaveNoViolations: () => void }
-    ).toHaveNoViolations();
+    expect(results).toHaveNoViolations();
   });
 
   it('vitest-axe is clean on the rendered panel in a dark matchMedia stub', async () => {
@@ -1135,9 +1152,25 @@ describe('<FeedbackButton> — theming + composer shell', () => {
     mount();
     openPanel();
     const results = await axe(screen.getByRole('dialog'));
-    (
-      expect(results) as unknown as { toHaveNoViolations: () => void }
-    ).toHaveNoViolations();
+    expect(results).toHaveNoViolations();
+  });
+
+  it('dark-mode bubble-user / accent pairs meet WCAG AA contrast', () => {
+    // Guard the default dark palette against silent regressions. Pulls the
+    // hex values straight out of the emitted CSS and computes the WCAG 2.x
+    // relative-luminance contrast ratio. Both the user-bubble and the
+    // accent (send button) need ≥ 4.5:1 for body-text AA.
+    const dark = extractDarkTokenBlock(BREVWICK_CSS);
+    const bubblePair = contrastRatio(
+      dark['--brw-bubble-user-bg']!,
+      dark['--brw-bubble-user-fg']!,
+    );
+    const accentPair = contrastRatio(
+      dark['--brw-accent']!,
+      dark['--brw-accent-fg']!,
+    );
+    expect(bubblePair).toBeGreaterThanOrEqual(4.5);
+    expect(accentPair).toBeGreaterThanOrEqual(4.5);
   });
 });
 
@@ -1159,4 +1192,101 @@ function stubMatchMedia(prefersDark: boolean): void {
     removeEventListener: () => undefined,
     dispatchEvent: () => false,
   }));
+}
+
+/**
+ * Remove every `:where(:root) { ... }` token-default block from the
+ * emitted CSS using a balanced-brace walker. Survives whitespace and
+ * newline refactors that a `[\s\S]*?\n\s*}` regex would silently
+ * mis-strip; used by the "no hardcoded hex in class rules" guard.
+ */
+function stripTokenBlocks(css: string): string {
+  const out: string[] = [];
+  let i = 0;
+  while (i < css.length) {
+    const match = css.slice(i).match(/:where\(:root\)\s*\{/);
+    if (!match) {
+      out.push(css.slice(i));
+      break;
+    }
+    const blockStart = i + match.index!;
+    out.push(css.slice(i, blockStart));
+    // Walk forward from the opening `{`, tracking nesting until the
+    // matching `}` closes this block.
+    let depth = 0;
+    let j = blockStart + match[0].length - 1; // points AT the `{`
+    for (; j < css.length; j++) {
+      const ch = css[j];
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          j++; // consume the closing brace
+          break;
+        }
+      }
+    }
+    i = j;
+  }
+  return out.join('');
+}
+
+/**
+ * Parse the `@media (prefers-color-scheme: dark) :where(:root) { ... }`
+ * block out of the emitted CSS and return every `--brw-*` declaration as
+ * a plain object. Used by the dark-palette contrast guard. Throws on a
+ * missing block so a future refactor that removes the dark palette fails
+ * loudly instead of silently skipping the check.
+ */
+function extractDarkTokenBlock(css: string): Record<string, string> {
+  const openRe = /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{/;
+  const openMatch = css.match(openRe);
+  if (!openMatch) throw new Error('dark media block not found in BREVWICK_CSS');
+  const start = openMatch.index! + openMatch[0].length;
+  // Walk to the matching `}` of the @media wrapper.
+  let depth = 1;
+  let end = start;
+  for (; end < css.length; end++) {
+    const ch = css[end];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  const body = css.slice(start, end);
+  const tokens: Record<string, string> = {};
+  const declRe = /(--brw-[\w-]+)\s*:\s*([^;]+);/g;
+  let m: RegExpExecArray | null;
+  while ((m = declRe.exec(body)) !== null) {
+    tokens[m[1]!] = m[2]!.trim();
+  }
+  return tokens;
+}
+
+/**
+ * WCAG 2.x contrast ratio between two `#RRGGBB` hex colours. Returns a
+ * number in [1, 21]; ≥ 4.5 is the AA bar for body text.
+ */
+function contrastRatio(fgHex: string, bgHex: string): number {
+  const lum = (hex: string): number => {
+    const cleaned = hex.trim().replace(/^#/, '');
+    const full =
+      cleaned.length === 3
+        ? cleaned
+            .split('')
+            .map((c) => c + c)
+            .join('')
+        : cleaned;
+    const r = parseInt(full.slice(0, 2), 16) / 255;
+    const g = parseInt(full.slice(2, 4), 16) / 255;
+    const b = parseInt(full.slice(4, 6), 16) / 255;
+    const ch = (c: number): number =>
+      c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
+  };
+  const L1 = lum(fgHex);
+  const L2 = lum(bgHex);
+  const [lighter, darker] = L1 > L2 ? [L1, L2] : [L2, L1];
+  return (lighter + 0.05) / (darker + 0.05);
 }
