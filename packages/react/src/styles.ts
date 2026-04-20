@@ -44,7 +44,7 @@ export const BREVWICK_CSS = `
   --brw-accent-fg: #ffffff;
   /* Shadow */
   --brw-shadow: 0 20px 48px rgba(15, 23, 42, 0.18), 0 6px 12px rgba(15, 23, 42, 0.08);
-  /* Status colours — not exposed in the public token list; widget-internal.
+  /* Status colour — not exposed in the public token list; widget-internal.
      Carried through dark mode (same hue reads adequately on the dark
      --brw-panel-bg); override in the dark block if design ever wants a
      tuned variant. */

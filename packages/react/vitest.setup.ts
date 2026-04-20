@@ -5,7 +5,7 @@ import * as axeMatchers from 'vitest-axe/matchers';
 
 // Register vitest-axe matchers once per test process so individual test
 // files can call `expect(results).toHaveNoViolations()` directly. The
-// corresponding type augmentation lives in `src/types/vitest-axe.d.ts`.
+// corresponding type augmentation lives in `src/__tests__/vitest-axe.d.ts`.
 expect.extend(axeMatchers);
 
 afterEach(() => {

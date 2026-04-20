@@ -1266,9 +1266,11 @@ function extractDarkTokenBlock(css: string): Record<string, string> {
 
 /**
  * WCAG 2.x contrast ratio between two `#RRGGBB` hex colours. Returns a
- * number in [1, 21]; ≥ 4.5 is the AA bar for body text.
+ * number in [1, 21]; ≥ 4.5 is the AA bar for body text. The function is
+ * symmetric in its arguments (lighter / darker is resolved internally), so
+ * parameters are named `aHex` / `bHex` rather than `fg` / `bg`.
  */
-function contrastRatio(fgHex: string, bgHex: string): number {
+function contrastRatio(aHex: string, bHex: string): number {
   const lum = (hex: string): number => {
     const cleaned = hex.trim().replace(/^#/, '');
     const full =
@@ -1285,8 +1287,8 @@ function contrastRatio(fgHex: string, bgHex: string): number {
       c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
   };
-  const L1 = lum(fgHex);
-  const L2 = lum(bgHex);
+  const L1 = lum(aHex);
+  const L2 = lum(bHex);
   const [lighter, darker] = L1 > L2 ? [L1, L2] : [L2, L1];
   return (lighter + 0.05) / (darker + 0.05);
 }
