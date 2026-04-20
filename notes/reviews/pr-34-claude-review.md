@@ -172,3 +172,56 @@ None. The shipped diff is clean on architecture, cross-runtime safety, Object UR
 - `pnpm -r test -- --coverage`: runs clean locally but branch coverage on `feedback-button.tsx` is 79.09% — below the codecov patch target
 - `pnpm build`: pass (React entry 42.94 kB raw / 10 171 B gzip)
 - `gh pr checks 34`: **fail** (`codecov/patch` failing, 79.62% vs 80% target; `check`, `check`, `codecov/project` all green)
+
+## Validation — 2026-04-20 (round 2, head a7eb3c4)
+
+**Verdict**: APPROVED
+
+### Items Confirmed Fixed
+
+- [x] **`codecov/patch` gate cleared** — `gh pr checks 34` shows `check`, `check`, `codecov/patch`, `codecov/project` all `pass`. Local `pnpm --filter brevwick-react test --coverage` reproduces the claimed numbers exactly: feedback-button.tsx Statements 92.01%, Branches 83.05% (clears 80% gate), Lines 97.33%, Functions 96.55%; repo aggregate Statements 92.74%, Branches 83.42%, Lines 97.59%, Functions 96.90%.
+- [x] **OffscreenCanvas happy-path test** — `feedback-button.test.tsx:1696-1792`. Installs a real `OffscreenCanvasStub` on `globalThis` (not using `installCropStub`, which explicitly deletes the global), so the `typeof OffscreenCanvas !== 'undefined'` guard at `feedback-button.tsx:1065` evaluates true and the branch at `:1066-1072` runs. Asserts (a) `drawImage` called with `sx=20, sy=40, sw=400, sh=200` (region × dpr=2) and `dx=0, dy=0, dw=200, dh=100`; (b) the blob stamped by the stub's `convertToBlob` (`_brwOffscreen=true`, `_brwW=200`, `_brwH=100`) is what the composer forwards on submit. Not a tautology — routes through the real branch, verifies real drawImage args.
+- [x] **canvas.toBlob null → `Canvas produced no blob`** — `feedback-button.test.tsx:1795-1823`. Uses `installCropStub` (which deletes OffscreenCanvas) to force the `<canvas>` fallback, then overrides `HTMLCanvasElement.prototype.toBlob` to invoke its callback with `null`. The Promise at `feedback-button.tsx:1079-1085` hits the `out ? resolve(out) : reject(new Error('Canvas produced no blob'))` branch and rejects. Test asserts the `role="alert"` panel renders "canvas produced no blob" and no screenshot chip appears. Genuine reject-path hit, not a tautology.
+- [x] **Non-primary button pointer-down guard** — `feedback-button.test.tsx:1828-1844`. Fires `pointerDown` with `button: 2` (right-click), then `pointerMove`; asserts no selection rect. Hits the `e.button !== 0` early return at `:1178`. Would regress if the guard were removed (pointerDown would set `draggingRef.current = true`, pointerMove would render a rect).
+- [x] **pointerMove / pointerUp without prior down** — `feedback-button.test.tsx:1849-1869`. Lone `pointerMove` then lone `pointerUp` with no preceding `pointerDown`. Hits both `!draggingRef.current` early returns (`:1192`, `:1204`). Without the guards, `handlePointerUp` would call `releasePointerCapture` on an un-captured pointer (happy-dom may throw) and `handlePointerMove`'s `setDrag((prev) => …)` mutation would still be reached.
+- [x] **Non-Enter key on overlay root** — `feedback-button.test.tsx:1875-1886`. Presses `'a'` then `'Tab'` on the overlay root with a non-degenerate drag already staged; asserts `captureScreenshot` was not called, overlay stays open, no shake class. Hits the `e.key !== 'Enter'` early return at `:1231`. Without the guard, `confirm()` would run and capture would fire.
+- [x] **Enter on focused overlay root confirms** — `feedback-button.test.tsx:1895-1918`. Focuses the overlay root (`overlay.focus()`) and presses Enter with a non-degenerate drag; asserts `captureScreenshot` called once and `drawImage` invoked once. Hits the `e.target === e.currentTarget` branch (pre-existing Enter tests all focus buttons, which hit the guard and don't reach `confirm()`).
+- [x] **Shake settle timer body** — `feedback-button.test.tsx:1923-1946`. Uses fake timers, triggers a degenerate Capture (1px×1px selection), asserts `brw-region-shake` class is set, advances timers 320 ms, asserts class is cleared. Exercises the `setTimeout` callback body at `:1214-1217` which clears the ref and calls `setShake(false)`.
+- [x] **Unmount during active shake clears timer** — `feedback-button.test.tsx:1952-1970`. Spies on `window.clearTimeout`, mounts, triggers degenerate Capture (shake timer scheduled), unmounts, asserts `clearTimeout` was called more times after unmount than before. Covers the dedicated unmount cleanup effect at `:1169-1173`. The assertion is soft (only asserts "at least one extra call") but the behaviour is real: without the cleanup effect, `clearTimeout` would not be invoked from the unmount path for this handle.
+- [x] **All five prior-round fixes still in place** — verified by grep: `shakeTimerRef` / `clearShakeTimer` at lines 1143-1217; `e.target !== e.currentTarget` guard at line 1232; `data-testid="brw-region-overlay"` at line 1249 (no remaining `data-brevwick-region-open` in `packages/`); `.changeset/region-capture.md` present; region-reject error test at `feedback-button.test.tsx:1630`.
+- [x] **Clean merge of origin `a0ec63f` + #35 `46c2bc9`** — `git log --oneline` shows linear `9dad4f7 → 6bfd05a → (46c2bc9 via a0ec63f merge) → a7eb3c4`. `pnpm test` passes 193 SDK + 93 React = 286 tests. No test conflicts, no regressions in existing suites.
+- [x] **Fixer commit hygiene** — `git show --stat a7eb3c4` confirms only `notes/reviews/pr-34-claude-review.md` (+44) and `packages/react/src/__tests__/feedback-button.test.tsx` (+319) touched. Subject "test(react): cover cropToRegion + drag overlay edges for codecov/patch" is 63 chars (≤ 72). No `Co-Authored-By`. No Claude attribution anywhere in commit body.
+- [x] **Bundle budget intact** — `gzip -c packages/react/dist/index.js | wc -c` = **10 355 B** (matches fixer's claim exactly). Under the 25 kB widget-open budget. The +184 B vs the previous round is attributable to the #35 credit-footer merge (independently shipped), not to this PR's changes. SDK untouched — 2.2 kB core-chunk gate unaffected.
+
+### Items Returned to Fixer
+
+None.
+
+### Independent Findings
+
+None. Architecture, cross-runtime safety, Object URL balance, redaction surface (the overlay renders no user content), and clean-code hygiene all remain clean after the merge and the test additions. No banned phrases anywhere in the checklist (grep confirmed). No remaining `- [ ]` items.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm lint`: pass
+- `pnpm type-check`: pass
+- `pnpm test`: pass (193 SDK + 93 React = 286 tests)
+- `pnpm --filter brevwick-react test --coverage`: pass (patch branches 83.05%, clears 80% gate)
+- `pnpm build`: pass (React entry 10 355 B gzip; SDK core untouched)
+- `gh pr checks 34`: **pass** — all four required checks green (`check` workflow ×2, `codecov/patch`, `codecov/project`)
+
+## Round 3 — Copilot PR review comments actioned (2026-04-20)
+
+Copilot (`copilot-pull-request-reviewer`) left three line-level comments on head `a7eb3c4` after the approval. All three are now resolved:
+
+- [x] **Changeset text inaccuracy** (`.changeset/region-capture.md:8-11`) — claimed "screenshot icon is now a camera glyph (was a paperclip)", which inverted the swap. Rewritten to "monitor-plus-selection glyph (previously a camera)" with a clarifying note that the paperclip file-upload control sitting next to it is unrelated and unchanged.
+- [x] **`handlePointerDown` bubbling bug** (`feedback-button.tsx:1175-1197`) — pointerdown events from Cancel / Capture / Capture-full-page bubbled up through React delegation to the overlay's handler, reinitialising `drag` to a zero-size rect right before the button's own `onClick` fired and sending valid selections into the degenerate-shake path. Added an `e.target !== e.currentTarget` guard (same pattern as the Enter-key guard already in `handleKeyDown`) so the overlay only initiates a drag when the press lands directly on the layer. New regression test at `feedback-button.test.tsx:1419-1465` fires a full real-browser sequence on the Capture button (`pointerDown → pointerUp → click`, each bubbling) after a valid drag and asserts `captureScreenshot` was invoked once and `drawImage` saw the original 30/40/200/100 args — would have failed before the fix because confirm() would have read the reinitialised zero-size rect.
+- [x] **Misleading "must be unmounted BEFORE" comment** (`feedback-button.tsx:326-333`) — the prior wording implied synchronous unmount ordering, but `setRegionOpen(false)` merely schedules the unmount and `captureScreenshot()` starts in the same tick. Comment rewritten to correctly describe the guarantee: primary protection is `data-brevwick-skip` on every overlay node (honoured by the SDK's scrub before snapshotting); the React unmount lands before the async rasterization / crop completes and is defence-in-depth.
+
+### Gauntlet (post-fix, local)
+
+- `pnpm format`, `pnpm lint`, `pnpm type-check`, `pnpm build`: pass
+- `pnpm test`: 193 SDK + 94 React = **287 tests** pass (one new regression test added)
+- React entry gzip: **10 360 B** (+5 B from the guard line; still well under the 25 kB budget)
+- SDK core untouched

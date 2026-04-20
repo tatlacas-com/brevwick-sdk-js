@@ -1416,6 +1416,54 @@ describe('<FeedbackButton> — region capture overlay', () => {
     }
   });
 
+  it('pointerdown bubbled from control buttons does not reset the drag selection', async () => {
+    // Regression for the Copilot reviewer's finding: pointerdown on the
+    // Cancel / Capture / Capture-full-page buttons bubbles up through
+    // React delegation to the overlay's onPointerDown. Without the
+    // `e.target !== e.currentTarget` guard, the bubbled event
+    // reinitialises `drag` to a zero-size rect and the subsequent click
+    // hits the degenerate-shake path instead of running the crop.
+    const stub = installCropStub();
+    try {
+      const fullBlob = new Blob(['full'], { type: 'image/webp' });
+      captureScreenshot.mockResolvedValueOnce(fullBlob);
+      vi.stubGlobal('devicePixelRatio', 1);
+      mount();
+      openOverlay();
+      drag(getOverlay(), { x: 30, y: 40 }, { x: 230, y: 140 });
+      // Simulate the real-browser input sequence when the user clicks the
+      // Capture button: pointerdown → pointerup → click, each bubbling.
+      const captureBtn = screen.getByRole('button', { name: /^capture$/i });
+      await act(async () => {
+        fireEvent.pointerDown(captureBtn, {
+          clientX: 400,
+          clientY: 400,
+          pointerId: 2,
+          button: 0,
+        });
+        fireEvent.pointerUp(captureBtn, {
+          clientX: 400,
+          clientY: 400,
+          pointerId: 2,
+        });
+        fireEvent.click(captureBtn);
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /remove screenshot/i }),
+        ).toBeInTheDocument(),
+      );
+      expect(captureScreenshot).toHaveBeenCalledTimes(1);
+      // Crop args reflect the original 200×100 drag, not a zero-size
+      // restart at (400, 400).
+      expect(stub.drawImageArgs).toHaveLength(1);
+      const [, sx, sy, sw, sh] = stub.drawImageArgs[0]!;
+      expect([sx, sy, sw, sh]).toEqual([30, 40, 200, 100]);
+    } finally {
+      stub.restore();
+    }
+  });
+
   it('"Capture full page" passes the uncropped blob through to the composer', async () => {
     const fullBlob = new Blob(['uncropped'], { type: 'image/webp' });
     captureScreenshot.mockResolvedValueOnce(fullBlob);

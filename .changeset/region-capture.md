@@ -5,10 +5,11 @@
 
 feat(react): screenshot icon + drag-to-select region capture
 
-- The composer's screenshot icon is now a camera glyph (was a paperclip),
-  with `aria-label="Capture screenshot of this page"` so keyboard and
-  screen-reader users discover the affordance without relying on the
-  surrounding tooltip.
+- The composer's screenshot icon is now a monitor-plus-selection glyph
+  (previously a camera), with `aria-label="Capture screenshot of this
+page"` so keyboard and screen-reader users discover the affordance
+  without relying on the surrounding tooltip. The paperclip file-upload
+  button next to it is unchanged.
 - Clicking the screenshot icon now opens a full-viewport region-capture
   overlay (Radix `Dialog.Root`, focus-trapped, Escape-to-dismiss). The
   submitter drags to mark a rectangle; "Capture" crops the full-page

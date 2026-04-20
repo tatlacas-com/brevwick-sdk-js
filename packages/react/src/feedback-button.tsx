@@ -325,9 +325,12 @@ export function FeedbackButton({
 
   // Split from the historical one-shot capture: the button now only opens
   // the region overlay, and the overlay fans out to either a full-page or
-  // a cropped capture. Overlay must be unmounted BEFORE captureScreenshot
-  // runs so the transparent layer doesn't bleed into the rendered page
-  // (data-brevwick-skip on the overlay is defence-in-depth).
+  // a cropped capture. `setRegionOpen(false)` schedules the overlay unmount
+  // and we start `captureScreenshot()` in the same tick — so the primary
+  // protection against the overlay bleeding into the rendered page is
+  // `data-brevwick-skip` on every overlay node, which the SDK's capture
+  // path honours before it snapshots. The React unmount lands before the
+  // async rasterization / crop work completes and is defence-in-depth.
   const performCapture = useCallback(
     async (region: Region | null) => {
       setSubmitError(null);
@@ -1173,6 +1176,14 @@ function RegionCaptureOverlay({
   }, []);
 
   const handlePointerDown = (e: PointerEvent<HTMLDivElement>): void => {
+    // React delegation bubbles pointerdown from the Cancel / Capture /
+    // Capture-full-page controls up through this handler. Without this
+    // guard the bubbled event would reinitialise the drag state to a
+    // zero-size rect right before the button's own click fires, sending
+    // a valid selection into the degenerate-shake path. `currentTarget`
+    // is always the overlay layer; only initiate a drag when the press
+    // landed directly on it (not on a descendant control).
+    if (e.target !== e.currentTarget) return;
     // Ignore non-primary buttons (right-click / middle-click). pointerType
     // 'touch' and 'pen' always report button === 0.
     if (e.button !== 0) return;
