@@ -86,6 +86,26 @@ function openPanel(): void {
   fireEvent.click(screen.getByRole('button', { name: /open feedback form/i }));
 }
 
+/**
+ * Drive the screenshot button through the #31 region-capture overlay the
+ * pre-existing tests expect "click screenshot → blob in composer" from.
+ * Post-#31, the button opens an overlay and the user picks between a
+ * region crop and a full-page capture — here we take the latter path,
+ * which is the closest analogue to the pre-#31 behaviour.
+ */
+async function captureFullPage(): Promise<void> {
+  await act(async () => {
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /capture screenshot of this page/i,
+      }),
+    );
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /capture full page/i }));
+  });
+}
+
 function getComposer(): HTMLTextAreaElement {
   return screen.getByRole('textbox', {
     name: /feedback message/i,
@@ -247,11 +267,7 @@ describe('<FeedbackButton>', () => {
     mount();
     openPanel();
 
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /attach screenshot/i }),
-      );
-    });
+    await captureFullPage();
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole('button', { name: /remove screenshot/i }),
@@ -264,11 +280,7 @@ describe('<FeedbackButton>', () => {
     submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_ext' });
     mount();
     openPanel();
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /attach screenshot/i }),
-      );
-    });
+    await captureFullPage();
     typeDraft('with screenshot');
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
@@ -285,11 +297,7 @@ describe('<FeedbackButton>', () => {
     mount();
     openPanel();
 
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /attach screenshot/i }),
-      );
-    });
+    await captureFullPage();
 
     expect(
       screen.getByText(/canvas tainted/i, { selector: '[role="alert"]' }),
@@ -305,11 +313,7 @@ describe('<FeedbackButton>', () => {
     mount();
     openPanel();
     typeDraft('half-typed message');
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /attach screenshot/i }),
-      );
-    });
+    await captureFullPage();
 
     fireEvent.click(screen.getByRole('button', { name: /^minimize$/i }));
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -430,11 +434,7 @@ describe('<FeedbackButton>', () => {
 
     const { unmount } = mount();
     openPanel();
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /attach screenshot/i }),
-      );
-    });
+    await captureFullPage();
     expect(createObjectURL).toHaveBeenCalled();
 
     unmount();
@@ -482,7 +482,7 @@ describe('<FeedbackButton>', () => {
       screen.getByRole('button', { name: /^send$/i }) as HTMLButtonElement,
     ).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: /attach screenshot/i }),
+      screen.getByRole('button', { name: /capture screenshot of this page/i }),
     ).toBeDisabled();
 
     await act(async () => {
@@ -513,11 +513,7 @@ describe('<FeedbackButton>', () => {
     mount();
     openPanel();
     typeDraft('draft survives esc');
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /attach screenshot/i }),
-      );
-    });
+    await captureFullPage();
 
     // Radix's dialog listens on the document; target the dialog content.
     const dialog = screen.getByRole('dialog');
@@ -1072,7 +1068,9 @@ describe('<FeedbackButton> — theming + composer shell', () => {
     expect(shell.className).toMatch(/brw-composer-shell/);
     // All composer controls share this shell parent.
     expect(
-      within(shell).getByRole('button', { name: /attach screenshot/i }),
+      within(shell).getByRole('button', {
+        name: /capture screenshot of this page/i,
+      }),
     ).toBeInTheDocument();
     expect(
       within(shell).getByRole('button', { name: /^send$/i }),
@@ -1171,6 +1169,358 @@ describe('<FeedbackButton> — theming + composer shell', () => {
     );
     expect(bubblePair).toBeGreaterThanOrEqual(4.5);
     expect(accentPair).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('<FeedbackButton> — region capture overlay', () => {
+  /**
+   * Install a test double for the canvas crop pipeline so the overlay's
+   * confirm-region path can resolve under happy-dom (which provides no
+   * functional 2D context, `toBlob`, or image loader). Captures the
+   * `drawImage` source/dest args so a test can assert the crop math
+   * matches the dragged rectangle × devicePixelRatio.
+   */
+  function installCropStub(): {
+    drawImageArgs: unknown[][];
+    restore: () => void;
+  } {
+    const drawImageArgs: unknown[][] = [];
+    const originalImageSrc = Object.getOwnPropertyDescriptor(
+      HTMLImageElement.prototype,
+      'src',
+    );
+    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+      configurable: true,
+      get() {
+        return (this as { _brwSrc?: string })._brwSrc ?? '';
+      },
+      set(value: string) {
+        (this as { _brwSrc?: string })._brwSrc = value;
+        queueMicrotask(() => {
+          const self = this as HTMLImageElement & {
+            onload?: ((ev: Event) => void) | null;
+          };
+          self.onload?.(new Event('load'));
+        });
+      },
+    });
+
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    (HTMLCanvasElement.prototype as { getContext: unknown }).getContext =
+      function getContextStub(kind: string) {
+        if (kind !== '2d') return null;
+        return {
+          drawImage: (...args: unknown[]) => {
+            drawImageArgs.push(args);
+          },
+        };
+      };
+
+    const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function toBlobStub(
+      this: HTMLCanvasElement,
+      cb: BlobCallback,
+      type?: string,
+    ) {
+      const blob = new Blob([`cropped:${this.width}x${this.height}`], {
+        type: type ?? 'image/png',
+      });
+      // Stamp the dimensions on the blob for assertion — Blobs are
+      // opaque in happy-dom so the test reads them via this side-channel.
+      (blob as Blob & { _brwW: number; _brwH: number })._brwW = this.width;
+      (blob as Blob & { _brwW: number; _brwH: number })._brwH = this.height;
+      queueMicrotask(() => cb(blob));
+    };
+
+    // Force the non-OffscreenCanvas branch — happy-dom's OffscreenCanvas,
+    // where present, lacks convertToBlob and would break the crop.
+    const originalOffscreen = (globalThis as { OffscreenCanvas?: unknown })
+      .OffscreenCanvas;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (globalThis as any).OffscreenCanvas;
+
+    return {
+      drawImageArgs,
+      restore: () => {
+        if (originalImageSrc) {
+          Object.defineProperty(
+            HTMLImageElement.prototype,
+            'src',
+            originalImageSrc,
+          );
+        }
+        HTMLCanvasElement.prototype.getContext = originalGetContext;
+        HTMLCanvasElement.prototype.toBlob = originalToBlob;
+        if (originalOffscreen !== undefined) {
+          (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+            originalOffscreen;
+        }
+      },
+    };
+  }
+
+  function openOverlay(): void {
+    openPanel();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /capture screenshot of this page/i,
+      }),
+    );
+  }
+
+  function getOverlay(): HTMLElement {
+    return screen.getByLabelText(/select screenshot region/i);
+  }
+
+  function queryOverlay(): HTMLElement | null {
+    return screen.queryByLabelText(/select screenshot region/i);
+  }
+
+  function drag(
+    overlay: HTMLElement,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ): void {
+    fireEvent.pointerDown(overlay, {
+      clientX: from.x,
+      clientY: from.y,
+      pointerId: 1,
+      button: 0,
+    });
+    fireEvent.pointerMove(overlay, {
+      clientX: to.x,
+      clientY: to.y,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(overlay, {
+      clientX: to.x,
+      clientY: to.y,
+      pointerId: 1,
+    });
+  }
+
+  it('click on the screenshot button opens the overlay with a region marker', () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    expect(overlay).toHaveAttribute('data-brevwick-region-open', 'true');
+    expect(overlay).toHaveAttribute('data-brevwick-skip');
+  });
+
+  it('Escape dismisses the overlay and leaves the main panel open', () => {
+    mount();
+    openOverlay();
+    expect(getOverlay()).toBeInTheDocument();
+    fireEvent.keyDown(getOverlay(), { key: 'Escape' });
+    expect(queryOverlay()).toBeNull();
+    // Main panel remains; the Escape should not have minimized it.
+    expect(
+      screen.getByRole('textbox', { name: /feedback message/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('pointer drag produces a visible selection rectangle sized to the drag', () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    drag(overlay, { x: 30, y: 40 }, { x: 230, y: 140 });
+    const rect = screen.getByTestId('brw-region-selection');
+    expect(rect.style.left).toBe('30px');
+    expect(rect.style.top).toBe('40px');
+    expect(rect.style.width).toBe('200px');
+    expect(rect.style.height).toBe('100px');
+  });
+
+  it('drag produces the same rectangle regardless of direction (upward drag)', () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    // Dragging bottom-right → top-left should still anchor the rect's
+    // x/y at the minimum corner.
+    drag(overlay, { x: 200, y: 180 }, { x: 50, y: 60 });
+    const rect = screen.getByTestId('brw-region-selection');
+    expect(rect.style.left).toBe('50px');
+    expect(rect.style.top).toBe('60px');
+    expect(rect.style.width).toBe('150px');
+    expect(rect.style.height).toBe('120px');
+  });
+
+  it('confirm region crops the captured blob to the selection dimensions', async () => {
+    const stub = installCropStub();
+    try {
+      const fullBlob = new Blob(['full'], { type: 'image/webp' });
+      captureScreenshot.mockResolvedValueOnce(fullBlob);
+      // Pin dpr so the crop math is deterministic under the test.
+      vi.stubGlobal('devicePixelRatio', 2);
+      mount();
+      openOverlay();
+      drag(getOverlay(), { x: 10, y: 20 }, { x: 210, y: 120 });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+      });
+      // Wait for the crop microtasks to flush and the chip to render.
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /remove screenshot/i }),
+        ).toBeInTheDocument(),
+      );
+      expect(captureScreenshot).toHaveBeenCalledTimes(1);
+      // Crop call: drawImage(img, sx=dpr*x, sy=dpr*y, sw=dpr*w, sh=dpr*h, 0, 0, w, h)
+      expect(stub.drawImageArgs).toHaveLength(1);
+      const [, sx, sy, sw, sh, dx, dy, dw, dh] = stub.drawImageArgs[0]!;
+      expect(sx).toBe(20); // 10 * dpr
+      expect(sy).toBe(40); // 20 * dpr
+      expect(sw).toBe(400); // 200 * dpr
+      expect(sh).toBe(200); // 100 * dpr
+      expect(dx).toBe(0);
+      expect(dy).toBe(0);
+      expect(dw).toBe(200);
+      expect(dh).toBe(100);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('"Capture full page" passes the uncropped blob through to the composer', async () => {
+    const fullBlob = new Blob(['uncropped'], { type: 'image/webp' });
+    captureScreenshot.mockResolvedValueOnce(fullBlob);
+    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_full' });
+    mount();
+    openOverlay();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture full page/i }),
+      );
+    });
+    typeDraft('full cap');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as {
+      attachments: Array<{ blob: Blob; filename: string }>;
+    };
+    // Extension derives from the MIME of the full-page blob — proves no
+    // canvas crop happened in the full-page path.
+    expect(input.attachments[0]!.filename).toBe('screenshot.webp');
+    expect(input.attachments[0]!.blob).toBe(fullBlob);
+  });
+
+  it('degenerate selection on Capture shakes and does not invoke captureScreenshot', async () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    // A 1×1 drag — below the REGION_MIN_SIDE_PX threshold.
+    drag(overlay, { x: 50, y: 50 }, { x: 51, y: 51 });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+    });
+    expect(captureScreenshot).not.toHaveBeenCalled();
+    expect(queryOverlay()).toBeInTheDocument();
+  });
+
+  it('degenerate selection on Enter → overlay stays open, no capture', async () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    drag(overlay, { x: 100, y: 100 }, { x: 101, y: 101 });
+    await act(async () => {
+      fireEvent.keyDown(overlay, { key: 'Enter' });
+    });
+    expect(captureScreenshot).not.toHaveBeenCalled();
+    expect(queryOverlay()).toBeInTheDocument();
+  });
+
+  it('overlay is unmounted before captureScreenshot resolves (capture sees no overlay chrome)', async () => {
+    let resolveCapture!: (b: Blob) => void;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        resolveCapture = resolve;
+      }),
+    );
+    mount();
+    openOverlay();
+    expect(queryOverlay()).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture full page/i }),
+      );
+    });
+
+    // The capture promise is still pending — by now the overlay must
+    // already be torn down so its transparent layer cannot bleed into
+    // the captured page.
+    expect(queryOverlay()).toBeNull();
+
+    const blob = new Blob(['done'], { type: 'image/webp' });
+    await act(async () => {
+      resolveCapture(blob);
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /remove screenshot/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('Cancel button closes the overlay without capture', async () => {
+    mount();
+    openOverlay();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    });
+    expect(queryOverlay()).toBeNull();
+    expect(captureScreenshot).not.toHaveBeenCalled();
+  });
+
+  it('vitest-axe is clean on an idle region overlay', async () => {
+    mount();
+    openOverlay();
+    const results = await axe(getOverlay());
+    expect(results).toHaveNoViolations();
+  });
+
+  it('vitest-axe is clean mid-drag on the region overlay', async () => {
+    mount();
+    openOverlay();
+    const overlay = getOverlay();
+    fireEvent.pointerDown(overlay, {
+      clientX: 30,
+      clientY: 40,
+      pointerId: 1,
+      button: 0,
+    });
+    fireEvent.pointerMove(overlay, {
+      clientX: 130,
+      clientY: 140,
+      pointerId: 1,
+    });
+    const results = await axe(overlay);
+    expect(results).toHaveNoViolations();
+    // Clean up the dangling pointer capture so subsequent tests aren't
+    // started with the overlay stuck in dragging mode.
+    fireEvent.pointerUp(overlay, {
+      clientX: 130,
+      clientY: 140,
+      pointerId: 1,
+    });
+  });
+
+  it('vitest-axe is clean after the overlay closes back to the composer', async () => {
+    mount();
+    openOverlay();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    });
+    const results = await axe(screen.getByRole('dialog'));
+    expect(results).toHaveNoViolations();
+  });
+
+  it('brw-region-* rules opt out of animation under prefers-reduced-motion', () => {
+    expect(BREVWICK_CSS).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.brw-region-shake[^{]*\{[^}]*animation:\s*none/,
+    );
   });
 });
 
