@@ -29,6 +29,8 @@ import {
   COMPOSER_MAX_HEIGHT_PX,
 } from './styles';
 
+declare const __BREVWICK_REACT_VERSION__: string;
+
 /**
  * Props for {@link FeedbackButton}. See SDD § 12 for the React contract.
  */
@@ -557,6 +559,7 @@ export function FeedbackButton({
               onUseAiChange={setUseAi}
             />
           )}
+          <PanelFooter />
         </Dialog.Content>
       </Dialog.Portal>
       <RegionCaptureOverlay
@@ -606,6 +609,27 @@ function PanelHeader({
       >
         <CloseIcon />
       </button>
+    </div>
+  );
+}
+
+/**
+ * Thin "Brevwick v<x.y.z>" credit anchored below the composer. The whole
+ * label is a single link to brevwick.dev so the footer reads as one
+ * affordance rather than two competing elements; styling keeps it muted
+ * and small so it sits quietly at the bottom of the panel.
+ */
+function PanelFooter(): ReactElement {
+  return (
+    <div className="brw-panel-footer">
+      <a
+        className="brw-panel-footer-link"
+        href="https://brevwick.dev"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Brevwick v{__BREVWICK_REACT_VERSION__}
+      </a>
     </div>
   );
 }

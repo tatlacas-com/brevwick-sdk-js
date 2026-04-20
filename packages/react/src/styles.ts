@@ -429,6 +429,29 @@ export const BREVWICK_CSS = `
   border-color: var(--brw-accent);
 }
 .brw-error { color: var(--brw-error); font-size: 12px; align-self: stretch; }
+.brw-panel-footer {
+  flex-shrink: 0;
+  padding: 6px 10px 8px;
+  text-align: center;
+  background: var(--brw-composer-bg);
+}
+.brw-panel-footer-link {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--brw-fg-muted);
+  text-decoration: none;
+  opacity: 0.75;
+  transition: opacity 120ms ease-out, color 120ms ease-out;
+}
+.brw-panel-footer-link:hover,
+.brw-panel-footer-link:focus-visible {
+  opacity: 1;
+  color: var(--brw-fg);
+  text-decoration: underline;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brw-panel-footer-link { transition: none; }
+}
 .brw-spinner {
   display: inline-block; width: 14px; height: 14px;
   border: 2px solid currentColor; border-right-color: transparent;
