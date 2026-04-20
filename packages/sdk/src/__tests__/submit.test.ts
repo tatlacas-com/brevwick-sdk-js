@@ -63,35 +63,65 @@ function captureReportBody(): { get: () => string | undefined } {
 
 /**
  * Standard presign + PUT handlers covering the happy upload path. Returns
- * counters so tests can assert exactly-once / not-called semantics.
+ * counters and captured payloads so tests can assert exactly-once /
+ * not-called semantics and that the sha256 threaded through the pipeline
+ * (presign body → echoed presign-response header → PUT header → report
+ * attachment entry) stays consistent end to end.
  */
 function installUploadHandlers(): {
   presignHits: () => number;
   putHits: () => number;
+  presignBodies: () => Array<{
+    mime: string;
+    size_bytes: number;
+    sha256: string;
+  }>;
+  putChecksums: () => string[];
 } {
   let presignHits = 0;
   let putHits = 0;
+  const presignBodies: Array<{
+    mime: string;
+    size_bytes: number;
+    sha256: string;
+  }> = [];
+  const putChecksums: string[] = [];
   server.use(
-    http.post(PRESIGN_URL, () => {
+    http.post(PRESIGN_URL, async ({ request }) => {
+      const body = (await request.json()) as {
+        mime: string;
+        size_bytes: number;
+        sha256: string;
+      };
+      presignBodies.push(body);
       presignHits++;
       return HttpResponse.json({
-        object_key: OBJECT_KEY,
+        object_key: `${OBJECT_KEY}-${presignHits}`,
         upload_url: UPLOAD_URL,
-        headers: { 'Content-Type': 'image/png' },
+        headers: {
+          'Content-Type': body.mime,
+          'x-amz-checksum-sha256': body.sha256,
+        },
         expires_at: '2099-01-01T00:00:00Z',
       });
     }),
-    http.put(UPLOAD_URL, () => {
+    http.put(UPLOAD_URL, ({ request }) => {
       putHits++;
+      putChecksums.push(request.headers.get('x-amz-checksum-sha256') ?? '');
       return new HttpResponse(null, { status: 200 });
     }),
   );
-  return { presignHits: () => presignHits, putHits: () => putHits };
+  return {
+    presignHits: () => presignHits,
+    putHits: () => putHits,
+    presignBodies: () => presignBodies,
+    putChecksums: () => putChecksums,
+  };
 }
 
 describe('submit — happy path', () => {
   it('presigns, uploads, posts, and resolves with report_id', async () => {
-    installUploadHandlers();
+    const uploads = installUploadHandlers();
     let reportBody: Record<string, unknown> | undefined;
     server.use(
       http.post(REPORTS_URL, async ({ request }) => {
@@ -132,12 +162,22 @@ describe('submit — happy path', () => {
     // route_path is auto-collected from `location.pathname + search`.
     expect(typeof reportBody?.route_path).toBe('string');
     // Attachments resolved via presign.
-    const attachments = reportBody?.attachments as unknown[];
+    const attachments = reportBody?.attachments as Array<
+      Record<string, unknown>
+    >;
     expect(attachments).toHaveLength(1);
     expect(attachments[0]).toMatchObject({
-      object_key: OBJECT_KEY,
+      object_key: `${OBJECT_KEY}-1`,
       mime: 'image/png',
     });
+    // sha256 plumbing: presign body carried it, PUT header carried it, and the
+    // final report attachment entry carries the same value. Without this, R2
+    // stores the object with no sha256 metadata and ingest 409s.
+    const presignBody = uploads.presignBodies()[0]!;
+    expect(presignBody.sha256).toMatch(/^[A-Za-z0-9+/]+=*$/);
+    expect(presignBody.sha256.length).toBeGreaterThan(0);
+    expect(uploads.putChecksums()[0]).toBe(presignBody.sha256);
+    expect(attachments[0]!.sha256).toBe(presignBody.sha256);
     // Device context — every field present (jsdom provides the globals).
     const deviceCtx = reportBody?.device_context as Record<string, unknown>;
     expect(deviceCtx.platform).toBe('web');
@@ -186,9 +226,55 @@ describe('submit — happy path', () => {
     const attachments = reportBody?.attachments as unknown[];
     expect(attachments).toHaveLength(1);
     expect(attachments[0]).toMatchObject({
-      object_key: OBJECT_KEY,
+      object_key: `${OBJECT_KEY}-1`,
       mime: 'image/png',
     });
+  });
+
+  it('submits two distinct blobs with distinct sha256s, preserved in order', async () => {
+    const uploads = installUploadHandlers();
+    let reportBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(REPORTS_URL, async ({ request }) => {
+        reportBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { report_id: 'rep_pair', status: 'received' },
+          { status: 202 },
+        );
+      }),
+    );
+    const instance = createBrevwick({ projectKey: KEY });
+    const pngBlob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], {
+      type: 'image/png',
+    });
+    const jpegBlob = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], {
+      type: 'image/jpeg',
+    });
+    const result = await instance.submit({
+      description: 'd',
+      attachments: [pngBlob, jpegBlob],
+    });
+    expect(result).toEqual({ ok: true, report_id: 'rep_pair' });
+
+    const bodies = uploads.presignBodies();
+    expect(bodies).toHaveLength(2);
+    // Distinct content → distinct SHA-256 digests.
+    expect(bodies[0]!.sha256).not.toBe(bodies[1]!.sha256);
+    // PUT headers reflected the presign-time value for each blob.
+    expect(uploads.putChecksums()).toEqual([
+      bodies[0]!.sha256,
+      bodies[1]!.sha256,
+    ]);
+    // Report carries both sha256s in the original attachment order.
+    expect(reportBody).toBeDefined();
+    const attachments = reportBody?.attachments as Array<
+      Record<string, unknown>
+    >;
+    expect(attachments).toHaveLength(2);
+    expect(attachments[0]!.sha256).toBe(bodies[0]!.sha256);
+    expect(attachments[1]!.sha256).toBe(bodies[1]!.sha256);
+    expect(attachments[0]!.mime).toBe('image/png');
+    expect(attachments[1]!.mime).toBe('image/jpeg');
   });
 });
 

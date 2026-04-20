@@ -61,6 +61,20 @@ interface ResolvedAttachment {
   object_key: string;
   mime: string;
   size_bytes: number;
+  sha256: string;
+}
+
+/**
+ * Base64-encoded SHA-256 of the blob bytes. Sent in the presign request body
+ * so the server signs the R2 PUT URL with a matching `x-amz-checksum-sha256`;
+ * also rides on each `attachments[*]` entry in the final report so ingest can
+ * cross-check against the stored R2 object. SHA-256 output is fixed at 32
+ * bytes regardless of input size, so `String.fromCharCode(...)` is safe here.
+ */
+async function sha256Base64(blob: Blob): Promise<string> {
+  const buf = await blob.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)));
 }
 
 function submitError(code: SubmitErrorCode, message: string): SubmitResult {
@@ -228,6 +242,7 @@ async function presignOne(
   endpoint: string,
   projectKey: string,
   blob: Blob,
+  sha256: string,
   signal: AbortSignal,
 ): Promise<PresignResponse> {
   const res = await fetch(`${endpoint}/v1/ingest/presign`, {
@@ -240,6 +255,7 @@ async function presignOne(
     body: JSON.stringify({
       mime: blob.type || 'application/octet-stream',
       size_bytes: blob.size,
+      sha256,
     }),
   });
   if (!res.ok) {
@@ -290,12 +306,23 @@ async function uploadAttachments(
   const out: ResolvedAttachment[] = [];
   for (const entry of attachments) {
     const { blob } = toAttachmentDescriptor(entry);
-    const presign = await presignOne(endpoint, projectKey, blob, signal);
+    // One digest per blob: reused in the presign body (so the server signs
+    // `x-amz-checksum-sha256` on the R2 PUT URL) AND in the final report
+    // `attachments[*].sha256` so ingest can cross-check against R2.
+    const sha256 = await sha256Base64(blob);
+    const presign = await presignOne(
+      endpoint,
+      projectKey,
+      blob,
+      sha256,
+      signal,
+    );
     await putAttachment(presign, blob, signal);
     out.push({
       object_key: presign.object_key,
       mime: blob.type,
       size_bytes: blob.size,
+      sha256,
     });
     // Note: a partial-presign-then-abort scenario can leave an orphaned
     // R2 object — server-side GC sweeps these. Acceptable for MVP.
