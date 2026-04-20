@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type PointerEvent,
   type ReactElement,
   type ReactNode,
 } from 'react';
@@ -82,6 +83,18 @@ interface ScreenshotAttachment {
   readonly blob: Blob;
   readonly url: string;
 }
+
+/** Viewport-space rectangle selected by the user on the region overlay. */
+interface Region {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** Minimum accepted side length (px) — below this the selection is treated
+ *  as an accidental click and the confirm is rejected with a shake. */
+const REGION_MIN_SIDE_PX = 2;
 
 type ProjectConfigStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -211,6 +224,7 @@ export function FeedbackButton({
   const [confirmClose, setConfirmClose] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [succeeded, setSucceeded] = useState(false);
+  const [regionOpen, setRegionOpen] = useState(false);
   // Submitter's per-report AI preference. Defaults to true so the toggle
   // renders "on" the first time; only read on submit when the render-policy
   // matrix below says the toggle should be visible.
@@ -309,22 +323,57 @@ export function FeedbackButton({
     handleFullClose();
   }, [succeeded, hasContent, handleFullClose]);
 
-  const handleCaptureScreenshot = useCallback(async () => {
+  // Split from the historical one-shot capture: the button now only opens
+  // the region overlay, and the overlay fans out to either a full-page or
+  // a cropped capture. `setRegionOpen(false)` schedules the overlay unmount
+  // and we start `captureScreenshot()` in the same tick — so the primary
+  // protection against the overlay bleeding into the rendered page is
+  // `data-brevwick-skip` on every overlay node, which the SDK's capture
+  // path honours before it snapshots. The React unmount lands before the
+  // async rasterization / crop work completes and is defence-in-depth.
+  const performCapture = useCallback(
+    async (region: Region | null) => {
+      setSubmitError(null);
+      try {
+        const blob = await captureScreenshot();
+        if (!mountedRef.current) return;
+        const finalBlob = region ? await cropToRegion(blob, region) : blob;
+        if (!mountedRef.current) return;
+        setScreenshot((prev) => {
+          if (prev) URL.revokeObjectURL(prev.url);
+          return { blob: finalBlob, url: URL.createObjectURL(finalBlob) };
+        });
+      } catch (err) {
+        if (!mountedRef.current) return;
+        const message =
+          err instanceof Error ? err.message : 'Screenshot capture failed';
+        setSubmitError(message);
+      }
+    },
+    [captureScreenshot],
+  );
+
+  const handleOpenRegionOverlay = useCallback(() => {
     setSubmitError(null);
-    try {
-      const blob = await captureScreenshot();
-      if (!mountedRef.current) return;
-      setScreenshot((prev) => {
-        if (prev) URL.revokeObjectURL(prev.url);
-        return { blob, url: URL.createObjectURL(blob) };
-      });
-    } catch (err) {
-      if (!mountedRef.current) return;
-      const message =
-        err instanceof Error ? err.message : 'Screenshot capture failed';
-      setSubmitError(message);
-    }
-  }, [captureScreenshot]);
+    setRegionOpen(true);
+  }, []);
+
+  const handleCloseRegion = useCallback(() => {
+    setRegionOpen(false);
+  }, []);
+
+  const handleConfirmRegion = useCallback(
+    (region: Region) => {
+      setRegionOpen(false);
+      void performCapture(region);
+    },
+    [performCapture],
+  );
+
+  const handleConfirmFull = useCallback(() => {
+    setRegionOpen(false);
+    void performCapture(null);
+  }, [performCapture]);
 
   const handleFiles = useCallback((list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -508,7 +557,7 @@ export function FeedbackButton({
               useAi={useAi}
               onDraftChange={setDraft}
               onSubmit={doSubmit}
-              onAttachScreenshot={handleCaptureScreenshot}
+              onAttachScreenshot={handleOpenRegionOverlay}
               onAttachFiles={handleFiles}
               onUseAiChange={setUseAi}
             />
@@ -516,6 +565,12 @@ export function FeedbackButton({
           <PanelFooter />
         </Dialog.Content>
       </Dialog.Portal>
+      <RegionCaptureOverlay
+        open={regionOpen}
+        onClose={handleCloseRegion}
+        onConfirmRegion={handleConfirmRegion}
+        onConfirmFull={handleConfirmFull}
+      />
     </Dialog.Root>
   );
 }
@@ -869,11 +924,11 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
           <button
             type="button"
             className="brw-icon-btn"
-            aria-label="Attach screenshot"
+            aria-label="Capture screenshot of this page"
             onClick={onAttachScreenshot}
             disabled={submitting}
           >
-            <CameraIcon />
+            <ScreenshotIcon />
           </button>
           <label className="brw-icon-btn">
             <PaperclipIcon />
@@ -987,6 +1042,271 @@ function SuccessState({ onSendAnother }: SuccessStateProps): ReactElement {
   );
 }
 
+/**
+ * Crop a full-page screenshot Blob to the user-selected viewport rectangle.
+ *
+ * The source Blob from `captureScreenshot()` is rendered in device pixels by
+ * `modern-screenshot`, but the region came from pointer-events in CSS pixels,
+ * so we multiply the source rectangle by `devicePixelRatio` on the way in and
+ * draw out at the selection's CSS-pixel size. Uses `OffscreenCanvas` when the
+ * host provides it (cheaper, avoids a DOM node); otherwise falls back to a
+ * detached `<canvas>` + `toBlob`. Output MIME is PNG — the caller derives
+ * the attachment filename from `blob.type`.
+ */
+async function cropToRegion(blob: Blob, region: Region): Promise<Blob> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await loadImageForCrop(url);
+    const dpr =
+      typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const sx = region.x * dpr;
+    const sy = region.y * dpr;
+    const sw = region.w * dpr;
+    const sh = region.h * dpr;
+
+    const OffscreenCanvasCtor =
+      typeof OffscreenCanvas !== 'undefined' ? OffscreenCanvas : undefined;
+    if (OffscreenCanvasCtor) {
+      const canvas = new OffscreenCanvasCtor(region.w, region.h);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 2D context unavailable');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, region.w, region.h);
+      return await canvas.convertToBlob({ type: 'image/png' });
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = region.w;
+    canvas.height = region.h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D context unavailable');
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, region.w, region.h);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (out) =>
+          out ? resolve(out) : reject(new Error('Canvas produced no blob')),
+        'image/png',
+      );
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function loadImageForCrop(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Screenshot failed to load for crop'));
+    img.src = src;
+  });
+}
+
+interface DragState {
+  readonly startX: number;
+  readonly startY: number;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+interface RegionCaptureOverlayProps {
+  open: boolean;
+  onClose: () => void;
+  onConfirmRegion: (region: Region) => void;
+  onConfirmFull: () => void;
+}
+
+/**
+ * Full-viewport overlay that lets the submitter drag-select a rectangle on
+ * top of the page. Confirming with a non-degenerate rectangle fans out to
+ * the crop pipeline; 'Capture full page' preserves the pre-#31 behaviour
+ * for users who want the whole viewport.
+ *
+ * Mounts a second `Dialog.Root` independent of the main feedback panel so
+ * Radix owns focus trap + scroll lock + Escape-to-dismiss. Every node
+ * rendered here carries `data-brevwick-skip=""` so a rogue capture that
+ * fires while the overlay is still in the tree still excludes the overlay
+ * chrome from the image (the capture path unmounts the overlay first — this
+ * is defence-in-depth).
+ */
+function RegionCaptureOverlay({
+  open,
+  onClose,
+  onConfirmRegion,
+  onConfirmFull,
+}: RegionCaptureOverlayProps): ReactElement {
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const [shake, setShake] = useState(false);
+  const draggingRef = useRef(false);
+  // Tracks the in-flight "shake settle" setTimeout. We keep the handle so
+  // (a) the effect below can cancel it when the overlay closes — otherwise
+  // a shake queued immediately before Esc would fire a setState on an
+  // unmounted subtree (strict-mode warning) — and (b) rapid-fire Capture
+  // clicks on a degenerate selection replace the timer instead of stacking.
+  const shakeTimerRef = useRef<number | null>(null);
+
+  const clearShakeTimer = (): void => {
+    if (shakeTimerRef.current !== null) {
+      window.clearTimeout(shakeTimerRef.current);
+      shakeTimerRef.current = null;
+    }
+  };
+
+  // Reset both the drag state and the transient shake flag whenever the
+  // overlay closes, so a re-open starts from a clean slate rather than the
+  // last session's selection. Also cancels any in-flight shake timer so
+  // the setState does not fire into a torn-down subtree.
+  useEffect(() => {
+    if (!open) {
+      setDrag(null);
+      setShake(false);
+      draggingRef.current = false;
+      clearShakeTimer();
+    }
+  }, [open]);
+
+  // Belt-and-braces unmount cleanup: the overlay normally closes via
+  // `open=false` before unmount (handled above), but an upstream tree
+  // tear-down could unmount us mid-shake — cancel the timer so React
+  // doesn't log a "state update on unmounted component" warning.
+  useEffect(() => {
+    return () => {
+      clearShakeTimer();
+    };
+  }, []);
+
+  const handlePointerDown = (e: PointerEvent<HTMLDivElement>): void => {
+    // React delegation bubbles pointerdown from the Cancel / Capture /
+    // Capture-full-page controls up through this handler. Without this
+    // guard the bubbled event would reinitialise the drag state to a
+    // zero-size rect right before the button's own click fires, sending
+    // a valid selection into the degenerate-shake path. `currentTarget`
+    // is always the overlay layer; only initiate a drag when the press
+    // landed directly on it (not on a descendant control).
+    if (e.target !== e.currentTarget) return;
+    // Ignore non-primary buttons (right-click / middle-click). pointerType
+    // 'touch' and 'pen' always report button === 0.
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    draggingRef.current = true;
+    setDrag({
+      startX: e.clientX,
+      startY: e.clientY,
+      x: e.clientX,
+      y: e.clientY,
+      w: 0,
+      h: 0,
+    });
+  };
+
+  const handlePointerMove = (e: PointerEvent<HTMLDivElement>): void => {
+    if (!draggingRef.current) return;
+    setDrag((prev) => {
+      if (!prev) return prev;
+      const x = Math.min(prev.startX, e.clientX);
+      const y = Math.min(prev.startY, e.clientY);
+      const w = Math.abs(e.clientX - prev.startX);
+      const h = Math.abs(e.clientY - prev.startY);
+      return { startX: prev.startX, startY: prev.startY, x, y, w, h };
+    });
+  };
+
+  const handlePointerUp = (e: PointerEvent<HTMLDivElement>): void => {
+    if (!draggingRef.current) return;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    draggingRef.current = false;
+  };
+
+  const confirm = (): void => {
+    if (!drag || drag.w <= REGION_MIN_SIDE_PX || drag.h <= REGION_MIN_SIDE_PX) {
+      setShake(true);
+      // Replace any in-flight settle timer so rapid-fire clicks don't stack.
+      clearShakeTimer();
+      shakeTimerRef.current = window.setTimeout(() => {
+        shakeTimerRef.current = null;
+        setShake(false);
+      }, 320);
+      return;
+    }
+    onConfirmRegion({ x: drag.x, y: drag.y, w: drag.w, h: drag.h });
+  };
+
+  // Enter-on-Dialog.Content must only confirm the region when the overlay
+  // root itself has focus. Tab-focusing a button inside the overlay and
+  // pressing Enter bubbles up here; without this guard we would hijack the
+  // button's own Enter activation (Cancel, Capture full page) and run the
+  // region-confirm path instead — a real a11y defect. `e.target === e.currentTarget`
+  // restricts the shortcut to the overlay root (focused via Radix focus-trap
+  // when the Dialog opens and no button is yet tabbed into).
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== 'Enter') return;
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    confirm();
+  };
+
+  return (
+    <Dialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="brw-region-backdrop" data-brevwick-skip="" />
+        <Dialog.Content
+          className={`brw-root brw-region-layer${shake ? ' brw-region-shake' : ''}`}
+          data-brevwick-skip=""
+          data-testid="brw-region-overlay"
+          aria-label="Select screenshot region"
+          aria-describedby={undefined}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onKeyDown={handleKeyDown}
+        >
+          {drag && drag.w > 0 && drag.h > 0 && (
+            <div
+              className="brw-region-selection"
+              data-testid="brw-region-selection"
+              style={{
+                left: drag.x,
+                top: drag.y,
+                width: drag.w,
+                height: drag.h,
+              }}
+            />
+          )}
+          <div className="brw-region-controls" data-brevwick-skip="">
+            <button
+              type="button"
+              className="brw-btn brw-region-btn"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="brw-btn brw-region-btn"
+              onClick={onConfirmFull}
+            >
+              Capture full page
+            </button>
+            <button
+              type="button"
+              className="brw-btn brw-btn-primary brw-region-btn"
+              onClick={confirm}
+            >
+              Capture
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 function ChatIcon(): ReactElement {
   return (
     <svg
@@ -1036,7 +1356,7 @@ function CloseIcon(): ReactElement {
   );
 }
 
-function CameraIcon(): ReactElement {
+function ScreenshotIcon(): ReactElement {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -1047,8 +1367,8 @@ function CameraIcon(): ReactElement {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M3 7h4l2-3h6l2 3h4v12H3z" />
-      <circle cx="12" cy="13" r="4" />
+      <rect x="3" y="5" width="18" height="12" rx="2" />
+      <rect x="7" y="8" width="10" height="6" rx="1" strokeDasharray="2 2" />
     </svg>
   );
 }

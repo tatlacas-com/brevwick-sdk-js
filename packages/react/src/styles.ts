@@ -462,4 +462,49 @@ export const BREVWICK_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .brw-spinner { animation-duration: 1.6s; }
 }
+.brw-region-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 2147483003;
+}
+.brw-region-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483004;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+.brw-region-selection {
+  position: fixed;
+  border: 2px solid var(--brw-border-focus);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.brw-region-controls {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  background: var(--brw-panel-bg);
+  border: 1px solid var(--brw-border);
+  border-radius: 10px;
+  box-shadow: var(--brw-shadow);
+  z-index: 2147483005;
+}
+.brw-region-btn { font: inherit; }
+.brw-region-shake { animation: brw-region-shake 300ms ease-out; }
+@keyframes brw-region-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brw-region-shake { animation: none; }
+}
 `;
