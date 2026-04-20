@@ -266,6 +266,7 @@ describe('submit — happy path', () => {
       bodies[1]!.sha256,
     ]);
     // Report carries both sha256s in the original attachment order.
+    expect(reportBody).toBeDefined();
     const attachments = reportBody?.attachments as Array<
       Record<string, unknown>
     >;
