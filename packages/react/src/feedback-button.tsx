@@ -162,6 +162,9 @@ interface FileAttachment {
  * - `--brw-panel-bg` — dialog panel background
  * - `--brw-bubble-assistant-bg` — assistant bubble background
  * - `--brw-bubble-user-bg` — user bubble background
+ * - `--brw-bubble-user-fg` — foreground on top of `--brw-bubble-user-bg`
+ *   (set as a pair with `--brw-bubble-user-bg` to keep bubble contrast
+ *   WCAG-adequate)
  * - `--brw-chip-bg` — attachment chip + inline panel background
  * - `--brw-composer-bg` — composer shell background
  *
@@ -172,10 +175,13 @@ interface FileAttachment {
  * Border / focus
  * - `--brw-border` — default border colour
  * - `--brw-border-focus` — colour applied on composer `:focus-within`
+ * - `--brw-divider` — hairline between panel header / composer and thread
  *
  * Accent
  * - `--brw-accent` — send button + active AI toggle colour
- * - `--brw-accent-fg` — foreground on top of accent
+ * - `--brw-accent-fg` — foreground on top of accent (set as a pair
+ *   with `--brw-accent` so accent + accent-fg stay contrast-safe; e.g.
+ *   a bright `--brw-accent` must pair with a dark `--brw-accent-fg`)
  *
  * Shadow
  * - `--brw-shadow` — composite drop shadow for FAB + panel
