@@ -1,0 +1,26 @@
+[
+  {
+    "name": "brevwick-sdk (core eager chunk)",
+    "path": "packages/sdk/dist/index.js",
+    "limit": "2.2 kB",
+    "gzip": true,
+    "brotli": false,
+    "disablePlugins": ["@size-limit/esbuild"]
+  },
+  {
+    "name": "brevwick-sdk (screenshot chunk)",
+    "path": "packages/sdk/dist/screenshot-*.js",
+    "limit": "18 kB",
+    "gzip": true,
+    "brotli": false,
+    "disablePlugins": ["@size-limit/esbuild"]
+  },
+  {
+    "name": "brevwick-react",
+    "path": "packages/react/dist/index.js",
+    "limit": "25 kB",
+    "gzip": true,
+    "brotli": false,
+    "disablePlugins": ["@size-limit/esbuild"]
+  }
+]

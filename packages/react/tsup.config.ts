@@ -11,6 +11,7 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
+  minify: true,
   // Rollup-driven treeshaking strips the `"use client"` directive that
   // Next.js App Router needs. esbuild handles the bundle size fine without
   // it — we rely on @radix-ui's tree-shakable exports for dead-code removal.
