@@ -73,13 +73,13 @@ The script defaults to `/home/tatlacas/repos/tradekit/tradekit-web`. Override wi
 ```json
 {
   "dependencies": {
-    "brevwick-sdk": "0.1.0-beta.0",
-    "brevwick-react": "0.1.0-beta.0"
+    "brevwick-sdk": "0.1.0-beta.1",
+    "brevwick-react": "0.1.0-beta.1"
   },
   "pnpm": {
     "overrides": {
-      "brevwick-sdk": "file:/abs/path/to/brevwick-sdk-js/packages/sdk/brevwick-sdk-0.1.0-beta.0.tgz",
-      "brevwick-react": "file:/abs/path/to/brevwick-sdk-js/packages/react/brevwick-react-0.1.0-beta.0.tgz"
+      "brevwick-sdk": "file:/abs/path/to/brevwick-sdk-js/packages/sdk/brevwick-sdk-0.1.0-beta.1.tgz",
+      "brevwick-react": "file:/abs/path/to/brevwick-sdk-js/packages/react/brevwick-react-0.1.0-beta.1.tgz"
     }
   }
 }
