@@ -6,7 +6,7 @@
 
 - `CLAUDE.md` (this repo) — working style, bundle budgets (core ≤ 2.2 kB gzip / on-open ≤ 25 kB gzip), redaction mandate, conventional commits, no Co-Authored-By
 - [SDD § 12 Client SDK contracts](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts) — canonical web SDK contract
-- Phase 4 ship criterion (from [ROADMAP.md](https://github.com/tatlacas-com/brevwick-ops/blob/main/ROADMAP.md)): *"a third-party dev can `npm install` and wire the widget in under 10 minutes"*
+- Phase 4 ship criterion (from [ROADMAP.md](https://github.com/tatlacas-com/brevwick-ops/blob/main/ROADMAP.md)): _"a third-party dev can `npm install` and wire the widget in under 10 minutes"_
 - Issues: [#7](https://github.com/tatlacas-com/brevwick-sdk-js/issues/7), [#10](https://github.com/tatlacas-com/brevwick-sdk-js/issues/10), [#15](https://github.com/tatlacas-com/brevwick-sdk-js/issues/15), [#31](https://github.com/tatlacas-com/brevwick-sdk-js/issues/31)
 
 **Conventions (apply to every worktree):**

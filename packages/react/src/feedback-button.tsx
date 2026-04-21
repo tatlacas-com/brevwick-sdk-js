@@ -1266,6 +1266,12 @@ function RegionCaptureOverlay({
           onPointerCancel={handlePointerUp}
           onKeyDown={handleKeyDown}
         >
+          {/* Radix requires a Dialog.Title descendant; using the same text
+             here as the intended label keeps the screen-reader announcement
+             as "Select screenshot region". */}
+          <Dialog.Title className="brw-sr-only">
+            Select screenshot region
+          </Dialog.Title>
           {drag && drag.w > 0 && drag.h > 0 && (
             <div
               className="brw-region-selection"
