@@ -1,0 +1,93 @@
+/**
+ * Runtime lazy-load guard for `modern-screenshot`.
+ *
+ * The static chunk-graph guard already lives in `../chunk-split.test.ts`
+ * (which reads built `dist/index.{js,cjs}` and asserts the substring
+ * `modern-screenshot` is absent). That covers the bundle-time invariant
+ * but says nothing about runtime behaviour against an un-built source
+ * tree. This test fills the runtime gap by mocking `modern-screenshot`
+ * with a side-effect counter and asserting:
+ *
+ * 1. Importing the SDK + installing it + calling `submit()` never
+ *    triggers the `modern-screenshot` mock factory.
+ * 2. Calling `captureScreenshot()` does — and only then.
+ *
+ * If a future refactor pulls `screenshot.ts` (or its `import('modern-
+ * screenshot')` line) into the eager surface, this test fails on the
+ * first assertion long before the bundle audit catches the size
+ * regression.
+ */
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  createIntegrationServer,
+  ENDPOINT,
+  installIngestHandlers,
+  KEY,
+} from './setup';
+
+const server = createIntegrationServer();
+
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+afterEach(() => {
+  server.resetHandlers();
+  vi.doUnmock('modern-screenshot');
+  vi.resetModules();
+});
+afterAll(() => server.close());
+
+beforeEach(() => {
+  vi.resetModules();
+});
+
+describe('integration — modern-screenshot lazy load', () => {
+  it('does not import modern-screenshot until captureScreenshot() is called', async () => {
+    let factoryRuns = 0;
+    let domToBlobCalls = 0;
+    vi.doMock('modern-screenshot', () => {
+      factoryRuns += 1;
+      return {
+        domToBlob: vi.fn(async () => {
+          domToBlobCalls += 1;
+          return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+        }),
+      };
+    });
+
+    // Re-import SDK after vi.resetModules so the cached `screenshot.ts`
+    // module from earlier suites does not satisfy the dynamic import
+    // before our mock is in place.
+    const { createBrevwick } = await import('../../core/client');
+    const { __resetBrevwickRegistry, __setRingsForTesting } =
+      await import('../../testing');
+    __resetBrevwickRegistry();
+    __setRingsForTesting();
+
+    const captured = installIngestHandlers(server, () => 'issue_lazy');
+    const instance = createBrevwick({ projectKey: KEY, endpoint: ENDPOINT });
+    instance.install();
+
+    // Submit WITHOUT calling captureScreenshot — must not load the
+    // screenshot peer dep.
+    const submitResult = await instance.submit({ description: 'no shot' });
+    expect(submitResult.ok).toBe(true);
+    expect(factoryRuns).toBe(0);
+    expect(captured.count()).toBe(1);
+
+    // Now exercise the capture path — the mock factory must run.
+    const blob = await instance.captureScreenshot();
+    expect(blob).toBeInstanceOf(Blob);
+    expect(factoryRuns).toBe(1);
+    expect(domToBlobCalls).toBe(1);
+
+    instance.uninstall();
+  });
+});

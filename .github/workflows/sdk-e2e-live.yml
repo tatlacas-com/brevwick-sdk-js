@@ -1,0 +1,56 @@
+name: SDK e2e (live brevwick-api)
+
+# Manual-dispatch only. The real live-API smoke needs:
+#   1. A hosted `brevwick-api` image (not yet published — tracked in
+#      brevwick-api#10 per this issue's References section).
+#   2. `bwctl` shipped inside that image so project/key seeding is a
+#      single `docker exec` (today `bwctl` lives in the brevwick-api
+#      repo and is built from source per-env).
+#   3. A documented admin API endpoint to read back the seeded issue.
+#
+# Until (1)–(3) land, this workflow exists as a stub: `pnpm test` in
+# this repo already exercises the full SDK → ingest wire against MSW,
+# so the CI gate does not lose coverage by keeping live-API out of the
+# default `ci.yml` flow. A developer who wants to run the smoke locally
+# should follow the README in brevwick-api's docker-compose.dev.yml.
+#
+# Dispatch this workflow once the upstream image is published; fill in
+# the TODO blocks below with the real invocations and drop the guard.
+on:
+  workflow_dispatch:
+    inputs:
+      api_image_ref:
+        description: 'brevwick-api docker image ref (empty = dry run)'
+        required: false
+        default: ''
+
+jobs:
+  sdk-e2e-live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter brevwick-sdk build
+
+      # Dry-run guard. Left as a single script step instead of a
+      # composite action so the entire smoke is one file for reviewers.
+      - name: Live-API smoke
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ inputs.api_image_ref }}" ]]; then
+            cat <<'EOF'
+          ::notice::Live-API smoke is a dry run — no image ref supplied.
+          Expand this step once brevwick-api ships a hosted image. See
+          .github/workflows/sdk-e2e-live.yml header comment for the
+          full checklist (image, bwctl, admin API readback).
+          EOF
+            exit 0
+          fi
+          echo "::error::Live-API smoke requires upstream infra that is not yet published."
+          echo "See .github/workflows/sdk-e2e-live.yml header comment for the checklist."
+          exit 1

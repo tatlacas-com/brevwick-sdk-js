@@ -1,0 +1,30 @@
+{
+  "title": "integration: golden",
+  "description": "see attached",
+  "expected": "fixed",
+  "actual": "broken",
+  "build_sha": "deadbeef",
+  "release": "1.2.3",
+  "environment": "stg",
+  "user_context": {
+    "user": {
+      "id": "u_42"
+    }
+  },
+  "device_context": {
+    "platform": "web",
+    "sdk": {
+      "name": "brevwick-sdk",
+      "platform": "web"
+    }
+  },
+  "console_errors": [],
+  "network_errors": [],
+  "route_trail": [],
+  "attachments": [
+    {
+      "object_key": "integration/p/01HV/at-1",
+      "mime": "image/png"
+    }
+  ]
+}
