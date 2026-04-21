@@ -2,7 +2,7 @@
 
 Plain HTML + Vite + TypeScript example that imports
 [`brevwick-sdk`](../../packages/sdk) directly and submits a hard-coded
-report when a button is clicked.
+issue when a button is clicked.
 
 ## Works locally
 
@@ -24,7 +24,7 @@ report when a button is clicked.
    pnpm --filter brevwick-example-vanilla dev
    ```
 4. Open http://localhost:5173 and click **Send feedback**.
-5. Confirm the report appears in `brevwick-web` → `/app/inbox`.
+5. Confirm the issue appears in `brevwick-web` → `/app/inbox`.
 
 ## Environment
 

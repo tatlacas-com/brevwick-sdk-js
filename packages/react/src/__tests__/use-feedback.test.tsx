@@ -38,7 +38,7 @@ afterEach(() => {
 
 describe('useFeedback', () => {
   it('transitions idle → submitting → success and returns the SubmitResult', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_123' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_123' });
 
     const { result } = renderHook(() => useFeedback(), { wrapper });
     expect(result.current.status).toBe('idle');
@@ -48,7 +48,7 @@ describe('useFeedback', () => {
       returned = await result.current.submit({ description: 'broken' });
     });
 
-    expect(returned).toEqual({ ok: true, report_id: 'rep_123' });
+    expect(returned).toEqual({ ok: true, issue_id: 'rep_123' });
     expect(result.current.status).toBe('success');
 
     act(() => {

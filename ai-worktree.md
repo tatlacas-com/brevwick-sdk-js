@@ -17,7 +17,7 @@
 - Dynamic imports for anything heavy (`await import('...')`) so it never lands in the base bundle
 - Single quotes, semicolons, trailing commas (prettier); relative paths inside each package
 - Conventional commits, subject ≤ 72 chars, **no Co-Authored-By headers**, no Claude attribution
-- Never log: project key plaintext, auth headers, bearer tokens, JWT contents, email bodies, raw report descriptions
+- Never log: project key plaintext, auth headers, bearer tokens, JWT contents, email bodies, raw issue descriptions
 
 **Hard bundle budgets — CI enforces via `packages/sdk/src/__tests__/chunk-split.test.ts`:**
 
@@ -139,7 +139,7 @@ STEP 6 — Progressive disclosure for expected/actual:
 - Fields remain optional and flow into the existing payload shape (DO NOT change composePayload or FeedbackInput in this worktree — #26 owns the payload delta).
 
 STEP 7 — Success state:
-- After useFeedback().submit returns { ok: true }, replace the thread with a centered success bubble ('Thanks — your report is on its way.') + a primary 'Send another' button that clears local state and returns the thread to the empty/greeting view.
+- After useFeedback().submit returns { ok: true }, replace the thread with a centered success bubble ('Thanks — your issue is on its way.') + a primary 'Send another' button that clears local state and returns the thread to the empty/greeting view.
 - Leave the panel open — do NOT auto-dismiss.
 
 STEP 8 — Tests (packages/react/src/__tests__/feedback-button.test.tsx):

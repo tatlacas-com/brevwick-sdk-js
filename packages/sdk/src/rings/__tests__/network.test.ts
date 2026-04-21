@@ -167,7 +167,7 @@ describe('network ring — fetch', () => {
     const instance = createBrevwick({ projectKey: KEY, endpoint: ENDPOINT });
     await installAndReady(instance);
 
-    await window.fetch(`${ENDPOINT}/v1/reports`);
+    await window.fetch(`${ENDPOINT}/v1/issues`);
     expect(networkEntries(instance)).toHaveLength(0);
   });
 
@@ -182,11 +182,11 @@ describe('network ring — fetch', () => {
     const instance = createBrevwick({ projectKey: KEY, endpoint: ENDPOINT });
     await installAndReady(instance);
 
-    await window.fetch('https://api.brevwick.company/v1/reports');
-    await window.fetch('https://api.brevwick.com.evil.com/v1/reports');
+    await window.fetch('https://api.brevwick.company/v1/issues');
+    await window.fetch('https://api.brevwick.com.evil.com/v1/issues');
     const urls = networkEntries(instance).map((e) => e.url);
-    expect(urls).toContain('https://api.brevwick.company/v1/reports');
-    expect(urls).toContain('https://api.brevwick.com.evil.com/v1/reports');
+    expect(urls).toContain('https://api.brevwick.company/v1/issues');
+    expect(urls).toContain('https://api.brevwick.com.evil.com/v1/issues');
   });
 
   it('skips requests carrying X-Brevwick-SDK header', async () => {
@@ -197,7 +197,7 @@ describe('network ring — fetch', () => {
     const instance = createBrevwick({ projectKey: KEY });
     await installAndReady(instance);
 
-    await window.fetch('https://other.example/reports', {
+    await window.fetch('https://other.example/issues', {
       method: 'POST',
       headers: { 'X-Brevwick-SDK': '1' },
     });
@@ -579,7 +579,7 @@ describe('network ring — XHR', () => {
 
     const xhr = new XMLHttpRequest() as unknown as FakeXHR;
     xhr._respond = (x) => x.finish(500, { responseText: 'server err' });
-    xhr.open('POST', `${ENDPOINT}/v1/reports`);
+    xhr.open('POST', `${ENDPOINT}/v1/issues`);
     xhr.send('{}');
 
     await new Promise((r) => setTimeout(r, 0));
@@ -592,7 +592,7 @@ describe('network ring — XHR', () => {
 
     const xhr = new XMLHttpRequest() as unknown as FakeXHR;
     xhr._respond = (x) => x.finish(500, { responseText: 'server err' });
-    xhr.open('POST', 'https://other.example/reports');
+    xhr.open('POST', 'https://other.example/issues');
     xhr.setRequestHeader('X-Brevwick-SDK', '1');
     xhr.send('{}');
 

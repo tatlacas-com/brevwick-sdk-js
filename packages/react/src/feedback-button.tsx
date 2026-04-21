@@ -225,7 +225,7 @@ export function FeedbackButton({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [succeeded, setSucceeded] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
-  // Submitter's per-report AI preference. Defaults to true so the toggle
+  // Submitter's per-issue AI preference. Defaults to true so the toggle
   // renders "on" the first time; only read on submit when the render-policy
   // matrix below says the toggle should be visible.
   const [useAi, setUseAi] = useState(true);
@@ -441,7 +441,7 @@ export function FeedbackButton({
         setSucceeded(true);
         // If the user minimized mid-submit, pop the panel back open so the
         // success confirmation is actually seen. A silent success while
-        // hidden leaves the user unsure whether their report landed.
+        // hidden leaves the user unsure whether their issue landed.
         setOpen(true);
       } else {
         setSubmitError(result.error.message);
@@ -984,7 +984,7 @@ interface AIToggleProps {
 
 /**
  * Inline pill/switch surfaced in the composer footer when the project allows
- * submitters to opt in/out of AI formatting per report. role="switch" +
+ * submitters to opt in/out of AI formatting per issue. role="switch" +
  * aria-checked is the narrow semantic the WCAG a11y matrix wants; Space
  * toggles when focused (default browser behaviour on role="button" is Enter
  * and Space, but Space carries fewer collisions with the composer's
@@ -1028,7 +1028,7 @@ function SuccessState({ onSendAnother }: SuccessStateProps): ReactElement {
     >
       <div className="brw-success-wrap">
         <div className="brw-bubble brw-bubble--success" role="status">
-          Thanks — your report is on its way.
+          Thanks — your issue is on its way.
         </div>
         <button
           type="button"
@@ -1185,7 +1185,7 @@ function RegionCaptureOverlay({
     // landed directly on it (not on a descendant control).
     if (e.target !== e.currentTarget) return;
     // Ignore non-primary buttons (right-click / middle-click). pointerType
-    // 'touch' and 'pen' always report button === 0.
+    // 'touch' and 'pen' always issue button === 0.
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     draggingRef.current = true;
