@@ -61,7 +61,7 @@ gh pr checks <N>
 
 Any failure invalidates the pass.
 
-### Step 5 — Append Validation Report
+### Step 5 — Append Validation Issue
 
 ```markdown
 ## Validation — <YYYY-MM-DD>

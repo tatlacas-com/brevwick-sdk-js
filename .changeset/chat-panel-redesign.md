@@ -28,7 +28,7 @@ bottom-left).
   bubble + "Send another"; no auto-close timer. "Send another" returns
   focus to the composer textarea for keyboard users. If a submit
   resolves while the panel is minimized, the success state is still
-  rendered on reopen so the user sees their report was received.
+  rendered on reopen so the user sees their issue was received.
 - Dark-mode chip background is one step brighter than the border so the
   chip outline stays visible.
 - `prefers-reduced-motion` disables both the panel slide animation and

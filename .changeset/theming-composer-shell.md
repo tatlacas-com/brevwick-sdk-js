@@ -11,7 +11,7 @@ feat(react): light/dark theming + composer shell polish
   tokens are covered; status colours (`--brw-error`) stay widget-internal.
 - Light defaults ship out of the box; a
   `@media (prefers-color-scheme: dark)` override swaps the palette when
-  the host OS reports dark mode. Host overrides persist across modes.
+  the host OS issues dark mode. Host overrides persist across modes.
 - Composer controls are wrapped in a rounded `.brw-composer-shell`
   with a `:focus-within` ring, so the textarea + icon buttons + send +
   AI toggle read as a single input affordance.

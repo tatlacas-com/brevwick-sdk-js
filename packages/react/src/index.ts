@@ -8,7 +8,7 @@ declare const __BREVWICK_REACT_VERSION__: string;
 
 /**
  * Semantic version of the installed `brevwick-react` package. Surfaced at
- * runtime so consumers can include it in bug reports or diagnostics.
+ * runtime so consumers can include it in bug issues or diagnostics.
  */
 export const BREVWICK_REACT_VERSION: string = __BREVWICK_REACT_VERSION__;
 

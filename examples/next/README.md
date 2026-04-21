@@ -24,7 +24,7 @@ Next.js 16 (App Router) example wired up with
    pnpm --filter brevwick-example-next dev
    ```
 4. Open http://localhost:3000 and click the floating **Feedback** button.
-5. Confirm the report appears in `brevwick-web` → `/app/inbox`.
+5. Confirm the issue appears in `brevwick-web` → `/app/inbox`.
 
 ## Environment
 

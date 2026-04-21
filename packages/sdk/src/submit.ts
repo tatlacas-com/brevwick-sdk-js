@@ -1,11 +1,11 @@
 /**
  * `submit()` pipeline — presign attachments → PUT each to the returned URL →
- * POST `/v1/ingest/reports`. Loaded lazily from the core factory so the eager
+ * POST `/v1/ingest/issues`. Loaded lazily from the core factory so the eager
  * bundle stays under the 2 kB gzip budget mandated by `CLAUDE.md` / SDD § 12.
  *
  * Wire shape follows SDD § 7 (not the looser task-prompt shape). Every
  * outgoing request carries `X-Brevwick-SDK` so the network ring's loop guard
- * short-circuits and we don't recurse on our own failure reports.
+ * short-circuits and we don't recurse on our own failure issues.
  */
 import type { BrevwickInternal } from './core/internal';
 import type {
@@ -53,7 +53,7 @@ interface PresignResponse {
 }
 
 interface IngestResponse {
-  report_id: string;
+  issue_id: string;
   status?: string;
 }
 
@@ -67,7 +67,7 @@ interface ResolvedAttachment {
 /**
  * Base64-encoded SHA-256 of the blob bytes. Sent in the presign request body
  * so the server signs the R2 PUT URL with a matching `x-amz-checksum-sha256`;
- * also rides on each `attachments[*]` entry in the final report so ingest can
+ * also rides on each `attachments[*]` entry in the final issue so ingest can
  * cross-check against the stored R2 object. SHA-256 output is fixed at 32
  * bytes regardless of input size, so `String.fromCharCode(...)` is safe here.
  */
@@ -307,7 +307,7 @@ async function uploadAttachments(
   for (const entry of attachments) {
     const { blob } = toAttachmentDescriptor(entry);
     // One digest per blob: reused in the presign body (so the server signs
-    // `x-amz-checksum-sha256` on the R2 PUT URL) AND in the final report
+    // `x-amz-checksum-sha256` on the R2 PUT URL) AND in the final issue
     // `attachments[*].sha256` so ingest can cross-check against R2.
     const sha256 = await sha256Base64(blob);
     const presign = await presignOne(
@@ -349,17 +349,17 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * POST the composed report with retry-on-5xx-or-network semantics. 4xx is
+ * POST the composed issue with retry-on-5xx-or-network semantics. 4xx is
  * treated as a caller contract violation and bubbles up as `INGEST_REJECTED`
  * without retry — retrying a 400 just burns quota for the same rejection.
  */
-async function postReport(
+async function postIssue(
   endpoint: string,
   projectKey: string,
   payload: unknown,
   signal: AbortSignal,
 ): Promise<SubmitResult> {
-  const url = `${endpoint}/v1/ingest/reports`;
+  const url = `${endpoint}/v1/ingest/issues`;
   const init: RequestInit = {
     method: 'POST',
     headers: {
@@ -377,13 +377,13 @@ async function postReport(
         signal,
       );
       if (status >= 200 && status < 300) {
-        if (!body || typeof body.report_id !== 'string') {
+        if (!body || typeof body.issue_id !== 'string') {
           return submitError(
             'INGEST_INVALID_RESPONSE',
-            `ingest returned ${status} with non-JSON / missing report_id`,
+            `ingest returned ${status} with non-JSON / missing issue_id`,
           );
         }
-        return { ok: true, report_id: body.report_id };
+        return { ok: true, issue_id: body.issue_id };
       }
       if (status >= 400 && status < 500) {
         // Run the server-echoed body through redact() — a misbehaving server
@@ -489,7 +489,7 @@ function composePayload(
     description: redact(input.description),
     expected: redactOptional(input.expected),
     actual: redactOptional(input.actual),
-    // Submitter's per-report AI preference (widget toggle). The key is
+    // Submitter's per-issue AI preference (widget toggle). The key is
     // present only when the caller supplied it so the in-memory payload
     // matches the wire shape — a later `'use_ai' in payload` check should
     // mean the same thing before and after JSON.stringify. Booleans are
@@ -556,7 +556,7 @@ export async function runSubmit(
     }
 
     const payload = composePayload(internal, input, resolved);
-    return await postReport(
+    return await postIssue(
       config.endpoint,
       config.projectKey,
       payload,

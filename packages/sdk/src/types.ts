@@ -1,7 +1,7 @@
 export type Environment = 'dev' | 'stg' | 'prod';
 
 export interface BrevwickRingsConfig {
-  /** Capture uncaught errors and console.error calls for inclusion in submitted reports. Default true. */
+  /** Capture uncaught errors and console.error calls for inclusion in submitted issues. Default true. */
   console?: boolean;
   /** Capture failed network calls so triagers see the request context of the bug. Default true. */
   network?: boolean;
@@ -17,13 +17,13 @@ export interface BrevwickConfig {
   environment?: Environment;
   /** Set to false to make every method a no-op. Useful in tests. */
   enabled?: boolean;
-  /** Build SHA — included in every report. */
+  /** Build SHA — included in every issue. */
   buildSha?: string;
-  /** Released app version — passed through on every report. */
+  /** Released app version — passed through on every issue. */
   release?: string;
   /** Resolved at submit time; merged into `user_context`. */
   userContext?: () => Record<string, unknown>;
-  /** Opaque user identity merged into reports (id + optional metadata). */
+  /** Opaque user identity merged into issues (id + optional metadata). */
   user?: { id: string; [key: string]: unknown };
   /** Per-ring toggles. All default to true. */
   rings?: BrevwickRingsConfig;
@@ -32,7 +32,7 @@ export interface BrevwickConfig {
 }
 
 export interface FeedbackAttachment {
-  /** PNG / JPEG / WebP / WebM; ≤10 MB each, ≤5 total per report. */
+  /** PNG / JPEG / WebP / WebM; ≤10 MB each, ≤5 total per issue. */
   blob: Blob;
   filename?: string;
 }
@@ -44,7 +44,7 @@ export interface FeedbackInput {
   actual?: string;
   attachments?: Array<Blob | FeedbackAttachment>;
   /**
-   * Submitter's per-report AI preference. Only set by the widget when the
+   * Submitter's per-issue AI preference. Only set by the widget when the
    * project enables `ai_enabled` AND `ai_submitter_choice_allowed`. Omitted
    * otherwise — the server-side default applies. See SDD § 12.
    */
@@ -68,7 +68,7 @@ export interface ProjectConfig {
  * - `ATTACHMENT_UPLOAD_FAILED`: client-side validation rejected an
  *   attachment (count > 5, size > 10 MB, MIME outside the
  *   image/png|jpeg|webp + video/webm whitelist), or the presign / R2 PUT
- *   failed before the report POST was reached.
+ *   failed before the issue POST was reached.
  * - `INGEST_REJECTED`: the ingest endpoint returned a 4xx (e.g. 422
  *   QUOTA_EXCEEDED, 413 PAYLOAD_TOO_LARGE). Not retried — the same payload
  *   would be rejected again. The server-echoed response body (capped at 256
@@ -87,7 +87,7 @@ export interface ProjectConfig {
  * - `INGEST_TIMEOUT`: the 30 s total-budget AbortController fired before the
  *   pipeline (presign, PUT, POST, or backoff sleep) completed.
  * - `INGEST_INVALID_RESPONSE`: the ingest endpoint returned 2xx with a body
- *   that did not parse as JSON or did not include a string `report_id`.
+ *   that did not parse as JSON or did not include a string `issue_id`.
  */
 export type SubmitErrorCode =
   | 'ATTACHMENT_UPLOAD_FAILED'
@@ -106,7 +106,7 @@ export interface SubmitError {
  * Matches SDD § 12 updated contract (cross-repo PR accompanies this change).
  */
 export type SubmitResult =
-  | { ok: true; report_id: string }
+  | { ok: true; issue_id: string }
   | { ok: false; error: SubmitError };
 
 export interface ConsoleEntry {
