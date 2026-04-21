@@ -24,7 +24,7 @@ function getInternal(
 const KEY = 'pk_test_aaaaaaaaaaaaaaaa01';
 const ENDPOINT = 'https://api.brevwick.com';
 const PRESIGN_URL = `${ENDPOINT}/v1/ingest/presign`;
-const REPORTS_URL = `${ENDPOINT}/v1/ingest/reports`;
+const ISSUES_URL = `${ENDPOINT}/v1/ingest/issues`;
 const UPLOAD_URL = 'https://r2.example.com/upload/abc';
 const OBJECT_KEY = 'p/01HV/at/01HV';
 
@@ -44,16 +44,16 @@ function makeBlob(): Blob {
 }
 
 /**
- * Capture the body of the reports POST so tests can assert redaction end-to-end.
+ * Capture the body of the issues POST so tests can assert redaction end-to-end.
  * MSW reads the body once; we cache the text for later inspection.
  */
-function captureReportBody(): { get: () => string | undefined } {
+function captureIssueBody(): { get: () => string | undefined } {
   let captured: string | undefined;
   server.use(
-    http.post(REPORTS_URL, async ({ request }) => {
+    http.post(ISSUES_URL, async ({ request }) => {
       captured = await request.text();
       return HttpResponse.json(
-        { report_id: 'rep_123', status: 'received' },
+        { issue_id: 'rep_123', status: 'received' },
         { status: 202 },
       );
     }),
@@ -65,7 +65,7 @@ function captureReportBody(): { get: () => string | undefined } {
  * Standard presign + PUT handlers covering the happy upload path. Returns
  * counters and captured payloads so tests can assert exactly-once /
  * not-called semantics and that the sha256 threaded through the pipeline
- * (presign body → echoed presign-response header → PUT header → report
+ * (presign body → echoed presign-response header → PUT header → issue
  * attachment entry) stays consistent end to end.
  */
 function installUploadHandlers(): {
@@ -120,14 +120,14 @@ function installUploadHandlers(): {
 }
 
 describe('submit — happy path', () => {
-  it('presigns, uploads, posts, and resolves with report_id', async () => {
+  it('presigns, uploads, posts, and resolves with issue_id', async () => {
     const uploads = installUploadHandlers();
-    let reportBody: Record<string, unknown> | undefined;
+    let issueBody: Record<string, unknown> | undefined;
     server.use(
-      http.post(REPORTS_URL, async ({ request }) => {
-        reportBody = (await request.json()) as Record<string, unknown>;
+      http.post(ISSUES_URL, async ({ request }) => {
+        issueBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json(
-          { report_id: 'rep_abc', status: 'received' },
+          { issue_id: 'rep_abc', status: 'received' },
           { status: 202 },
         );
       }),
@@ -149,20 +149,20 @@ describe('submit — happy path', () => {
       attachments: [makeBlob()],
     });
 
-    expect(result).toEqual({ ok: true, report_id: 'rep_abc' });
-    expect(reportBody).toBeDefined();
+    expect(result).toEqual({ ok: true, issue_id: 'rep_abc' });
+    expect(issueBody).toBeDefined();
     // Round-tripped scalar fields.
-    expect(reportBody?.title).toBe('broken');
-    expect(reportBody?.description).toBe('the thing broke');
-    expect(reportBody?.expected).toBe('works');
-    expect(reportBody?.actual).toBe('broken');
-    expect(reportBody?.environment).toBe('stg');
-    expect(reportBody?.release).toBe('1.2.3');
-    expect(reportBody?.build_sha).toBe('deadbeef');
+    expect(issueBody?.title).toBe('broken');
+    expect(issueBody?.description).toBe('the thing broke');
+    expect(issueBody?.expected).toBe('works');
+    expect(issueBody?.actual).toBe('broken');
+    expect(issueBody?.environment).toBe('stg');
+    expect(issueBody?.release).toBe('1.2.3');
+    expect(issueBody?.build_sha).toBe('deadbeef');
     // route_path is auto-collected from `location.pathname + search`.
-    expect(typeof reportBody?.route_path).toBe('string');
+    expect(typeof issueBody?.route_path).toBe('string');
     // Attachments resolved via presign.
-    const attachments = reportBody?.attachments as Array<
+    const attachments = issueBody?.attachments as Array<
       Record<string, unknown>
     >;
     expect(attachments).toHaveLength(1);
@@ -171,7 +171,7 @@ describe('submit — happy path', () => {
       mime: 'image/png',
     });
     // sha256 plumbing: presign body carried it, PUT header carried it, and the
-    // final report attachment entry carries the same value. Without this, R2
+    // final issue attachment entry carries the same value. Without this, R2
     // stores the object with no sha256 metadata and ingest 409s.
     const presignBody = uploads.presignBodies()[0]!;
     expect(presignBody.sha256).toMatch(/^[A-Za-z0-9+/]+=*$/);
@@ -179,7 +179,7 @@ describe('submit — happy path', () => {
     expect(uploads.putChecksums()[0]).toBe(presignBody.sha256);
     expect(attachments[0]!.sha256).toBe(presignBody.sha256);
     // Device context — every field present (jsdom provides the globals).
-    const deviceCtx = reportBody?.device_context as Record<string, unknown>;
+    const deviceCtx = issueBody?.device_context as Record<string, unknown>;
     expect(deviceCtx.platform).toBe('web');
     expect(typeof deviceCtx.ua).toBe('string');
     expect(typeof deviceCtx.locale).toBe('string');
@@ -191,14 +191,14 @@ describe('submit — happy path', () => {
     expect(typeof sdk.version).toBe('string');
     expect(sdk.platform).toBe('web');
     // userContext callback merged into user_context alongside config.user.
-    const userCtx = reportBody?.user_context as Record<string, unknown>;
+    const userCtx = issueBody?.user_context as Record<string, unknown>;
     expect((userCtx.user as Record<string, unknown>).id).toBe('u_7');
     expect(userCtx.tenantId).toBe('t_99');
     expect(userCtx.plan).toBe('pro');
     // Ring snapshots flow through (empty arrays here, but present as keys).
-    expect(Array.isArray(reportBody?.console_errors)).toBe(true);
-    expect(Array.isArray(reportBody?.network_errors)).toBe(true);
-    expect(Array.isArray(reportBody?.route_trail)).toBe(true);
+    expect(Array.isArray(issueBody?.console_errors)).toBe(true);
+    expect(Array.isArray(issueBody?.network_errors)).toBe(true);
+    expect(Array.isArray(issueBody?.route_trail)).toBe(true);
   });
 
   it('accepts FeedbackAttachment { blob, filename } in addition to plain Blob', async () => {
@@ -207,12 +207,12 @@ describe('submit — happy path', () => {
     // must succeed and the resulting attachment descriptor must include
     // mime + size pulled from the wrapped blob.
     installUploadHandlers();
-    let reportBody: Record<string, unknown> | undefined;
+    let issueBody: Record<string, unknown> | undefined;
     server.use(
-      http.post(REPORTS_URL, async ({ request }) => {
-        reportBody = (await request.json()) as Record<string, unknown>;
+      http.post(ISSUES_URL, async ({ request }) => {
+        issueBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json(
-          { report_id: 'rep_named', status: 'received' },
+          { issue_id: 'rep_named', status: 'received' },
           { status: 202 },
         );
       }),
@@ -222,8 +222,8 @@ describe('submit — happy path', () => {
       description: 'd',
       attachments: [{ blob: makeBlob(), filename: 'screenshot.png' }],
     });
-    expect(result).toEqual({ ok: true, report_id: 'rep_named' });
-    const attachments = reportBody?.attachments as unknown[];
+    expect(result).toEqual({ ok: true, issue_id: 'rep_named' });
+    const attachments = issueBody?.attachments as unknown[];
     expect(attachments).toHaveLength(1);
     expect(attachments[0]).toMatchObject({
       object_key: `${OBJECT_KEY}-1`,
@@ -233,12 +233,12 @@ describe('submit — happy path', () => {
 
   it('submits two distinct blobs with distinct sha256s, preserved in order', async () => {
     const uploads = installUploadHandlers();
-    let reportBody: Record<string, unknown> | undefined;
+    let issueBody: Record<string, unknown> | undefined;
     server.use(
-      http.post(REPORTS_URL, async ({ request }) => {
-        reportBody = (await request.json()) as Record<string, unknown>;
+      http.post(ISSUES_URL, async ({ request }) => {
+        issueBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json(
-          { report_id: 'rep_pair', status: 'received' },
+          { issue_id: 'rep_pair', status: 'received' },
           { status: 202 },
         );
       }),
@@ -254,7 +254,7 @@ describe('submit — happy path', () => {
       description: 'd',
       attachments: [pngBlob, jpegBlob],
     });
-    expect(result).toEqual({ ok: true, report_id: 'rep_pair' });
+    expect(result).toEqual({ ok: true, issue_id: 'rep_pair' });
 
     const bodies = uploads.presignBodies();
     expect(bodies).toHaveLength(2);
@@ -265,9 +265,9 @@ describe('submit — happy path', () => {
       bodies[0]!.sha256,
       bodies[1]!.sha256,
     ]);
-    // Report carries both sha256s in the original attachment order.
-    expect(reportBody).toBeDefined();
-    const attachments = reportBody?.attachments as Array<
+    // Issue carries both sha256s in the original attachment order.
+    expect(issueBody).toBeDefined();
+    const attachments = issueBody?.attachments as Array<
       Record<string, unknown>
     >;
     expect(attachments).toHaveLength(2);
@@ -279,15 +279,15 @@ describe('submit — happy path', () => {
 });
 
 describe('submit — attachment failures', () => {
-  it('presign 500 → ATTACHMENT_UPLOAD_FAILED, no reports POST fired', async () => {
-    let reportsHit = 0;
+  it('presign 500 → ATTACHMENT_UPLOAD_FAILED, no issues POST fired', async () => {
+    let issuesHit = 0;
     server.use(
       http.post(PRESIGN_URL, () =>
         HttpResponse.json({ error: 'boom' }, { status: 500 }),
       ),
-      http.post(REPORTS_URL, () => {
-        reportsHit++;
-        return HttpResponse.json({ report_id: 'x' }, { status: 202 });
+      http.post(ISSUES_URL, () => {
+        issuesHit++;
+        return HttpResponse.json({ issue_id: 'x' }, { status: 202 });
       }),
     );
     const instance = createBrevwick({ projectKey: KEY });
@@ -297,11 +297,11 @@ describe('submit — attachment failures', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('ATTACHMENT_UPLOAD_FAILED');
-    expect(reportsHit).toBe(0);
+    expect(issuesHit).toBe(0);
   });
 
-  it('PUT 403 → ATTACHMENT_UPLOAD_FAILED, no reports POST fired', async () => {
-    let reportsHit = 0;
+  it('PUT 403 → ATTACHMENT_UPLOAD_FAILED, no issues POST fired', async () => {
+    let issuesHit = 0;
     server.use(
       http.post(PRESIGN_URL, () =>
         HttpResponse.json({
@@ -310,9 +310,9 @@ describe('submit — attachment failures', () => {
         }),
       ),
       http.put(UPLOAD_URL, () => new HttpResponse(null, { status: 403 })),
-      http.post(REPORTS_URL, () => {
-        reportsHit++;
-        return HttpResponse.json({ report_id: 'x' }, { status: 202 });
+      http.post(ISSUES_URL, () => {
+        issuesHit++;
+        return HttpResponse.json({ issue_id: 'x' }, { status: 202 });
       }),
     );
     const instance = createBrevwick({ projectKey: KEY });
@@ -322,7 +322,7 @@ describe('submit — attachment failures', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('ATTACHMENT_UPLOAD_FAILED');
-    expect(reportsHit).toBe(0);
+    expect(issuesHit).toBe(0);
   });
 });
 
@@ -330,7 +330,7 @@ describe('submit — ingest failures', () => {
   it('ingest 422 → INGEST_REJECTED, not retried', async () => {
     let hits = 0;
     server.use(
-      http.post(REPORTS_URL, () => {
+      http.post(ISSUES_URL, () => {
         hits++;
         return HttpResponse.json(
           { error: { code: 'QUOTA_EXCEEDED' } },
@@ -348,20 +348,20 @@ describe('submit — ingest failures', () => {
   it('ingest 503 → 200 after exactly one retry', async () => {
     let hits = 0;
     server.use(
-      http.post(REPORTS_URL, () => {
+      http.post(ISSUES_URL, () => {
         hits++;
         if (hits === 1) {
           return HttpResponse.json({ error: 'boom' }, { status: 503 });
         }
         return HttpResponse.json(
-          { report_id: 'rep_ok', status: 'received' },
+          { issue_id: 'rep_ok', status: 'received' },
           { status: 202 },
         );
       }),
     );
     const instance = createBrevwick({ projectKey: KEY });
     const result = await instance.submit({ description: 'd' });
-    expect(result).toEqual({ ok: true, report_id: 'rep_ok' });
+    expect(result).toEqual({ ok: true, issue_id: 'rep_ok' });
     expect(hits).toBe(2);
   });
 
@@ -372,13 +372,13 @@ describe('submit — ingest failures', () => {
     // file. Fake timers let us advance past the 30 s budget deterministically
     // without the test actually waiting.
     server.use(
-      http.post(REPORTS_URL, async ({ request }) => {
+      http.post(ISSUES_URL, async ({ request }) => {
         await new Promise<void>((_, reject) => {
           request.signal.addEventListener('abort', () =>
             reject(new Error('aborted')),
           );
         });
-        return HttpResponse.json({ report_id: 'never' });
+        return HttpResponse.json({ issue_id: 'never' });
       }),
     );
     vi.useFakeTimers();
@@ -394,7 +394,7 @@ describe('submit — ingest failures', () => {
 describe('submit — headers + redaction', () => {
   it('stamps X-Brevwick-SDK on every ingest-origin request (loop guard)', async () => {
     // The loop-guard header rides on requests to OUR endpoint (presign +
-    // reports). Presigned PUTs land on R2 / S3, which reject unsigned headers
+    // issues). Presigned PUTs land on R2 / S3, which reject unsigned headers
     // — so we intentionally omit the marker there and let the ring's origin
     // check handle the (different-origin) upload URL.
     const ingestSdkHeaders: string[] = [];
@@ -411,10 +411,10 @@ describe('submit — headers + redaction', () => {
         putSdkHeader = request.headers.get('x-brevwick-sdk');
         return new HttpResponse(null, { status: 200 });
       }),
-      http.post(REPORTS_URL, ({ request }) => {
+      http.post(ISSUES_URL, ({ request }) => {
         ingestSdkHeaders.push(request.headers.get('x-brevwick-sdk') ?? '');
         return HttpResponse.json(
-          { report_id: 'rep_h', status: 'received' },
+          { issue_id: 'rep_h', status: 'received' },
           { status: 202 },
         );
       }),
@@ -433,7 +433,7 @@ describe('submit — headers + redaction', () => {
 
   it('redaction golden fixture: email + Bearer + JWT + SA-ID + base64 all masked', async () => {
     installUploadHandlers();
-    const capture = captureReportBody();
+    const capture = captureIssueBody();
 
     const rawEmail = 'user@example.com';
     const rawBearer = 'Bearer sk_live_abcdef1234567890';
@@ -465,7 +465,7 @@ describe('submit — headers + redaction', () => {
 
   it('redacts user email with a***@d***.tld mask but keeps id verbatim', async () => {
     installUploadHandlers();
-    const capture = captureReportBody();
+    const capture = captureIssueBody();
     const instance = createBrevwick({
       projectKey: KEY,
       user: { id: 'u_42', email: 'alice@example.com', display_name: 'Alice' },
@@ -488,7 +488,7 @@ describe('submit — headers + redaction', () => {
     // Defensive — guards against a future refactor that would bypass
     // `redactValue` for fields outside the known `id` / `email` shapes.
     installUploadHandlers();
-    const capture = captureReportBody();
+    const capture = captureIssueBody();
     const instance = createBrevwick({
       projectKey: KEY,
       user: {
@@ -514,10 +514,10 @@ describe('submit — headers + redaction', () => {
         });
       }),
       http.put(UPLOAD_URL, () => new HttpResponse(null, { status: 200 })),
-      http.post(REPORTS_URL, ({ request }) => {
+      http.post(ISSUES_URL, ({ request }) => {
         ingestAuthHeaders.push(request.headers.get('authorization') ?? '');
         return HttpResponse.json(
-          { report_id: 'rep_auth', status: 'received' },
+          { issue_id: 'rep_auth', status: 'received' },
           { status: 202 },
         );
       }),
@@ -540,12 +540,12 @@ describe('submit — headers + redaction', () => {
     // marker like `Bearer [redacted]` could be re-inspected, and any
     // future regex change could double-process tokens.
     installUploadHandlers();
-    let reportBody: Record<string, unknown> | undefined;
+    let issueBody: Record<string, unknown> | undefined;
     server.use(
-      http.post(REPORTS_URL, async ({ request }) => {
-        reportBody = (await request.json()) as Record<string, unknown>;
+      http.post(ISSUES_URL, async ({ request }) => {
+        issueBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json(
-          { report_id: 'rep_ringz', status: 'received' },
+          { issue_id: 'rep_ringz', status: 'received' },
           { status: 202 },
         );
       }),
@@ -563,7 +563,7 @@ describe('submit — headers + redaction', () => {
     });
     const result = await instance.submit({ description: 'd' });
     expect(result.ok).toBe(true);
-    const networkErrors = reportBody?.network_errors as Array<
+    const networkErrors = issueBody?.network_errors as Array<
       Record<string, unknown>
     >;
     expect(networkErrors).toHaveLength(1);
@@ -574,7 +574,7 @@ describe('submit — headers + redaction', () => {
     );
     // Whole body must contain the token marker exactly once per occurrence
     // — no double-masking such as `Bearer [[redacted]]` or `[Bearer [redacted]]`.
-    const raw = JSON.stringify(reportBody);
+    const raw = JSON.stringify(issueBody);
     expect(raw).not.toContain('[[redacted]]');
     expect(raw).not.toContain('[Bearer [redacted]]');
   });
@@ -671,29 +671,29 @@ describe('submit — ingest retry / failure modes', () => {
   it('retries on a thrown fetch error and succeeds on second attempt', async () => {
     let hits = 0;
     server.use(
-      http.post(REPORTS_URL, () => {
+      http.post(ISSUES_URL, () => {
         hits++;
         if (hits === 1) {
           // msw HttpResponse.error() simulates a thrown network error
-          // (the same shape `fetch` reports for `TypeError: Failed to fetch`).
+          // (the same shape `fetch` issues for `TypeError: Failed to fetch`).
           return HttpResponse.error();
         }
         return HttpResponse.json(
-          { report_id: 'rep_retry', status: 'received' },
+          { issue_id: 'rep_retry', status: 'received' },
           { status: 202 },
         );
       }),
     );
     const instance = createBrevwick({ projectKey: KEY });
     const result = await instance.submit({ description: 'd' });
-    expect(result).toEqual({ ok: true, report_id: 'rep_retry' });
+    expect(result).toEqual({ ok: true, issue_id: 'rep_retry' });
     expect(hits).toBe(2);
   });
 
   it('returns INGEST_RETRY_EXHAUSTED after three straight 503s', async () => {
     let hits = 0;
     server.use(
-      http.post(REPORTS_URL, () => {
+      http.post(ISSUES_URL, () => {
         hits++;
         return HttpResponse.json({ error: 'down' }, { status: 503 });
       }),
@@ -714,7 +714,7 @@ describe('submit — ingest retry / failure modes', () => {
 
   it('returns INGEST_INVALID_RESPONSE when 200 has a malformed body', async () => {
     server.use(
-      http.post(REPORTS_URL, () =>
+      http.post(ISSUES_URL, () =>
         HttpResponse.json({ unexpected: true }, { status: 200 }),
       ),
     );
@@ -731,7 +731,7 @@ describe('submit — ingest retry / failure modes', () => {
     async (status) => {
       let hits = 0;
       server.use(
-        http.post(REPORTS_URL, () => {
+        http.post(ISSUES_URL, () => {
           hits++;
           return HttpResponse.json({ error: { code: 'WHATEVER' } }, { status });
         }),
@@ -746,7 +746,7 @@ describe('submit — ingest retry / failure modes', () => {
 
   it('redacts the server-echoed body in INGEST_REJECTED messages', async () => {
     server.use(
-      http.post(REPORTS_URL, () =>
+      http.post(ISSUES_URL, () =>
         HttpResponse.text('Bearer sk_live_leaked_token_abcdef1234567890', {
           status: 400,
         }),
@@ -768,12 +768,12 @@ describe('submit — use_ai threading', () => {
     'passes use_ai=%s through to the ingest payload when provided',
     async (_label, flag) => {
       installUploadHandlers();
-      let reportBody: Record<string, unknown> | undefined;
+      let issueBody: Record<string, unknown> | undefined;
       server.use(
-        http.post(REPORTS_URL, async ({ request }) => {
-          reportBody = (await request.json()) as Record<string, unknown>;
+        http.post(ISSUES_URL, async ({ request }) => {
+          issueBody = (await request.json()) as Record<string, unknown>;
           return HttpResponse.json(
-            { report_id: 'rep_ai', status: 'received' },
+            { issue_id: 'rep_ai', status: 'received' },
             { status: 202 },
           );
         }),
@@ -784,18 +784,18 @@ describe('submit — use_ai threading', () => {
         use_ai: flag,
       });
       expect(result.ok).toBe(true);
-      expect(reportBody?.use_ai).toBe(flag);
+      expect(issueBody?.use_ai).toBe(flag);
     },
   );
 
   it('omits use_ai from the payload when not provided', async () => {
     installUploadHandlers();
-    let reportBody: Record<string, unknown> | undefined;
+    let issueBody: Record<string, unknown> | undefined;
     server.use(
-      http.post(REPORTS_URL, async ({ request }) => {
-        reportBody = (await request.json()) as Record<string, unknown>;
+      http.post(ISSUES_URL, async ({ request }) => {
+        issueBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json(
-          { report_id: 'rep_no_ai', status: 'received' },
+          { issue_id: 'rep_no_ai', status: 'received' },
           { status: 202 },
         );
       }),
@@ -803,20 +803,20 @@ describe('submit — use_ai threading', () => {
     const instance = createBrevwick({ projectKey: KEY });
     const result = await instance.submit({ description: 'd' });
     expect(result.ok).toBe(true);
-    expect(reportBody).toBeDefined();
-    expect('use_ai' in (reportBody ?? {})).toBe(false);
+    expect(issueBody).toBeDefined();
+    expect('use_ai' in (issueBody ?? {})).toBe(false);
   });
 });
 
 describe('submit — userContext throw safety', () => {
   it('treats a throwing userContext() as empty extras and still succeeds', async () => {
     installUploadHandlers();
-    let reportBody: Record<string, unknown> | undefined;
+    let issueBody: Record<string, unknown> | undefined;
     server.use(
-      http.post(REPORTS_URL, async ({ request }) => {
-        reportBody = (await request.json()) as Record<string, unknown>;
+      http.post(ISSUES_URL, async ({ request }) => {
+        issueBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json(
-          { report_id: 'rep_uctx', status: 'received' },
+          { issue_id: 'rep_uctx', status: 'received' },
           { status: 202 },
         );
       }),
@@ -830,9 +830,9 @@ describe('submit — userContext throw safety', () => {
     });
     const internal = getInternal(instance);
     const result = await instance.submit({ description: 'd' });
-    expect(result).toEqual({ ok: true, report_id: 'rep_uctx' });
+    expect(result).toEqual({ ok: true, issue_id: 'rep_uctx' });
     // user_context still includes config.user.
-    const userCtx = reportBody?.user_context as Record<string, unknown>;
+    const userCtx = issueBody?.user_context as Record<string, unknown>;
     expect((userCtx.user as Record<string, unknown>).id).toBe('u_keep');
     // The thrown extras key must NOT appear.
     expect(userCtx.tenantId).toBeUndefined();

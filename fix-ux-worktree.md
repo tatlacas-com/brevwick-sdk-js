@@ -5,7 +5,7 @@
 **Key references:**
 
 - `CLAUDE.md` (this repo) — working style, bundle budgets (≤ 2.2 kB core / ≤ 25 kB React), redaction mandate, conventional commits, no Co-Authored-By
-- [SDD § 7 ingest endpoints](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#7-ingest-endpoints) — presign + upload + report shape (WT-A is cross-repo with a paired ops PR here)
+- [SDD § 7 ingest endpoints](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#7-ingest-endpoints) — presign + upload + issue shape (WT-A is cross-repo with a paired ops PR here)
 - [SDD § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts) — canonical Client SDK contracts
 - Issues: [#29](https://github.com/tatlacas-com/brevwick-sdk-js/issues/29), [#30](https://github.com/tatlacas-com/brevwick-sdk-js/issues/30), [#31](https://github.com/tatlacas-com/brevwick-sdk-js/issues/31)
 
@@ -17,7 +17,7 @@
 - Dynamic imports for anything heavy (`await import('modern-screenshot')`) so it never lands in the base bundle
 - Single quotes, semicolons, trailing commas (prettier); relative paths inside each package
 - Conventional commits, subject ≤ 72 chars, **no Co-Authored-By headers**, no Claude attribution
-- Never log: project key plaintext, auth headers, bearer tokens, JWT contents, email bodies, raw report descriptions
+- Never log: project key plaintext, auth headers, bearer tokens, JWT contents, email bodies, raw issue descriptions
 - `main` is protected — every change goes through a PR. Branch from `origin/main`, not local `main`. Do NOT `git worktree remove` — the user manages worktree lifecycle.
 
 **Hard bundle budgets — CI enforces via `packages/sdk/src/__tests__/chunk-split.test.ts`:**
@@ -65,9 +65,9 @@ Worktrees live alongside the main repo at `/home/tatlacas/repos/brevwick/brevwic
 
 ### Worktree A: fix(submit): attachment PUT missing `x-amz-checksum-sha256`, ingest 409 (#29)
 
-Submits with attachments fail ingest `409 CONFLICT` because the SDK never computes or sends the blob SHA-256. Fix: compute SHA-256 client-side, send in presign body and in the final report payload. Paired SDD § 7 update in `brevwick-ops`.
+Submits with attachments fail ingest `409 CONFLICT` because the SDK never computes or sends the blob SHA-256. Fix: compute SHA-256 client-side, send in presign body and in the final issue payload. Paired SDD § 7 update in `brevwick-ops`.
 
-**Scope:** `packages/sdk/src/submit.ts` adds a `sha256Base64(blob)` helper, threads `sha256` into the presign request body and into each `attachments[*]` entry on the report; new tests in `packages/sdk/src/__tests__/submit.test.ts` asserting presign body / PUT header / report payload carry matching checksums; no change to `putAttachment` (header merge already forwards `x-amz-checksum-sha256` from `presign.headers`); cross-repo PR on `brevwick-ops` updates SDD § 7 presign-request example.
+**Scope:** `packages/sdk/src/submit.ts` adds a `sha256Base64(blob)` helper, threads `sha256` into the presign request body and into each `attachments[*]` entry on the issue; new tests in `packages/sdk/src/__tests__/submit.test.ts` asserting presign body / PUT header / issue payload carry matching checksums; no change to `putAttachment` (header merge already forwards `x-amz-checksum-sha256` from `presign.headers`); cross-repo PR on `brevwick-ops` updates SDD § 7 presign-request example.
 
 **Blocks:** none.
 
@@ -104,9 +104,9 @@ STEP 3 — Thread sha256 into presign request body:
 - In presignOne (currently body: JSON.stringify({ mime, size_bytes })) add sha256:
   * Compute the digest BEFORE the fetch call so the presign endpoint receives it.
   * body: JSON.stringify({ mime, size_bytes, sha256 })
-  * Return both the presign response AND the computed sha256 from presignOne (or compute once in uploadAttachments and pass down to both presignOne and the report-composition step — pick the shape that keeps the happy path readable; ONE digest call per blob, not two).
+  * Return both the presign response AND the computed sha256 from presignOne (or compute once in uploadAttachments and pass down to both presignOne and the issue-composition step — pick the shape that keeps the happy path readable; ONE digest call per blob, not two).
 
-STEP 4 — Thread sha256 into the final report payload:
+STEP 4 — Thread sha256 into the final issue payload:
 - Update the ResolvedAttachment interface to include sha256: string.
 - In uploadAttachments, record the sha256 alongside object_key / mime / size_bytes for each resolved attachment.
 - In composePayload, the attachments array rides to the wire as-is — confirm sha256 lands on every attachments[*] in the JSON.stringify'd body.
@@ -119,8 +119,8 @@ STEP 5 — putAttachment stays as-is:
 STEP 6 — Tests (packages/sdk/src/__tests__/submit.test.ts):
 - Update the existing happy-path golden: assert the msw-received presign body contains sha256 (a non-empty base64 string).
 - Update the PUT handler: capture the x-amz-checksum-sha256 header, assert it matches the sha256 sent in the presign body.
-- Update the report-POST handler: assert request body attachments[0].sha256 equals the same value.
-- Add a cross-check test: submit two different blobs in one report; assert the two presigns receive two different checksums and the report's attachments array carries both in order.
+- Update the issue-POST handler: assert request body attachments[0].sha256 equals the same value.
+- Add a cross-check test: submit two different blobs in one issue; assert the two presigns receive two different checksums and the issue's attachments array carries both in order.
 - Confirm the ring-re-redaction invariant test still passes (sha256 must survive JSON.stringify unchanged — no double-masking).
 - Confirm all existing attachment-validation tests still pass (count > 5, size > 10 MB, MIME whitelist) — these reject BEFORE any digest is computed, so sha256Base64 must not run on invalid input.
 
@@ -157,15 +157,15 @@ STEP 10 — Manual smoke (before PR):
 - Verify in browser devtools:
   * presign request body contains sha256
   * PUT request headers contain x-amz-checksum-sha256 matching presign sha256
-  * report POST body attachments[0].sha256 matches
-  * final response is 200 { report_id } — NO 409
+  * issue POST body attachments[0].sha256 matches
+  * final response is 200 { issue_id } — NO 409
 
 STEP 11 — Commit and PR:
 cd \$(pwd)  # back to the SDK worktree
 git add -A
-git commit -m 'fix(submit): send sha256 on presign + report so R2 PUT carries checksum (#29)'
+git commit -m 'fix(submit): send sha256 on presign + issue so R2 PUT carries checksum (#29)'
 git push -u origin fix/issue-29-checksum-sha256
-gh pr create --title 'fix(submit): send sha256 on presign + report so R2 PUT carries checksum' --body \"\$(cat <<'PREOF'
+gh pr create --title 'fix(submit): send sha256 on presign + issue so R2 PUT carries checksum' --body \"\$(cat <<'PREOF'
 Closes #29
 
 Paired SDD update: tatlacas-com/brevwick-ops#<OPS_PR_NUMBER>
@@ -175,19 +175,19 @@ Implements [SDD § 7 ingest](https://github.com/tatlacas-com/brevwick-ops/blob/m
 ## Summary
 - Compute base64-encoded SHA-256 of every attachment blob client-side via \`crypto.subtle.digest\`
 - Send the digest as \`sha256\` in the presign request body so the server can sign the R2 URL with \`x-amz-checksum-sha256\`
-- Include \`sha256\` on each \`attachments[*]\` entry in the final \`/v1/ingest/reports\` payload
+- Include \`sha256\` on each \`attachments[*]\` entry in the final \`/v1/ingest/issues\` payload
 - \`putAttachment\` header merge unchanged — it already forwards \`x-amz-checksum-sha256\` from \`presign.headers\`
 - Fixes the \`409 CONFLICT attachment conflict: missing sha256 on p/...\` observed on every screenshot submit
 
 ## Bundle size
-- Eager core chunk: <REPORT_SIZE> B gzipped — under the 2.2 kB (2252 B) budget
+- Eager core chunk: <ISSUE_SIZE> B gzipped — under the 2.2 kB (2252 B) budget
 - \`chunk-split.test.ts\` green
 
 ## Test plan
 - [ ] msw asserts presign body contains base64 \`sha256\`
 - [ ] msw asserts PUT header \`x-amz-checksum-sha256\` matches presign body \`sha256\`
-- [ ] msw asserts report \`attachments[*].sha256\` matches the value sent at presign time
-- [ ] Two-attachment cross-check: distinct checksums, ordered correctly in the report payload
+- [ ] msw asserts issue \`attachments[*].sha256\` matches the value sent at presign time
+- [ ] Two-attachment cross-check: distinct checksums, ordered correctly in the issue payload
 - [ ] Existing attachment-validation tests still pass (reject before digest is computed)
 - [ ] Ring-re-redaction invariant still passes (sha256 is NOT redacted)
 - [ ] Manual smoke: Next.js example → screenshot submit → 200, no 409
@@ -297,7 +297,7 @@ Implements [SDD § 12 Client SDK contracts](https://github.com/tatlacas-com/brev
 - No new dependencies; no public API change (props / hooks / payload unchanged)
 
 ## Bundle size
-- React entry gzipped: <REPORT_SIZE> B — under the 25 kB budget
+- React entry gzipped: <ISSUE_SIZE> B — under the 25 kB budget
 - SDK core chunk unchanged
 
 ## Test plan
@@ -452,7 +452,7 @@ Implements [SDD § 12 captureScreenshot](https://github.com/tatlacas-com/brevwic
 - No SDK surface change; no new runtime dependency
 
 ## Bundle size
-- React entry gzipped: <REPORT_SIZE> B — under the 25 kB budget
+- React entry gzipped: <ISSUE_SIZE> B — under the 25 kB budget
 - SDK core chunk untouched
 
 ## Test plan

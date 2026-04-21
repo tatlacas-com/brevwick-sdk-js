@@ -38,7 +38,7 @@
     "react",
     "qa",
     "feedback",
-    "bug-report"
+    "bug-issue"
   ],
   "publishConfig": {
     "access": "public",

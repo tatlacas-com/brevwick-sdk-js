@@ -152,7 +152,7 @@ describe('<FeedbackButton>', () => {
   });
 
   it('keeps the credit footer visible in the success state', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_footer' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_footer' });
     mount();
     openPanel();
     typeDraft('Hello');
@@ -179,7 +179,7 @@ describe('<FeedbackButton>', () => {
   });
 
   it('Enter submits, Shift+Enter inserts a newline', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_enter' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_enter' });
     mount();
     openPanel();
     const textarea = getComposer();
@@ -205,7 +205,7 @@ describe('<FeedbackButton>', () => {
   });
 
   it('submits via the Send button and shows success + Send another', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_ok' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ok' });
     mount();
     openPanel();
     typeDraft('Broken flow');
@@ -216,7 +216,7 @@ describe('<FeedbackButton>', () => {
 
     expect(onSubmitSpy).toHaveBeenCalledWith({
       ok: true,
-      report_id: 'rep_ok',
+      issue_id: 'rep_ok',
     });
     // Panel stays open, thread replaced with success state.
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -309,7 +309,7 @@ describe('<FeedbackButton>', () => {
   it('derives the screenshot attachment extension from its MIME type', async () => {
     const blob = new Blob(['x'], { type: 'image/webp' });
     captureScreenshot.mockResolvedValueOnce(blob);
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_ext' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ext' });
     mount();
     openPanel();
     await captureFullPage();
@@ -411,7 +411,7 @@ describe('<FeedbackButton>', () => {
   });
 
   it('passes expected/actual into the submit payload when filled', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_ea' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ea' });
     mount();
     openPanel();
     typeDraft('bug');
@@ -484,7 +484,7 @@ describe('<FeedbackButton>', () => {
   });
 
   it('thread log switches to confirmation after success for assistive tech', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_live' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_live' });
     mount();
     openPanel();
     typeDraft('x');
@@ -518,7 +518,7 @@ describe('<FeedbackButton>', () => {
     ).toBeDisabled();
 
     await act(async () => {
-      release({ ok: true, report_id: 'rep_done' });
+      release({ ok: true, issue_id: 'rep_done' });
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
@@ -582,7 +582,7 @@ describe('<FeedbackButton>', () => {
     // open so the user actually sees the confirmation — a silent success
     // while hidden is the worst-of-three outcomes.
     await act(async () => {
-      release({ ok: true, report_id: 'rep_after_min' });
+      release({ ok: true, issue_id: 'rep_after_min' });
       await Promise.resolve();
     });
     await waitFor(() =>
@@ -623,7 +623,7 @@ describe('<FeedbackButton>', () => {
   });
 
   it('"Send another" returns focus to the composer textarea', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_focus' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_focus' });
     mount();
     openPanel();
     typeDraft('will send');
@@ -640,7 +640,7 @@ describe('<FeedbackButton>', () => {
   });
 
   it('close on a success-state panel dismisses without a confirm', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_succ_close' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_succ_close' });
     mount();
     openPanel();
     typeDraft('landing');
@@ -677,7 +677,7 @@ describe('<FeedbackButton>', () => {
       screen.getByRole('button', { name: /^close$/i }) as HTMLButtonElement,
     ).toBeDisabled();
     await act(async () => {
-      release({ ok: true, report_id: 'rep_unblock' });
+      release({ ok: true, issue_id: 'rep_unblock' });
       await Promise.resolve();
     });
   });
@@ -717,7 +717,7 @@ describe('<FeedbackButton>', () => {
     expect(submit).not.toHaveBeenCalled();
 
     // Plain Enter still submits.
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_mod' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_mod' });
     await act(async () => {
       fireEvent.keyDown(textarea, { key: 'Enter' });
     });
@@ -832,7 +832,7 @@ describe('<FeedbackButton>', () => {
   });
 
   it('submits the raw draft so the bubble and payload stay in sync', async () => {
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_ws' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ws' });
     mount();
     openPanel();
     // Trailing newlines and whitespace — the user's intentional formatting.
@@ -903,7 +903,7 @@ describe('<FeedbackButton> — Use AI toggle', () => {
       ai_enabled: false,
       ai_submitter_choice_allowed: true,
     });
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_disabled' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_disabled' });
     await mountAndOpen();
     expect(queryAiToggle()).toBeNull();
     typeDraft('hi');
@@ -919,7 +919,7 @@ describe('<FeedbackButton> — Use AI toggle', () => {
       ai_enabled: true,
       ai_submitter_choice_allowed: false,
     });
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_forced_on' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_forced_on' });
     await mountAndOpen();
     expect(queryAiToggle()).toBeNull();
     typeDraft('admin-forced');
@@ -935,7 +935,7 @@ describe('<FeedbackButton> — Use AI toggle', () => {
       ai_enabled: true,
       ai_submitter_choice_allowed: true,
     });
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_choice_on' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_choice_on' });
     await mountAndOpen();
     const toggle = queryAiToggle();
     expect(toggle).not.toBeNull();
@@ -955,7 +955,7 @@ describe('<FeedbackButton> — Use AI toggle', () => {
       ai_enabled: true,
       ai_submitter_choice_allowed: true,
     });
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_choice_off' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_choice_off' });
     await mountAndOpen();
     const toggle = queryAiToggle()!;
     fireEvent.click(toggle);
@@ -986,7 +986,7 @@ describe('<FeedbackButton> — Use AI toggle', () => {
 
   it('config fetch resolves to null → widget still works, no toggle, use_ai omitted', async () => {
     getConfig.mockResolvedValue(null);
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_null_cfg' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_null_cfg' });
     await mountAndOpen();
     expect(queryAiToggle()).toBeNull();
     typeDraft('fallback');
@@ -995,7 +995,7 @@ describe('<FeedbackButton> — Use AI toggle', () => {
     });
     expect(onSubmitSpy).toHaveBeenCalledWith({
       ok: true,
-      report_id: 'rep_null_cfg',
+      issue_id: 'rep_null_cfg',
     });
     const input = submit.mock.calls[0]![0] as Record<string, unknown>;
     expect('use_ai' in input).toBe(false);
@@ -1003,7 +1003,7 @@ describe('<FeedbackButton> — Use AI toggle', () => {
 
   it('config fetch rejects → no toggle, submit still works and omits use_ai', async () => {
     getConfig.mockRejectedValueOnce(new Error('cfg boom'));
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_cfg_err' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_cfg_err' });
     await mountAndOpen();
     expect(queryAiToggle()).toBeNull();
     typeDraft('cfg error path');
@@ -1125,7 +1125,7 @@ describe('<FeedbackButton> — theming + composer shell', () => {
     const textarea = screen.getByRole('textbox', {
       name: /feedback message/i,
     }) as HTMLTextAreaElement;
-    // happy-dom reports `scrollHeight === 0` for unmeasured textareas, so
+    // happy-dom issues `scrollHeight === 0` for unmeasured textareas, so
     // asserting only `/px$/` passes vacuously for `"0px"`. Spy on the
     // prototype getter so the autogrow effect sees a realistic scrollHeight
     // and we can assert the exact clamped value applied by the effect.
@@ -1163,7 +1163,7 @@ describe('<FeedbackButton> — theming + composer shell', () => {
   // The two axe specs below guard structural a11y only (role / aria /
   // accessible-name). happy-dom does not re-evaluate
   // `@media (prefers-color-scheme: dark)` against the stubbed matchMedia,
-  // and axe-core's `color-contrast` rule reports `inapplicable` under
+  // and axe-core's `color-contrast` rule issues `inapplicable` under
   // happy-dom since the non-layout-engine environment can't resolve
   // cascaded `color` values. Contrast for the default light + dark
   // palettes is pinned separately via `dark-mode bubble-user / accent
@@ -1467,7 +1467,7 @@ describe('<FeedbackButton> — region capture overlay', () => {
   it('"Capture full page" passes the uncropped blob through to the composer', async () => {
     const fullBlob = new Blob(['uncropped'], { type: 'image/webp' });
     captureScreenshot.mockResolvedValueOnce(fullBlob);
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_full' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_full' });
     mount();
     openOverlay();
     await act(async () => {
@@ -1660,7 +1660,7 @@ describe('<FeedbackButton> — region capture overlay', () => {
     expect(queryOverlay()).toBeNull();
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
     typeDraft('enter full cap');
-    submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_enter_full' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_enter_full' });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
@@ -1781,7 +1781,7 @@ describe('<FeedbackButton> — region capture overlay', () => {
       const fullBlob = new Blob(['full'], { type: 'image/webp' });
       captureScreenshot.mockResolvedValueOnce(fullBlob);
       vi.stubGlobal('devicePixelRatio', 2);
-      submit.mockResolvedValueOnce({ ok: true, report_id: 'rep_offscreen' });
+      submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_offscreen' });
       mount();
       openOverlay();
       drag(getOverlay(), { x: 10, y: 20 }, { x: 210, y: 120 });
@@ -2019,7 +2019,7 @@ describe('<FeedbackButton> — region capture overlay', () => {
 });
 
 /**
- * Stub window.matchMedia so `(prefers-color-scheme: dark)` reports the
+ * Stub window.matchMedia so `(prefers-color-scheme: dark)` issues the
  * chosen value. happy-dom doesn't re-evaluate `@media` CSS rules against a
  * stubbed matchMedia, so this is intended for callers that check matchMedia
  * themselves (e.g. axe's own UA detection). Restored automatically via the

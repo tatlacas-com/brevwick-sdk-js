@@ -59,11 +59,11 @@ if (!projectKey || projectKey === PLACEHOLDER_KEY) {
         try {
           const res = await brevwick.submit({
             title: 'Hello from vanilla example',
-            description: 'Test report',
+            description: 'Test issue',
           });
           if (res.ok) {
             result.className = 'ok';
-            result.textContent = `Report sent: ${res.report_id}`;
+            result.textContent = `Issue sent: ${res.issue_id}`;
           } else {
             result.className = 'err';
             result.textContent = `Error [${res.error.code}]: ${res.error.message}`;

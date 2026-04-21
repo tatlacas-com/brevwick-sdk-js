@@ -16,7 +16,7 @@
 - Dynamic imports for anything heavy (`await import('modern-screenshot')`) so it never lands in the base bundle
 - Single quotes, semicolons, trailing commas (prettier); `@/` aliasing is NOT used — relative paths inside each package
 - Conventional commits, subject ≤ 72 chars, **no Co-Authored-By headers**, no Claude attribution anywhere
-- Never log: project key plaintext, auth headers, bearer tokens, JWT contents, email bodies, raw report descriptions
+- Never log: project key plaintext, auth headers, bearer tokens, JWT contents, email bodies, raw issue descriptions
 
 **Hard bundle budgets — CI enforces once WT-07 lands:**
 
@@ -258,7 +258,7 @@ PREOF
 
 ### Worktree 02: console error ring (#2)
 
-Capture `console.error`/`warn`, `window.onerror`, and `unhandledrejection` into the console ring buffer. First of the three rings that become evidence in every report.
+Capture `console.error`/`warn`, `window.onerror`, and `unhandledrejection` into the console ring buffer. First of the three rings that become evidence in every issue.
 
 **Scope:** `packages/sdk/src/rings/console.ts`, patch with preserved originals, redaction, stack trimming (top 20 frames), 500 ms dedupe window, `uninstall()` restores originals.
 
@@ -523,7 +523,7 @@ PREOF
 
 ### Worktree 04: submit() with auto-context + redaction + presign (#4)
 
-Orchestrates the full ingest flow: presign → PUT attachments → `POST /v1/ingest/reports`. Auto-attaches ring snapshots + device context.
+Orchestrates the full ingest flow: presign → PUT attachments → `POST /v1/ingest/issues`. Auto-attaches ring snapshots + device context.
 
 **Scope:** `packages/sdk/src/submit.ts`, payload composition, per-field redaction, presign loop, retry on network error, 30 s budget, never throws.
 
@@ -568,7 +568,7 @@ STEP 3 — Presign loop:
 - On any presign or PUT failure: abort the loop, return { ok: false, error: { code: 'ATTACHMENT_UPLOAD_FAILED', message } }.
 
 STEP 4 — Final ingest call:
-- POST {endpoint}/v1/ingest/reports with JSON body. Same X-Brevwick-* headers.
+- POST {endpoint}/v1/ingest/issues with JSON body. Same X-Brevwick-* headers.
 - Retry on network error (fetch throws) OR status === 0: up to 2 retries with 250 ms / 1000 ms backoff. DO NOT retry on 4xx. DO retry on 5xx once (third attempt total).
 - Total wall-clock budget 30 s via AbortController + setTimeout.
 
@@ -579,13 +579,13 @@ STEP 5 — Redaction:
 - Add a redaction golden fixture covering: email, Bearer token, JWT triplet, South African ID number, long base64 blob. The fixture is the canonical payload both WT-04 and WT-10 assert against.
 
 STEP 6 — Error shape:
-- Never throw. Always resolve with { ok: true, report_id: string } | { ok: false, error: { code: string, message: string } }.
+- Never throw. Always resolve with { ok: true, issue_id: string } | { ok: false, error: { code: string, message: string } }.
 - Error codes: ATTACHMENT_UPLOAD_FAILED, INGEST_REJECTED (4xx with body), INGEST_RETRY_EXHAUSTED (repeated 5xx / network), INGEST_TIMEOUT (30 s), INGEST_INVALID_RESPONSE (non-JSON 200).
 
 STEP 7 — Tests (packages/sdk/src/__tests__/submit.test.ts):
 - Vitest + msw.
-- Happy path: one attachment → presign → PUT → reports POST → { ok: true, report_id: 'rep_...' }.
-- Presign 500 → { ok: false, error.code: 'ATTACHMENT_UPLOAD_FAILED' }; no reports POST fired.
+- Happy path: one attachment → presign → PUT → issues POST → { ok: true, issue_id: 'rep_...' }.
+- Presign 500 → { ok: false, error.code: 'ATTACHMENT_UPLOAD_FAILED' }; no issues POST fired.
 - PUT 403 → same.
 - Ingest 422 → { ok: false, error.code: 'INGEST_REJECTED' }; not retried.
 - Ingest 503 then 200 → { ok: true } after exactly one retry (use msw handler counter).
@@ -607,7 +607,7 @@ Closes #4
 Implements [SDD § 7 ingest](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#7-ingest-endpoints) and [§ 12 submit contract](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts).
 
 ## Summary
-- submit() orchestrates presign → PUT → POST /v1/ingest/reports
+- submit() orchestrates presign → PUT → POST /v1/ingest/issues
 - Auto-attaches ring snapshots + device/context; every free-form field redacted
 - Up to 2 retries on network error or 5xx; never retries 4xx; 30 s total budget
 - Never throws — always resolves to tagged SubmitResult
@@ -683,7 +683,7 @@ STEP 5 — FeedbackButton (packages/react/src/feedback-button.tsx):
 - Renders a fixed-position button with data-brevwick-skip on the root so it never appears in its own screenshots.
 - Click → open Radix Dialog. Form fields: title (required), description, expected, actual, 'Attach screenshot' button (calls captureScreenshot, shows thumbnail + size), 'Attach file' <input type=file multiple>.
 - Submit → useFeedback().submit(input). While status='submitting' disable submit button + show spinner (CSS only, no icon lib — <svg> inline).
-- On success: show toast-like confirmation inline inside the dialog ('Thanks — report sent'), wait 1.5 s, close. Call props.onSubmit(result).
+- On success: show toast-like confirmation inline inside the dialog ('Thanks — issue sent'), wait 1.5 s, close. Call props.onSubmit(result).
 - On error: inline error text with error.message. Do NOT close.
 - Theme: CSS module with :root variables (—brw-bg, —brw-fg, —brw-accent) and a @media (prefers-color-scheme: dark) override. Consumer can override via className or by setting the CSS vars on an ancestor.
 
@@ -700,7 +700,7 @@ STEP 7 — Tests (packages/react/src/__tests__/):
 - feedback-button.test.tsx:
   - Opens dialog on click; title required (form-level error surfaced).
   - Attach screenshot click calls sdk.captureScreenshot; thumbnail rendered.
-  - Submit with stubbed submit resolving { ok: true, report_id }: onSubmit invoked with the result; dialog closes after 1.5 s (fake timers).
+  - Submit with stubbed submit resolving { ok: true, issue_id }: onSubmit invoked with the result; dialog closes after 1.5 s (fake timers).
   - Submit with stubbed { ok: false }: inline error shown; dialog stays open.
   - data-brevwick-skip attribute present on root button and dialog content.
 
@@ -866,10 +866,10 @@ STEP 2 — pnpm-workspace.yaml:
 STEP 3 — examples/vanilla/:
 - Vite + TypeScript template (pnpm create vite -- --template vanilla-ts).
 - package.json: name 'brevwick-example-vanilla', private: true, dependency brevwick-sdk: 'workspace:*'.
-- index.html with a 'Send feedback' button; src/main.ts wires createBrevwick({ projectKey: import.meta.env.VITE_BREVWICK_KEY, endpoint: import.meta.env.VITE_API_BASE }).install(), then on click calls instance.submit({ title: 'Hello from vanilla example', description: 'Test report' }).
-- Result rendered in the page: 'Report sent: <report_id>' or error message.
+- index.html with a 'Send feedback' button; src/main.ts wires createBrevwick({ projectKey: import.meta.env.VITE_BREVWICK_KEY, endpoint: import.meta.env.VITE_API_BASE }).install(), then on click calls instance.submit({ title: 'Hello from vanilla example', description: 'Test issue' }).
+- Result rendered in the page: 'Issue sent: <issue_id>' or error message.
 - .env.example with VITE_BREVWICK_KEY=pk_test_… and VITE_API_BASE=http://localhost:8080.
-- README.md with a 'Works locally' checklist: 1) bring up brevwick-api (docker-compose -f ../../brevwick-api/docker-compose.dev.yml up -d), 2) seed project key via bwctl, 3) pnpm dev, 4) click button, 5) confirm report in brevwick-web inbox.
+- README.md with a 'Works locally' checklist: 1) bring up brevwick-api (docker-compose -f ../../brevwick-api/docker-compose.dev.yml up -d), 2) seed project key via bwctl, 3) pnpm dev, 4) click button, 5) confirm issue in brevwick-web inbox.
 
 STEP 4 — examples/next/:
 - Next.js 16 app (pnpm create next-app --typescript --app --no-tailwind --import-alias '@/*').
@@ -892,7 +892,7 @@ STEP 7 — Tests:
 
 STEP 8 — Verify:
 - pnpm install && pnpm build:examples — both examples build.
-- Manual: bring up brevwick-api locally, run pnpm dev:examples, click the button in each, confirm a report lands in brevwick-web /app/inbox. Paste the resulting report_ids into the PR body.
+- Manual: bring up brevwick-api locally, run pnpm dev:examples, click the button in each, confirm a issue lands in brevwick-web /app/inbox. Paste the resulting issue_ids into the PR body.
 
 STEP 9 — Commit and PR:
 git add -A
@@ -910,7 +910,7 @@ Closes #9
 
 ## Test plan
 - [ ] pnpm build:examples green
-- [ ] Manual: each example submits a real report to a local brevwick-api (report_ids attached in PR body)
+- [ ] Manual: each example submits a real issue to a local brevwick-api (issue_ids attached in PR body)
 - [ ] npm pack --dry-run shows no examples/ in either package
 PREOF
 )\"
@@ -957,7 +957,7 @@ STEP 3 — Fixtures (packages/sdk/src/__tests__/__fixtures__/):
 - redaction-matrix.json — input strings × expected redacted outputs covering: Authorization header, Bearer token, JWT triplet, email, South African ID number, long base64 blob, phone numbers.
 
 STEP 4 — SDK integration suite (packages/sdk/src/__tests__/integration/):
-- full-flow.test.ts: createBrevwick({ projectKey, endpoint }).install() → console.error('Bearer …') → fetch /api/fail → 500 → instance.submit({ title, description }) → assert msw-received POST /v1/ingest/reports body deep-equals composed-payload.json (after stripping volatile fields: ts, report_id, user_agent version).
+- full-flow.test.ts: createBrevwick({ projectKey, endpoint }).install() → console.error('Bearer …') → fetch /api/fail → 500 → instance.submit({ title, description }) → assert msw-received POST /v1/ingest/issues body deep-equals composed-payload.json (after stripping volatile fields: ts, issue_id, user_agent version).
 - redaction-matrix.test.ts: iterate the matrix, submit each input, assert msw-received body contains the expected redacted output AND does NOT contain the raw input.
 - lazy-screenshot.test.ts: import { captureScreenshot } from 'brevwick-sdk' then inspect which chunks Vite/Vitest fetched — assert modern-screenshot loaded only after captureScreenshot() was invoked. Use vi.dynamicImportSettled() or an instrumented import map.
 
@@ -968,8 +968,8 @@ STEP 6 — Live-API smoke (optional CI job .github/workflows/sdk-e2e-live.yml):
 - Trigger: push to main (optional, allowed to fail on main).
 - services: postgres + redis + minio inline; checkout tatlacas-com/brevwick-api via actions/checkout with path: brevwick-api.
 - Bring up brevwick-api via its docker-compose.dev.yml; run its migrations + seed a test project key.
-- cd examples/vanilla; pnpm build; node dist/server.js to submit one report (or curl the built bundle).
-- Query the admin API with the seeded ServerKey: GET /admin/reports?project_id=… — assert exactly one report exists with the expected title.
+- cd examples/vanilla; pnpm build; node dist/server.js to submit one issue (or curl the built bundle).
+- Query the admin API with the seeded ServerKey: GET /admin/issues?project_id=… — assert exactly one issue exists with the expected title.
 
 STEP 7 — Coverage config (vitest.config.ts per package):
 - coverage.provider: 'v8', reporter: ['text', 'lcov', 'html'], thresholds.lines: sdk=85, react=75, branches: 75.
@@ -980,8 +980,8 @@ STEP 8 — Speed budget:
 
 STEP 9 — Verify:
 - pnpm install && pnpm type-check && pnpm lint && pnpm test --coverage && pnpm build — green.
-- Coverage ≥ 85 lines (sdk) and ≥ 75 lines (react); paste the codecov report summary into the PR body.
-- Live-API smoke: run it locally once end-to-end; PR body lists the report_id it produced.
+- Coverage ≥ 85 lines (sdk) and ≥ 75 lines (react); paste the codecov issue summary into the PR body.
+- Live-API smoke: run it locally once end-to-end; PR body lists the issue_id it produced.
 
 STEP 10 — Commit and PR:
 git add -A
@@ -997,12 +997,12 @@ Implements [SDD § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/do
 - Redaction matrix: Authorization, Bearer, JWT, email, SA-ID, base64, phone — each asserted present-redacted and absent-raw
 - Lazy-load assertion: modern-screenshot chunk only fetched after captureScreenshot() invoked
 - Golden payload fixtures under __fixtures__/
-- Optional sdk-e2e-live CI job spinning up brevwick-api via docker-compose — asserts a real report lands in the admin API
+- Optional sdk-e2e-live CI job spinning up brevwick-api via docker-compose — asserts a real issue lands in the admin API
 
 ## Test plan
 - [ ] pnpm test --coverage green; lines ≥ 85% (sdk), ≥ 75% (react)
 - [ ] Total test wall-clock under 15 s on CI
-- [ ] Live-API smoke produces a real report_id (paste in PR body)
+- [ ] Live-API smoke produces a real issue_id (paste in PR body)
 - [ ] codecov/patch + codecov/project both green
 PREOF
 )\"
