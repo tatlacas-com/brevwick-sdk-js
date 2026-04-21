@@ -1266,9 +1266,9 @@ function RegionCaptureOverlay({
           onPointerCancel={handlePointerUp}
           onKeyDown={handleKeyDown}
         >
-          {/* Radix requires a Dialog.Title descendant; aria-label on Content
-             still wins the accessible name computation, so the screen-reader
-             announcement stays "Select screenshot region". */}
+          {/* Radix requires a Dialog.Title descendant; using the same text
+             here as the intended label keeps the screen-reader announcement
+             as "Select screenshot region". */}
           <Dialog.Title className="brw-sr-only">
             Select screenshot region
           </Dialog.Title>
