@@ -54,9 +54,14 @@ export interface FeedbackButtonProps {
   label?: ReactNode;
   /**
    * Force a palette regardless of the OS `prefers-color-scheme` setting.
-   * Default `'system'` — the widget follows the OS. Host-level overrides
-   * of individual `--brw-*` custom properties still win over all three
-   * values, so `theme` selects the base palette and CSS overrides tune it.
+   * Default `'system'` — the widget follows the OS.
+   *
+   * Host-level `:root { --brw-*: ... }` overrides still win over the
+   * forced palette because the stylesheet consumes each public token
+   * via `var(--brw-X, var(--brw-X-base))`: the forced-theme blocks
+   * rewrite only `--brw-X-base`, never the public `--brw-X`. So
+   * `theme="dark"` picks the base palette and a consumer-set
+   * `--brw-accent: hotpink` still wins for the accent.
    */
   theme?: BrevwickTheme;
   /** Fired with the SDK's `SubmitResult` after every submit (success or failure). */
@@ -182,10 +187,15 @@ interface FileAttachment {
  * The widget exposes a set of CSS custom properties (`--brw-*`) that any
  * ancestor can override to re-theme without a rebuild. Light defaults ship
  * out of the box; a `@media (prefers-color-scheme: dark)` block swaps the
- * palette when the host OS is in dark mode. Set these as CSS custom
- * properties on any ancestor (e.g. `:root` or your app shell) to re-theme
- * the widget without a rebuild — the widget's own `.brw-root` scope never
- * uses `!important`, so normal cascade wins.
+ * palette when the host OS is in dark mode. The {@link FeedbackButtonProps.theme}
+ * prop can force `'light'` or `'dark'` regardless of the OS setting.
+ *
+ * Set these as CSS custom properties on any ancestor (e.g. `:root` or your
+ * app shell) to re-theme the widget without a rebuild. Every widget rule
+ * reads each token via `var(--brw-X, var(--brw-X-base))`, so a host
+ * override of the public `--brw-X` name always wins — even under a forced
+ * `theme="light|dark"` (which rewrites the internal `-base` defaults, not
+ * the public names).
  *
  * Surfaces
  * - `--brw-panel-bg` — dialog panel background

@@ -755,16 +755,18 @@ describe('<FeedbackButton>', () => {
   });
 
   it('dark-mode chip background is distinct from the border colour (contrast)', () => {
-    // Pull the dark-mode block out and assert --brw-chip-bg is not the same
-    // as --brw-border — a regression where they match hides the chip's 1px
-    // border in dark mode.
+    // Pull the dark-mode block out and assert --brw-chip-bg-base is not the
+    // same as --brw-border-base — a regression where they match hides the
+    // chip's 1px border in dark mode. The `-base` suffix is the internal
+    // palette token (see styles.ts JSDoc); widget rules fall back to it
+    // via `var(--brw-X, var(--brw-X-base))`.
     const darkBlock = BREVWICK_CSS.match(
       /@media \(prefers-color-scheme: dark\)[\s\S]*?\n\s*\}\n\s*\}/,
     );
     expect(darkBlock).not.toBeNull();
     const block = darkBlock![0];
-    const borderMatch = block.match(/--brw-border:\s*([^;]+);/);
-    const chipBgMatch = block.match(/--brw-chip-bg:\s*([^;]+);/);
+    const borderMatch = block.match(/--brw-border-base:\s*([^;]+);/);
+    const chipBgMatch = block.match(/--brw-chip-bg-base:\s*([^;]+);/);
     expect(borderMatch).not.toBeNull();
     expect(chipBgMatch).not.toBeNull();
     expect(chipBgMatch![1]!.trim()).not.toBe(borderMatch![1]!.trim());
@@ -1115,7 +1117,7 @@ describe('<FeedbackButton> — theming + composer shell', () => {
     // emitted stylesheet. A regression that drops the rule (or hardcodes a
     // colour) is caught here.
     expect(BREVWICK_CSS).toMatch(
-      /\.brw-composer-shell:focus-within[^{]*\{[^}]*border-color:\s*var\(--brw-border-focus\)/,
+      /\.brw-composer-shell:focus-within[^{]*\{[^}]*border-color:\s*var\(--brw-border-focus,/,
     );
   });
 
@@ -1192,12 +1194,12 @@ describe('<FeedbackButton> — theming + composer shell', () => {
     // accent (send button) need ≥ 4.5:1 for body-text AA.
     const dark = extractDarkTokenBlock(BREVWICK_CSS);
     const bubblePair = contrastRatio(
-      dark['--brw-bubble-user-bg']!,
-      dark['--brw-bubble-user-fg']!,
+      dark['--brw-bubble-user-bg-base']!,
+      dark['--brw-bubble-user-fg-base']!,
     );
     const accentPair = contrastRatio(
-      dark['--brw-accent']!,
-      dark['--brw-accent-fg']!,
+      dark['--brw-accent-base']!,
+      dark['--brw-accent-fg-base']!,
     );
     expect(bubblePair).toBeGreaterThanOrEqual(4.5);
     expect(accentPair).toBeGreaterThanOrEqual(4.5);
@@ -1261,6 +1263,42 @@ describe('<FeedbackButton> — theme prop', () => {
     // unit-test time instead of in a consumer bug report.
     expect(BREVWICK_CSS).toMatch(/\.brw-root\[data-brw-theme='light'\]\s*\{/);
     expect(BREVWICK_CSS).toMatch(/\.brw-root\[data-brw-theme='dark'\]\s*\{/);
+  });
+
+  it('host :root override of --brw-accent wins under a forced dark theme', () => {
+    // Regression guard for the dual-variable contract. A naïve
+    // implementation that writes `--brw-accent` directly on
+    // `.brw-root[data-brw-theme='dark']` would shadow any
+    // host-level `:root { --brw-accent: ... }` inherited down to the
+    // widget. The public theming promise is the opposite — consumer
+    // overrides must keep winning — and this test locks that in.
+    document.body.style.setProperty('--brw-accent', 'rgb(255, 0, 255)');
+    mount({ theme: 'dark' });
+    openPanel();
+    const sendBtn = screen.getByRole('button', { name: /^send$/i });
+    expect(getComputedStyle(sendBtn).backgroundColor).toBe('rgb(255, 0, 255)');
+  });
+
+  it('forced-palette blocks only write --brw-*-base (never public --brw-* names)', () => {
+    // If this ever fails, a future edit is setting the public override
+    // name inside the forced-theme rule, which immediately breaks the
+    // host-override contract. Pulled out as a string guard instead of a
+    // computed-style check so it survives any happy-dom quirks.
+    const forcedBlockRe =
+      /\.brw-root\[data-brw-theme='(?:light|dark)'\]\s*\{([^}]*)\}/g;
+    const matches = [...BREVWICK_CSS.matchAll(forcedBlockRe)];
+    expect(matches.length).toBe(2);
+    for (const match of matches) {
+      const body = match[1]!;
+      // Every declaration inside these blocks must be a `-base` token.
+      // A public `--brw-X:` declaration (without the `-base` suffix)
+      // would shadow a consumer override — that's the bug Copilot
+      // flagged on the initial PR.
+      const publicDeclarations = body.match(
+        /--brw-[a-z-]+(?<!-base):\s*[^;]+;/g,
+      );
+      expect(publicDeclarations).toBeNull();
+    }
   });
 });
 
