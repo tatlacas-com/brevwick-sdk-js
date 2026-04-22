@@ -6,7 +6,7 @@
 
 Ship feedback from any browser app straight into clean, AI-formatted GitHub issues. Drop in a floating button, collect a description + screenshot + the console/network rings that preceded the bug, and Brevwick turns it all into a triage-ready issue on your repo.
 
-> **Status — public beta.** Versions are `1.x.x-beta.N` on the `beta` dist-tag. The API defined here is the frozen surface per the [SDK contract](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts) — breaking changes are possible before the `latest` cutover but will be called out in the changelog.
+> **Status — public beta.** Versions are `1.x.x-beta.N` on the `beta` dist-tag. The API defined here is the frozen public surface — breaking changes are possible before the `latest` cutover but will be called out in the changelog.
 
 ## Packages
 

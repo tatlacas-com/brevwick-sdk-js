@@ -19,8 +19,7 @@
  * format is caught — `chunk-split.test.ts` already asserts both formats for
  * the chunk-split invariant.
  *
- * Budgets are mirrored in `CLAUDE.md` and `brevwick-ops/docs/brevwick-sdd.md`
- * § 11.8 / § 12 — keep the three in sync on any change.
+ * Budgets are mirrored in `CLAUDE.md` — keep the two in sync on any change.
  */
 
 /** @type {import('size-limit').SizeLimitConfig} */

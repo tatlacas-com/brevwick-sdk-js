@@ -8,3 +8,6 @@ coverage/
 .vscode/
 *.tsbuildinfo
 *.tgz
+
+# Local-only consumer sync scripts (tarball build + install into a sibling app).
+scripts/sync-*.sh

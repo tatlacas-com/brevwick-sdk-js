@@ -17,8 +17,8 @@ Your review is consumed by Claude's `pr-review-fixer`, which merges your finding
 
 ## Process
 
-1. **Load PR & issue** — `gh pr view <N>`, `gh pr diff <N>`, `gh issue view <issue-N>`, read `worktree.md`.
-2. **Load standards** — `CLAUDE.md`, `eslint.config.mjs`, `tsconfig.base.json`, `pnpm-workspace.yaml`, per-package configs; `brevwick-ops/docs/brevwick-sdd.md` § 12.
+1. **Load PR & issue** — `gh pr view <N>`, `gh pr diff <N>`, `gh issue view <issue-N>`.
+2. **Load standards** — `CLAUDE.md`, `eslint.config.mjs`, `tsconfig.base.json`, `pnpm-workspace.yaml`, per-package configs.
 3. **Review every changed file** against:
    - Completeness · Clean Architecture · Clean Code
    - Package boundary (no React / DOM imports inside `brevwick-sdk` core)

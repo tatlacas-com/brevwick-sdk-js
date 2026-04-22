@@ -8,8 +8,7 @@
  * shared chunk.
  *
  * This module is intentionally absent from the package's public contract
- * (`brevwick-ops/docs/brevwick-sdd.md § 12`) and must not be imported by
- * consumer code.
+ * and must not be imported by consumer code.
  */
 
 import {

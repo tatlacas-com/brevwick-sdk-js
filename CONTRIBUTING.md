@@ -2,8 +2,6 @@
 
 Thanks for your interest in Brevwick. This repo publishes two npm packages (`brevwick-sdk`, `brevwick-react`) from a pnpm workspace.
 
-The canonical SDK contract lives in [`brevwick-ops/docs/brevwick-sdd.md` § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts). Public-API changes require an SDD update in the same PR (cross-repo).
-
 ## Prerequisites
 
 - Node.js **≥ 20**
@@ -51,17 +49,13 @@ Every payload that leaves the device runs through `redact()` first. Adding a new
 
 ## Local testing in a host app (pre-publish)
 
-Before a package hits npm, you can consume it from a sibling app checkout (e.g. `tradekit-web`). **On Next.js 16+ the `link:` / symlink route does not work** — Turbopack refuses to resolve packages outside the consumer's project root, even with `transpilePackages` or `turbopack.resolveAlias`. Use a tarball install instead.
-
-**One-shot sync (build → pack → reinstall in the consumer):**
+Before a package hits npm, consume it from a sibling app checkout as a tarball. **On Next.js 16+ the `link:` / symlink route does not work** — Turbopack refuses to resolve packages outside the consumer's project root, even with `transpilePackages` or `turbopack.resolveAlias`. Tarballs avoid that.
 
 ```bash
-scripts/sync-to-tradekit-web.sh
+pnpm -r pack          # builds each package and emits packages/{sdk,react}/*.tgz
 ```
 
-Defaults to `/home/tatlacas/repos/tradekit/tradekit-web`. Override with `BREVWICK_CONSUMER=/path/to/other/app scripts/sync-to-tradekit-web.sh`. Tarballs land at `packages/{sdk,react}/*.tgz` (git-ignored).
-
-**Consumer-side wiring** (one-time, in the host app's `package.json`):
+Then in the consumer's `package.json`:
 
 ```json
 {
@@ -78,7 +72,7 @@ Defaults to `/home/tatlacas/repos/tradekit/tradekit-web`. Override with `BREVWIC
 }
 ```
 
-The `dependencies` entries stay after publish; the `pnpm.overrides` block **must be deleted before merging the consumer's PR** (CI installs from npm, not a local path). Re-run the sync script whenever SDK code changes — tarballs have no live-reload.
+The `dependencies` entries stay after publish; the `pnpm.overrides` block **must be deleted before merging the consumer's PR** (CI installs from npm, not a local path). Re-run `pnpm -r pack` whenever SDK code changes — tarballs have no live-reload.
 
 ## Branching & PR workflow
 
