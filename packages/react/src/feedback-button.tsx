@@ -1011,12 +1011,15 @@ interface AIToggleProps {
 }
 
 /**
- * Inline pill/switch surfaced in the composer footer when the project allows
- * submitters to opt in/out of AI formatting per issue. role="switch" +
- * aria-checked is the narrow semantic the WCAG a11y matrix wants; Space
- * toggles when focused (default browser behaviour on role="button" is Enter
- * and Space, but Space carries fewer collisions with the composer's
- * Enter-to-send shortcut).
+ * Track-and-thumb switch surfaced in the composer footer when the project
+ * allows submitters to opt in/out of AI formatting per issue. The "AI" text
+ * sits outside the button so the switch itself is an unambiguous iOS-style
+ * track — visually obvious that it toggles, not a pressed-button state.
+ *
+ * role="switch" + aria-checked is the narrow semantic the WCAG a11y matrix
+ * wants. Space toggles when focused (default browser behaviour on
+ * role="button" is Enter and Space, but Space carries fewer collisions with
+ * the composer's Enter-to-send shortcut).
  */
 function AIToggle({ on, disabled, onChange }: AIToggleProps): ReactElement {
   const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
@@ -1026,19 +1029,23 @@ function AIToggle({ on, disabled, onChange }: AIToggleProps): ReactElement {
     }
   };
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label="Format with AI"
-      className={`brw-aitoggle${on ? ' brw-aitoggle--on' : ''}`}
-      disabled={disabled}
-      onClick={() => onChange(!on)}
-      onKeyDown={handleKeyDown}
-    >
-      <span className="brw-aitoggle-dot" aria-hidden="true" />
-      <span>AI</span>
-    </button>
+    <span className="brw-aitoggle-wrap">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label="Format with AI"
+        className={`brw-aitoggle${on ? ' brw-aitoggle--on' : ''}`}
+        disabled={disabled}
+        onClick={() => onChange(!on)}
+        onKeyDown={handleKeyDown}
+      >
+        <span className="brw-aitoggle-thumb" aria-hidden="true" />
+      </button>
+      <span className="brw-aitoggle-text" aria-hidden="true">
+        AI
+      </span>
+    </span>
   );
 }
 

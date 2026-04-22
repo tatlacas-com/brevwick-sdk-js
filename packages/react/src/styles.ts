@@ -410,42 +410,63 @@ export const BREVWICK_CSS = `
   cursor: pointer;
   flex-shrink: 0;
 }
-.brw-aitoggle {
+/* Wrap matches .brw-send-btn height (34px) so the switch centre and the
+   send-button centre land on the same baseline under the shell's
+   align-items: flex-end. */
+.brw-aitoggle-wrap {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 10px 0 8px;
+  height: 34px;
+  padding: 0 4px;
+}
+.brw-aitoggle-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--brw-fg-muted, var(--brw-fg-muted-base));
+  line-height: 1;
+  user-select: none;
+  transition: color 120ms ease-out;
+}
+.brw-aitoggle-wrap:has(.brw-aitoggle--on) .brw-aitoggle-text {
+  color: var(--brw-fg, var(--brw-fg-base));
+}
+.brw-aitoggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 30px;
+  height: 18px;
+  padding: 0;
   border-radius: 999px;
   border: 1px solid var(--brw-border, var(--brw-border-base));
   background: var(--brw-chip-bg, var(--brw-chip-bg-base));
-  color: var(--brw-fg-muted, var(--brw-fg-muted-base));
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
   cursor: pointer;
-  transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
 }
-.brw-aitoggle:focus-visible { outline: 2px solid var(--brw-border-focus, var(--brw-border-focus-base)); outline-offset: 1px; }
+.brw-aitoggle:focus-visible { outline: 2px solid var(--brw-border-focus, var(--brw-border-focus-base)); outline-offset: 2px; }
 .brw-aitoggle:disabled { opacity: 0.5; cursor: not-allowed; }
-.brw-aitoggle-dot {
-  width: 10px;
-  height: 10px;
+.brw-aitoggle-thumb {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
   background: var(--brw-fg-muted, var(--brw-fg-muted-base));
-  transition: background-color 120ms ease-out;
+  transform: translateY(-50%);
+  transition: left 140ms ease-out, background-color 120ms ease-out;
 }
 .brw-aitoggle--on {
   background: var(--brw-accent, var(--brw-accent-base));
-  color: var(--brw-accent-fg, var(--brw-accent-fg-base));
   border-color: var(--brw-accent, var(--brw-accent-base));
 }
-.brw-aitoggle--on .brw-aitoggle-dot {
+.brw-aitoggle--on .brw-aitoggle-thumb {
+  left: calc(100% - 14px);
   background: var(--brw-accent-fg, var(--brw-accent-fg-base));
 }
 @media (prefers-reduced-motion: reduce) {
-  .brw-aitoggle, .brw-aitoggle-dot { transition: none; }
+  .brw-aitoggle, .brw-aitoggle-thumb, .brw-aitoggle-text { transition: none; }
 }
 .brw-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .brw-send-btn svg { width: 16px; height: 16px; }
