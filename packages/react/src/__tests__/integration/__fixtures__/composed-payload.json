@@ -1,0 +1,23 @@
+{
+  "title": "broken button on home",
+  "description": "broken button on home\nsecond line for the description",
+  "build_sha": "deadbeef",
+  "release": "0.1.0-react-itest",
+  "environment": "stg",
+  "user_context": {
+    "user": {
+      "id": "u_react"
+    }
+  },
+  "device_context": {
+    "platform": "web",
+    "sdk": {
+      "name": "brevwick-sdk",
+      "platform": "web"
+    }
+  },
+  "console_errors": [],
+  "network_errors": [],
+  "route_trail": [],
+  "attachments": []
+}
