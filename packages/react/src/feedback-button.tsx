@@ -32,6 +32,13 @@ import {
 declare const __BREVWICK_REACT_VERSION__: string;
 
 /**
+ * Forced-palette choice for {@link FeedbackButton}. `'system'` defers to the
+ * OS-level `prefers-color-scheme` media query (the default and pre-existing
+ * behaviour); `'light'` / `'dark'` override it regardless of the OS setting.
+ */
+export type BrevwickTheme = 'light' | 'dark' | 'system';
+
+/**
  * Props for {@link FeedbackButton}. See SDD § 12 for the React contract.
  */
 export interface FeedbackButtonProps {
@@ -45,6 +52,18 @@ export interface FeedbackButtonProps {
   className?: string;
   /** FAB label. Default `'Feedback'`. */
   label?: ReactNode;
+  /**
+   * Force a palette regardless of the OS `prefers-color-scheme` setting.
+   * Default `'system'` — the widget follows the OS.
+   *
+   * Host-level `:root { --brw-*: ... }` overrides still win over the
+   * forced palette because the stylesheet consumes each public token
+   * via `var(--brw-X, var(--brw-X-base))`: the forced-theme blocks
+   * rewrite only `--brw-X-base`, never the public `--brw-X`. So
+   * `theme="dark"` picks the base palette and a consumer-set
+   * `--brw-accent: hotpink` still wins for the accent.
+   */
+  theme?: BrevwickTheme;
   /** Fired with the SDK's `SubmitResult` after every submit (success or failure). */
   onSubmit?: (result: SubmitResult) => void;
 }
@@ -168,10 +187,15 @@ interface FileAttachment {
  * The widget exposes a set of CSS custom properties (`--brw-*`) that any
  * ancestor can override to re-theme without a rebuild. Light defaults ship
  * out of the box; a `@media (prefers-color-scheme: dark)` block swaps the
- * palette when the host OS is in dark mode. Set these as CSS custom
- * properties on any ancestor (e.g. `:root` or your app shell) to re-theme
- * the widget without a rebuild — the widget's own `.brw-root` scope never
- * uses `!important`, so normal cascade wins.
+ * palette when the host OS is in dark mode. The {@link FeedbackButtonProps.theme}
+ * prop can force `'light'` or `'dark'` regardless of the OS setting.
+ *
+ * Set these as CSS custom properties on any ancestor (e.g. `:root` or your
+ * app shell) to re-theme the widget without a rebuild. Every widget rule
+ * reads each token via `var(--brw-X, var(--brw-X-base))`, so a host
+ * override of the public `--brw-X` name always wins — even under a forced
+ * `theme="light|dark"` (which rewrites the internal `-base` defaults, not
+ * the public names).
  *
  * Surfaces
  * - `--brw-panel-bg` — dialog panel background
@@ -209,6 +233,7 @@ export function FeedbackButton({
   hidden = false,
   className,
   label = 'Feedback',
+  theme = 'system',
   onSubmit,
 }: FeedbackButtonProps): ReactElement | null {
   const { submit, captureScreenshot, status, reset } = useFeedback();
@@ -506,6 +531,7 @@ export function FeedbackButton({
         <button
           type="button"
           data-brevwick-skip=""
+          data-brw-theme={theme}
           className={`${rootClassName} brw-fab ${fabPosClass}`}
           disabled={disabled}
           aria-label="Open feedback form"
@@ -517,6 +543,7 @@ export function FeedbackButton({
       <Dialog.Portal>
         <Dialog.Content
           data-brevwick-skip=""
+          data-brw-theme={theme}
           className={`${rootClassName} brw-panel ${panelPosClass}`}
           aria-describedby={undefined}
         >
@@ -567,6 +594,7 @@ export function FeedbackButton({
       </Dialog.Portal>
       <RegionCaptureOverlay
         open={regionOpen}
+        theme={theme}
         onClose={handleCloseRegion}
         onConfirmRegion={handleConfirmRegion}
         onConfirmFull={handleConfirmFull}
@@ -1111,6 +1139,7 @@ interface DragState {
 
 interface RegionCaptureOverlayProps {
   open: boolean;
+  theme: BrevwickTheme;
   onClose: () => void;
   onConfirmRegion: (region: Region) => void;
   onConfirmFull: () => void;
@@ -1131,6 +1160,7 @@ interface RegionCaptureOverlayProps {
  */
 function RegionCaptureOverlay({
   open,
+  theme,
   onClose,
   onConfirmRegion,
   onConfirmFull,
@@ -1257,6 +1287,7 @@ function RegionCaptureOverlay({
         <Dialog.Content
           className={`brw-root brw-region-layer${shake ? ' brw-region-shake' : ''}`}
           data-brevwick-skip=""
+          data-brw-theme={theme}
           data-testid="brw-region-overlay"
           aria-label="Select screenshot region"
           aria-describedby={undefined}

@@ -19,7 +19,7 @@ export { useFeedback } from './use-feedback';
 export type { FeedbackStatus, UseFeedbackResult } from './use-feedback';
 
 export { FeedbackButton } from './feedback-button';
-export type { FeedbackButtonProps } from './feedback-button';
+export type { BrevwickTheme, FeedbackButtonProps } from './feedback-button';
 
 export type {
   BrevwickConfig,
