@@ -3,7 +3,29 @@
   "tag": "beta",
   "initialVersions": {
     "brevwick-react": "0.1.0-beta.1",
-    "brevwick-sdk": "0.1.0-beta.1"
+    "brevwick-sdk": "0.1.0-beta.1",
+    "brevwick-example-next": "0.0.0",
+    "brevwick-example-vanilla": "0.0.0"
   },
-  "changesets": []
+  "changesets": [
+    "chat-panel-redesign",
+    "console-error-ring",
+    "create-brevwick-core",
+    "credit-footer",
+    "integration-msw-coverage",
+    "loopback-http-endpoint",
+    "network-ring",
+    "react-bindings",
+    "react-theme-prop",
+    "region-capture",
+    "release-infrastructure",
+    "rename-reports-to-issues",
+    "screenshot-dialog-title",
+    "screenshot",
+    "sha256-checksum-on-presign",
+    "size-limit-budgets",
+    "submit-pipeline",
+    "theming-composer-shell",
+    "use-ai-toggle"
+  ]
 }
