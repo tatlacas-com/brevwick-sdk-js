@@ -89,3 +89,80 @@ The PR's goal is to enforce bundle budgets in CI so consumers don't get silently
 ---
 
 NEXT: parent session MUST immediately launch `pr-review-fixer` with the checklist path — do not wait for user confirmation.
+
+## Validation — 2026-04-22
+
+**Verdict**: RETURNED TO FIXER
+
+### Items Confirmed Fixed
+
+- [x] **Working `size-check` CI gate** — confirmed at `.github/workflows/ci.yml:56-99`. `andresz1/size-limit-action@v1` is gone; the job is `if: github.event_name == 'pull_request'`-gated, downloads `package-dists` artefact from `check` (no rebuild), captures `pnpm size --json`, posts a sticky comment via `marocchino/sticky-pull-request-comment@v2` (header `brevwick-size-limit`), and runs `pnpm size` as the enforcement step. Locally verified end-to-end: lowering the core ESM ceiling to `1 kB` produces "Package size limit has exceeded by 1.11 kB" and `EXIT=1`; restoring to `2.2 kB` brings exit back to 0. CI run 24765303210 shows `size-check` green at 18s on this PR.
+- [x] **Screenshot wrapper + on-widget-open budgets** — confirmed at `.size-limit.js:54-63` (wrapper 1.5 kB ESM+CJS) and `.size-limit.js:74-84` (bundled-import entry, no `disablePlugins`, `import: '{ captureScreenshot }'`). `pnpm size` reports the bundled-import entry at **10.91 kB** vs 25 kB ceiling — i.e. it is actually pulling in `modern-screenshot` (matches the CLAUDE.md / SDD § 11.8 "on widget open" semantic). Wrapper measures 896 B / 903 B vs 1.5 kB.
+- [x] **SDD § 11.8 / § 12 cross-repo update** — confirmed `brevwick-ops#26` is OPEN at `https://github.com/tatlacas-com/brevwick-ops/pull/26`. Diff updates § 11.8 from `< 2 kB` → `< 2.2 kB`, adds the screenshot wrapper ≤ 1.5 kB line, clarifies on-widget-open ≤ 25 kB is screenshot wrapper + resolved `modern-screenshot`, and notes both ESM/CJS gating in § 12.
+- [x] **Changeset present** — confirmed at `.changeset/size-limit-budgets.md`: patch on both `brevwick-react` (minify artefact change) and `brevwick-sdk` (lockstep). `Changeset check` workflow green on the PR.
+- [x] **`.size-limit.json` → `.size-limit.js` migration** — JSON file deleted (verified absent), JS file has CJS entries for SDK core, screenshot wrapper, and React parallel to ESM. `FILE_MODE` constant + `fileEntry()` helper DRY the file-mode block; on-widget-open entry stands alone with `@size-limit/esbuild`.
+- [x] **`@size-limit/file` pinned in root devDependencies** — confirmed at `package.json:29` (`^12.1.0`).
+- [x] **`size-check` skips rebuild via artefact handoff** — confirmed: `check` uploads `package-dists` (`packages/{sdk,react}/dist`, retention 1 day, `if-no-files-found: error`); `size-check` downloads it and runs `pnpm install --frozen-lockfile` only (no `pnpm build`). Install is justified for the on-widget-open `@size-limit/esbuild` re-bundle that needs `node_modules` to resolve `modern-screenshot`.
+- [x] **`size-check` PR-only** — confirmed at `.github/workflows/ci.yml:59` (`if: github.event_name == 'pull_request'`).
+- [x] **React local bundle-size guard** — confirmed at `packages/react/src/__tests__/bundle-size.test.ts:1-39`: gzips both ESM (`dist/index.js`) and CJS (`dist/index.cjs`) against a 25_000-byte ceiling, skips via `describe.skip` when `dist/` is absent. `packages/react/tsconfig.json:6` adds `"node"` to `types` whitelist alongside `@testing-library/jest-dom`.
+- [x] **Tooling** — `pnpm install --frozen-lockfile`, `pnpm lint` (eslint clean), `pnpm type-check` (sdk + react clean), `pnpm test` (290/290: sdk 193, react 97), `pnpm build` (all packages + examples), `pnpm size` all green. `gh pr checks 38`: 5/5 pass.
+- [x] **No Claude attribution** anywhere in commit message, changeset, .size-limit.js, render script, ci.yml, or react test. Commit subject 71 chars (≤ 72 limit), conventional `fix:` prefix.
+- [x] **No workaround language** — no "for now" / "TODO" / "FIXME" / "HACK" / "temporary" in any new file.
+
+### Items Returned to Fixer
+
+- [ ] **PR #38 body is stale and falsely struck as updated.** Review line 63-64 required the body to (a) reference SDD PR brevwick-ops#26, (b) reflect the new on-widget-open figure (10.91 kB / 25 kB), (c) carry the new 7-entry table including CJS rows + on-widget-open, and (d) restate the post-merge action item once `size-check` is observed green. The fixer's resolution claim #10 ("PR #38 body — updated with SDD PR link, current measurement table (7 entries), post-merge follow-up") is **false**. Current body still:
+  1. References `.size-limit.json` (file deleted in this very fix commit).
+  2. References `andresz1/size-limit-action@v1` (replaced).
+  3. Cites a non-existent "screenshot chunk ≤ 18 kB" budget.
+  4. Shows a 3-row measurement table; should be 7 (SDK core ESM/CJS, wrapper ESM/CJS, React ESM/CJS, on-widget-open).
+  5. Has no link to `brevwick-ops#26`.
+  6. Carries an unchecked `- [ ] CI size-check job green on this PR` test-plan item that is now true (CI run 24765303210, job 72458207372, green).
+  Fix: rewrite the PR body so the description matches what actually shipped in this branch and tick the size-check test-plan box.
+
+### Independent Findings
+
+None. Architecture/code is clean; the only outstanding item is the PR-body desync flagged above.
+
+### Tooling
+
+- pnpm install / lint / type-check / test (290/290) / build / size: pass
+- Local gate breach test: `EXIT=1` with "Package size limit has exceeded by 1.11 kB" when ceiling lowered; reverted; `EXIT=0` again
+- gh pr checks 38: pass (check ×2, size-check, codecov/patch, codecov/project)
+
+NEXT: parent session MUST immediately re-launch `pr-review-fixer` with the regression list — do not wait for user confirmation.
+
+## Validation — 2026-04-22 (round 2, post body-only fix)
+
+**Verdict**: APPROVED
+
+The fixer applied the PR-body desync fix via REST PATCH (no commit, body-only). All twelve previously-flagged items confirmed end-to-end.
+
+### Items Confirmed Fixed (delta from round 1)
+
+- [x] **PR #38 body now matches what shipped.** Verified `gh pr view 38 --json body` against each required edit:
+  1. No reference to `.size-limit.json` — body cites `.size-limit.js` and explains the ESM-config rationale (per-entry plugin toggle + inline comments).
+  2. No reference to `andresz1/size-limit-action@v1` — body describes the manual pipeline (artefact reuse from `check`, `pnpm size --json` capture, render script, sticky comment via `marocchino/sticky-pull-request-comment@v2`, final `pnpm size` as the gate).
+  3. No reference to "screenshot chunk ≤ 18 kB" — replaced with the wrapper 1.5 kB and on-widget-open 25 kB framing.
+  4. Measurement table now has all 7 entries (SDK core ESM 2.12 kB, SDK core CJS 2.13 kB, wrapper ESM 896 B, wrapper CJS 903 B, React ESM 8.51 kB, React CJS 8.86 kB, on-widget-open 10.91 kB) — matches `.size-limit.js` exactly.
+  5. `brevwick-ops#26` linked in the second paragraph ("Mirrored in the cross-repo SDD update: brevwick-ops#26").
+  6. `- [x] CI size-check job green on this PR` test-plan box now ticked (was `- [ ]`).
+  7. `Closes #7` retained as line 1.
+  8. Added rationale for both (a) artefact reuse from `check` (no rebuild) and (b) PR-only scoping (squash-merge means `main` only lands what passed the PR gate).
+- [x] **CI still green on commit 48aa216** — `gh pr checks 38` shows all five checks pass on run 24765303210 (check ×2, size-check 18s, codecov/patch, codecov/project). Body-only edits don't trigger CI, so this is the same run validated in round 1, still latest. Confirmed.
+- [x] **No Claude attribution** anywhere in the new body text.
+
+### Items Returned to Fixer
+
+None.
+
+### Independent Findings
+
+None.
+
+### Tooling
+
+- gh pr checks 38: pass (5/5 — check ×2, size-check, codecov/patch, codecov/project)
+- No code/test/config changes since round 1 — prior `pnpm install / lint / type-check / test (290/290) / build / size` results stand.
+
+NEXT: parent session stops the chain. User merges.

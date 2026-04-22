@@ -87,7 +87,7 @@ describe('bundle chunk split', () => {
      * integrators, which costs ~25 gzipped bytes over the prior ceiling. The
      * 2.2 kB budget is still well under the 2.5 kB upper bound the widget-
      * open eager cost targets. CI also enforces this budget end-to-end via
-     * the `size-check` job (`.size-limit.json`); this in-suite assertion is
+     * the `size-check` job (`.size-limit.js`); this in-suite assertion is
      * kept as a fast-feedback guard during local `pnpm test`.
      */
     it('eager ESM chunk is under the 2.2 kB gzip budget', async () => {

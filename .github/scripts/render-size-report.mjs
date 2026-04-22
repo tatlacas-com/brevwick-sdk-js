@@ -20,8 +20,8 @@ const entries = JSON.parse(raw);
 
 /** @param {number} bytes */
 function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(2)} kB`;
+  if (bytes < 1000) return `${bytes} B`;
+  return `${(bytes / 1000).toFixed(2)} kB`;
 }
 
 /** @param {number} size @param {number} limit */
