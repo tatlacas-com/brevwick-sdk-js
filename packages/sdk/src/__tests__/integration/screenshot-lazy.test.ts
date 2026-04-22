@@ -16,6 +16,17 @@
  * screenshot')` line) into the eager surface, this test fails on the
  * first assertion long before the bundle audit catches the size
  * regression.
+ *
+ * Isolation requirement: the screenshot module's module-level promise
+ * cache (`modernScreenshotPromise` at `../../screenshot.ts`) is reset
+ * only by `vi.resetModules()` invalidating the screenshot module
+ * record. If a future Vitest config drops to `pool: 'threads'` with
+ * `isolate: false`, this test will start reading a cached real
+ * `modern-screenshot` and `factoryRuns` will stay at 0 even when
+ * `captureScreenshot()` is called. The `expect(domToBlobCalls)`
+ * assertion below catches that transitively, but keeping per-file
+ * isolation enabled at the Vitest level is the contract this test
+ * relies on.
  */
 import {
   afterAll,

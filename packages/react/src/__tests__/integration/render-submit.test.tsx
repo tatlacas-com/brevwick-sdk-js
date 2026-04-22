@@ -96,6 +96,14 @@ function freezeShape(body: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe('integration — Provider + FeedbackButton → MSW ingest', () => {
+  // Single `it` covers both the POST-shape and the success-state-visible
+  // dimensions. Splitting them would force a second open-FAB → type → Send
+  // dance per assertion (each render is ~150 ms with happy-dom + the
+  // BrevwickProvider mount), which would push the React suite past the
+  // < 5 s slice of the 15 s CI budget set in issue #10. Both assertions
+  // are downstream of the same single submit call, so a regression in
+  // either dimension still surfaces with a focused stack — the
+  // captured-body assertion fires before the success-state waitFor.
   it('click FAB → type → Send produces one POST with the expected shape', async () => {
     const captured = installIngestHandlers(server, 'issue_react_itest');
 
