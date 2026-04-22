@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Brevwick, BrevwickConfig } from 'brevwick-sdk';
+import type { Brevwick, BrevwickConfig } from '@tatlacas/brevwick-sdk';
 
 const install = vi.fn();
 const uninstall = vi.fn();
@@ -8,9 +8,10 @@ const submit = vi.fn();
 const captureScreenshot = vi.fn();
 const createBrevwick = vi.fn<(config: BrevwickConfig) => Brevwick>();
 
-vi.mock('brevwick-sdk', async () => {
-  const actual =
-    await vi.importActual<typeof import('brevwick-sdk')>('brevwick-sdk');
+vi.mock('@tatlacas/brevwick-sdk', async () => {
+  const actual = await vi.importActual<typeof import('@tatlacas/brevwick-sdk')>(
+    '@tatlacas/brevwick-sdk',
+  );
   return {
     ...actual,
     createBrevwick: (config: BrevwickConfig) => createBrevwick(config),

@@ -10,7 +10,7 @@ You are the last line of defence before merge on **brevwick-sdk-js**. The review
 
 ## Non-Negotiables
 
-1. **Clean architecture compliance** — core framework-agnostic, React-only in `brevwick-react`, tree-shakeable public API. Any regression → reject.
+1. **Clean architecture compliance** — core framework-agnostic, React-only in `@tatlacas/brevwick-react`, tree-shakeable public API. Any regression → reject.
 2. **Clean code** — no new duplication / dead code / `any` / magic numbers / deep nesting / poor names → reject.
 3. **Completeness** — every item resolved. Every `- [x]` real. Every `~~struck~~` legitimate. Any remaining `- [ ]` → fail.
 

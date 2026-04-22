@@ -1,6 +1,6 @@
 ---
-'brevwick-react': minor
-'brevwick-sdk': minor
+'@tatlacas/brevwick-react': minor
+'@tatlacas/brevwick-sdk': minor
 ---
 
 feat(react): screenshot icon + drag-to-select region capture
@@ -27,7 +27,7 @@ page"` so keyboard and screen-reader users discover the affordance
   itself has focus; tabbing to Cancel / Capture full page and pressing
   Enter activates the focused button as expected.
 
-The `brevwick-sdk` bump is a no-op minor to keep the two packages in
+The `@tatlacas/brevwick-sdk` bump is a no-op minor to keep the two packages in
 lockstep per the repo's pre-1.0 versioning policy; the core SDK has no
 code changes in this release. `FeedbackButtonProps` is unchanged; no
 new runtime dependency; no SDD § 12 contract change.

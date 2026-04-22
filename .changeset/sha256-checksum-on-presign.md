@@ -1,6 +1,6 @@
 ---
-'brevwick-sdk': patch
-'brevwick-react': patch
+'@tatlacas/brevwick-sdk': patch
+'@tatlacas/brevwick-react': patch
 ---
 
 fix(submit): send sha256 on presign + issue so R2 PUT carries checksum

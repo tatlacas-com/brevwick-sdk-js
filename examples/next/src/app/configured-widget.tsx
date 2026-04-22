@@ -7,8 +7,8 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { BrevwickProvider, FeedbackButton } from 'brevwick-react';
-import type { BrevwickConfig } from 'brevwick-sdk';
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+import type { BrevwickConfig } from '@tatlacas/brevwick-sdk';
 
 export interface ConfiguredWidgetProps {
   projectKey: string;

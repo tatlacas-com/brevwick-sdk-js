@@ -1,4 +1,4 @@
-import { createBrevwick } from 'brevwick-sdk';
+import { createBrevwick } from '@tatlacas/brevwick-sdk';
 
 const PLACEHOLDER_KEY = 'pk_test_replace_me';
 

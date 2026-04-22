@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "brevwick-sdk": "workspace:*"
+    "@tatlacas/brevwick-sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

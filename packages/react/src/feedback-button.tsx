@@ -20,7 +20,7 @@ import type {
   FeedbackInput,
   ProjectConfig,
   SubmitResult,
-} from 'brevwick-sdk';
+} from '@tatlacas/brevwick-sdk';
 import { useBrevwickInternal } from './context';
 import { useFeedback, type FeedbackStatus } from './use-feedback';
 import {

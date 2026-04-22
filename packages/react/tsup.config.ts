@@ -17,7 +17,7 @@ export default defineConfig({
   // it — we rely on @radix-ui's tree-shakable exports for dead-code removal.
   treeshake: false,
   splitting: false,
-  external: ['react', 'react-dom', 'brevwick-sdk'],
+  external: ['react', 'react-dom', '@tatlacas/brevwick-sdk'],
   target: 'es2020',
   define: {
     __BREVWICK_REACT_VERSION__: JSON.stringify(pkg.version),

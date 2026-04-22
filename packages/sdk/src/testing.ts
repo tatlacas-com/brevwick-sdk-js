@@ -1,5 +1,5 @@
 /**
- * Test-only entry point for `brevwick-sdk`.
+ * Test-only entry point for `@tatlacas/brevwick-sdk`.
  *
  * Exports mutators that rebind the internal registry backing
  * {@link createBrevwick}. Kept in its own entry so these helpers never ship

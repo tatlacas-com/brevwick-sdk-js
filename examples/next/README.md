@@ -1,7 +1,7 @@
 # brevwick-example-next
 
 Next.js 16 (App Router) example wired up with
-[`brevwick-react`](../../packages/react)&rsquo;s `<BrevwickProvider>` and
+[`@tatlacas/brevwick-react`](../../packages/react)&rsquo;s `<BrevwickProvider>` and
 `<FeedbackButton>`.
 
 ## Works locally
@@ -20,7 +20,7 @@ Next.js 16 (App Router) example wired up with
 3. From the repo root, build the SDKs and run the example:
    ```bash
    pnpm install
-   pnpm --filter brevwick-sdk --filter brevwick-react build
+   pnpm --filter @tatlacas/brevwick-sdk --filter @tatlacas/brevwick-react build
    pnpm --filter brevwick-example-next dev
    ```
 4. Open http://localhost:3000 and click the floating **Feedback** button.

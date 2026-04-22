@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 /**
- * Chunk-split guard: after `pnpm --filter brevwick-sdk build`, the base chunk
+ * Chunk-split guard: after `pnpm --filter @tatlacas/brevwick-sdk build`, the base chunk
  * must not reference `modern-screenshot` — that dependency is loaded only
  * from a dynamically-imported sibling chunk. Both ESM and CJS outputs are
  * asserted so the invariant holds regardless of how consumers load the SDK.

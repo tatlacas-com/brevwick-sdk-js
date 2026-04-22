@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { Brevwick } from 'brevwick-sdk';
+import type { Brevwick } from '@tatlacas/brevwick-sdk';
 
 /**
  * Internal context value carried by {@link BrevwickProvider}. The provider

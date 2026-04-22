@@ -1,6 +1,6 @@
 ---
-'brevwick-react': patch
-'brevwick-sdk': patch
+'@tatlacas/brevwick-react': patch
+'@tatlacas/brevwick-sdk': patch
 ---
 
 Internal: enable `minify: true` in the React package's tsup build (~2 kB
@@ -9,4 +9,4 @@ change). Adds `size-limit` budgets enforced in CI: core eager chunk ≤ 2.2 kB
 gzip, screenshot wrapper ≤ 1.5 kB gzip, React bundle ≤ 25 kB gzip, and a
 re-bundled "on-widget-open" measurement (screenshot wrapper + resolved
 `modern-screenshot` peer) ≤ 25 kB gzip. SDK source unchanged; bumped in
-lockstep with `brevwick-react` per the project's lockstep policy.
+lockstep with `@tatlacas/brevwick-react` per the project's lockstep policy.

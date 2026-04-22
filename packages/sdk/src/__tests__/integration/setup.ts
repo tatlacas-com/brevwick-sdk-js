@@ -11,7 +11,7 @@
  *
  * The React package ships a near-twin of this file at
  * `packages/react/src/__tests__/integration/setup.ts`. The two are
- * intentionally not collapsed into a `brevwick-sdk/testing/msw` subpath
+ * intentionally not collapsed into a `@tatlacas/brevwick-sdk/testing/msw` subpath
  * export — see that file's header for the structural reason (React
  * variant adds a config handler the SDK suite has no use for).
  */
