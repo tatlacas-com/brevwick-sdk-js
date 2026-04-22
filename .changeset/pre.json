@@ -8,6 +8,7 @@
     "brevwick-example-vanilla": "0.0.0"
   },
   "changesets": [
+    "ai-toggle-switch-redesign",
     "busy-insects-rule",
     "chat-panel-redesign",
     "console-error-ring",
