@@ -1204,6 +1204,66 @@ describe('<FeedbackButton> — theming + composer shell', () => {
   });
 });
 
+describe('<FeedbackButton> — theme prop', () => {
+  it('defaults to theme="system" on both the FAB and the dialog panel', () => {
+    mount();
+    expect(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    ).toHaveAttribute('data-brw-theme', 'system');
+    openPanel();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'data-brw-theme',
+      'system',
+    );
+  });
+
+  it('stamps data-brw-theme="light" when theme="light"', () => {
+    mount({ theme: 'light' });
+    expect(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    ).toHaveAttribute('data-brw-theme', 'light');
+    openPanel();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'data-brw-theme',
+      'light',
+    );
+  });
+
+  it('stamps data-brw-theme="dark" when theme="dark"', () => {
+    mount({ theme: 'dark' });
+    expect(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    ).toHaveAttribute('data-brw-theme', 'dark');
+    openPanel();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'data-brw-theme',
+      'dark',
+    );
+  });
+
+  it('propagates theme to the region-capture overlay Dialog.Content', async () => {
+    mount({ theme: 'dark' });
+    openPanel();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      );
+    });
+    const overlay = screen.getByTestId('brw-region-overlay');
+    expect(overlay).toHaveAttribute('data-brw-theme', 'dark');
+  });
+
+  it('emitted stylesheet defines forced-palette rules for light and dark', () => {
+    // Guards the CSS contract: if someone renames the attribute or drops a
+    // block the forced palettes silently break — this test catches that at
+    // unit-test time instead of in a consumer bug report.
+    expect(BREVWICK_CSS).toMatch(/\.brw-root\[data-brw-theme='light'\]\s*\{/);
+    expect(BREVWICK_CSS).toMatch(/\.brw-root\[data-brw-theme='dark'\]\s*\{/);
+  });
+});
+
 describe('<FeedbackButton> — region capture overlay', () => {
   /**
    * Install a test double for the canvas crop pipeline so the overlay's
@@ -2062,16 +2122,22 @@ function stubMatchMedia(prefersDark: boolean): void {
 }
 
 /**
- * Remove every `:where(:root) { ... }` token-default block from the
- * emitted CSS using a balanced-brace walker. Survives whitespace and
- * newline refactors that a `[\s\S]*?\n\s*}` regex would silently
- * mis-strip; used by the "no hardcoded hex in class rules" guard.
+ * Remove every token-declaration block from the emitted CSS using a
+ * balanced-brace walker. Token blocks are `:where(:root) { ... }`
+ * defaults (including the `@media (prefers-color-scheme: dark)` swap)
+ * and the `.brw-root[data-brw-theme='light'|'dark']` forced-palette
+ * blocks introduced with the `theme` prop — all three hold raw hex
+ * palettes by design. Survives whitespace/newline refactors that a
+ * `[\s\S]*?\n\s*}` regex would silently mis-strip; used by the "no
+ * hardcoded hex in class rules" guard.
  */
 function stripTokenBlocks(css: string): string {
+  const tokenBlockSelector =
+    /(?::where\(:root\)|\.brw-root\[data-brw-theme='[^']+'\])\s*\{/;
   const out: string[] = [];
   let i = 0;
   while (i < css.length) {
-    const match = css.slice(i).match(/:where\(:root\)\s*\{/);
+    const match = css.slice(i).match(tokenBlockSelector);
     if (!match) {
       out.push(css.slice(i));
       break;

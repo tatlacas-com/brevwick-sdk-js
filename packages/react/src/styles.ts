@@ -10,6 +10,13 @@
  * palette is swapped via `@media (prefers-color-scheme: dark)`; host
  * overrides persist across modes because they're set on a different
  * element / higher specificity.
+ *
+ * The `<FeedbackButton theme="light|dark|system">` prop forces a palette
+ * regardless of the OS setting by stamping `data-brw-theme` on every
+ * `.brw-root` element; the attribute selector has higher specificity than
+ * `:where(:root)` so the forced palette wins the cascade, while host-side
+ * `:root { --brw-accent: ... }` overrides still win because they sit on
+ * `:root` (not inside `.brw-root`).
  */
 export const BREVWICK_STYLE_ID = 'brevwick-react-styles';
 
@@ -74,6 +81,46 @@ export const BREVWICK_CSS = `
     /* Shadow — deeper alpha so the panel still reads as lifted over a dark host */
     --brw-shadow: 0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 12px rgba(0, 0, 0, 0.35);
   }
+}
+/* Forced palettes via <FeedbackButton theme="light|dark">. The attribute
+   selector beats :where(:root) (specificity 0) and the @media-scoped
+   :where(:root) block alike, so the chosen palette applies regardless of
+   the OS setting. theme="system" deliberately has no rule — the
+   :where(:root) defaults plus the media query already do the right thing.
+   Values mirror the blocks above; duplicated rather than extracted to a
+   shared preprocessor variable because the stylesheet ships as a literal
+   template string with zero build tooling. */
+.brw-root[data-brw-theme='light'] {
+  --brw-panel-bg: #ffffff;
+  --brw-bubble-assistant-bg: #f1f5f9;
+  --brw-bubble-user-bg: #0f172a;
+  --brw-bubble-user-fg: #ffffff;
+  --brw-chip-bg: #f1f5f9;
+  --brw-composer-bg: #ffffff;
+  --brw-fg: #0f172a;
+  --brw-fg-muted: #64748b;
+  --brw-border: #e2e8f0;
+  --brw-border-focus: #0f172a;
+  --brw-divider: #e2e8f0;
+  --brw-accent: #0f172a;
+  --brw-accent-fg: #ffffff;
+  --brw-shadow: 0 20px 48px rgba(15, 23, 42, 0.18), 0 6px 12px rgba(15, 23, 42, 0.08);
+}
+.brw-root[data-brw-theme='dark'] {
+  --brw-panel-bg: #0b1220;
+  --brw-bubble-assistant-bg: #1e293b;
+  --brw-bubble-user-bg: #f8fafc;
+  --brw-bubble-user-fg: #0f172a;
+  --brw-chip-bg: #253044;
+  --brw-composer-bg: #0b1220;
+  --brw-fg: #f8fafc;
+  --brw-fg-muted: #94a3b8;
+  --brw-border: #1e293b;
+  --brw-border-focus: #f8fafc;
+  --brw-divider: #1e293b;
+  --brw-accent: #f8fafc;
+  --brw-accent-fg: #0f172a;
+  --brw-shadow: 0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 12px rgba(0, 0, 0, 0.35);
 }
 .brw-root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;

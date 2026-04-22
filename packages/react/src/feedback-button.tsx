@@ -32,6 +32,13 @@ import {
 declare const __BREVWICK_REACT_VERSION__: string;
 
 /**
+ * Forced-palette choice for {@link FeedbackButton}. `'system'` defers to the
+ * OS-level `prefers-color-scheme` media query (the default and pre-existing
+ * behaviour); `'light'` / `'dark'` override it regardless of the OS setting.
+ */
+export type BrevwickTheme = 'light' | 'dark' | 'system';
+
+/**
  * Props for {@link FeedbackButton}. See SDD § 12 for the React contract.
  */
 export interface FeedbackButtonProps {
@@ -45,6 +52,13 @@ export interface FeedbackButtonProps {
   className?: string;
   /** FAB label. Default `'Feedback'`. */
   label?: ReactNode;
+  /**
+   * Force a palette regardless of the OS `prefers-color-scheme` setting.
+   * Default `'system'` — the widget follows the OS. Host-level overrides
+   * of individual `--brw-*` custom properties still win over all three
+   * values, so `theme` selects the base palette and CSS overrides tune it.
+   */
+  theme?: BrevwickTheme;
   /** Fired with the SDK's `SubmitResult` after every submit (success or failure). */
   onSubmit?: (result: SubmitResult) => void;
 }
@@ -209,6 +223,7 @@ export function FeedbackButton({
   hidden = false,
   className,
   label = 'Feedback',
+  theme = 'system',
   onSubmit,
 }: FeedbackButtonProps): ReactElement | null {
   const { submit, captureScreenshot, status, reset } = useFeedback();
@@ -506,6 +521,7 @@ export function FeedbackButton({
         <button
           type="button"
           data-brevwick-skip=""
+          data-brw-theme={theme}
           className={`${rootClassName} brw-fab ${fabPosClass}`}
           disabled={disabled}
           aria-label="Open feedback form"
@@ -517,6 +533,7 @@ export function FeedbackButton({
       <Dialog.Portal>
         <Dialog.Content
           data-brevwick-skip=""
+          data-brw-theme={theme}
           className={`${rootClassName} brw-panel ${panelPosClass}`}
           aria-describedby={undefined}
         >
@@ -567,6 +584,7 @@ export function FeedbackButton({
       </Dialog.Portal>
       <RegionCaptureOverlay
         open={regionOpen}
+        theme={theme}
         onClose={handleCloseRegion}
         onConfirmRegion={handleConfirmRegion}
         onConfirmFull={handleConfirmFull}
@@ -1111,6 +1129,7 @@ interface DragState {
 
 interface RegionCaptureOverlayProps {
   open: boolean;
+  theme: BrevwickTheme;
   onClose: () => void;
   onConfirmRegion: (region: Region) => void;
   onConfirmFull: () => void;
@@ -1131,6 +1150,7 @@ interface RegionCaptureOverlayProps {
  */
 function RegionCaptureOverlay({
   open,
+  theme,
   onClose,
   onConfirmRegion,
   onConfirmFull,
@@ -1257,6 +1277,7 @@ function RegionCaptureOverlay({
         <Dialog.Content
           className={`brw-root brw-region-layer${shake ? ' brw-region-shake' : ''}`}
           data-brevwick-skip=""
+          data-brw-theme={theme}
           data-testid="brw-region-overlay"
           aria-label="Select screenshot region"
           aria-describedby={undefined}
