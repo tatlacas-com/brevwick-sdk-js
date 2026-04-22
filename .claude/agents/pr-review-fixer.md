@@ -41,7 +41,6 @@ If the original issue or `worktree.md` called for it, it ships here. If a bug / 
 - `CLAUDE.md` (repo + parent)
 - `eslint.config.mjs`, `tsconfig.base.json`, `pnpm-workspace.yaml`
 - Per-package `tsup.config.ts`, `tsconfig.json`, `package.json`
-- `brevwick-ops/docs/brevwick-sdd.md` § 12 if public API changed
 
 ### Step 3 — Triage
 

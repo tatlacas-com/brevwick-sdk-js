@@ -14,7 +14,7 @@ HARD blockers. Any violation → **CHANGES REQUIRED**.
 
 1. **Clean architecture compliance** — `brevwick-sdk` stays framework-agnostic. React types / hooks / JSX belong ONLY in `brevwick-react`. No leaking React, DOM, or Node-only APIs into the core. Public API surface is intentional and tree-shakeable. Module boundaries in `CLAUDE.md` are absolute.
 2. **Clean code** — SOLID, DRY, KISS, meaningful names, single responsibility, small functions, no dead code, no commented-out code, no `any`, no stale TODOs, no deep nesting.
-3. **Completeness** — every acceptance criterion, every `worktree.md` item implemented. Public API changes include SDD updates (`brevwick-ops/docs/brevwick-sdd.md` § 12). No stubs / placeholders / "follow-up" work.
+3. **Completeness** — every acceptance criterion implemented. No stubs / placeholders / "follow-up" work.
 
 ## Process
 
@@ -23,8 +23,6 @@ HARD blockers. Any violation → **CHANGES REQUIRED**.
 1. `gh pr view <N> --json number,title,body,headRefName,baseRefName,files`
 2. `gh pr diff <N>`
 3. Issue → `gh issue view <issue-N>`
-4. `worktree.md` if present
-5. Cross-repo: `brevwick-ops/docs/brevwick-sdd.md` § 12 for SDK contracts — flag any divergence
 
 ### Step 2 — Load Standards
 

@@ -21,8 +21,6 @@ feat(react): `theme` prop on `<FeedbackButton>` (light / dark / system)
   accent hotpink.
 - `BrevwickTheme` type exported from `brevwick-react` for consumers that
   want to type their own theme-selecting state.
-- SDD § 12 (`brevwick-ops/docs/brevwick-sdd.md`) updated with the new
-  prop + dual-variable contract in a coordinated PR.
 
 The `brevwick-sdk` patch bump is a no-op to keep the two packages in
 lockstep per the repo's pre-1.0 versioning policy.

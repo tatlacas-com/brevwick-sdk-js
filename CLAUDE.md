@@ -39,8 +39,6 @@ cd ../brevwick-sdk-js-issue-<N>
 
 pnpm workspace publishing two npm packages: `brevwick-sdk` (core, framework-agnostic) and `brevwick-react` (React bindings).
 
-The canonical SDK contract lives at [`brevwick-ops/docs/brevwick-sdd.md` § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts). Public API changes require an SDD update in the same PR (cross-repo).
-
 **GitHub:** https://github.com/tatlacas-com/brevwick-sdk-js
 
 ## Common Commands

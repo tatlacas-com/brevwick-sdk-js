@@ -8,10 +8,9 @@ import { describe, it, expect } from 'vitest';
  * developer running `pnpm test` after a build sees a clear failure before
  * the CI `size-check` job catches it.
  *
- * The 25 kB ceiling is mandated by `CLAUDE.md` and `brevwick-ops/docs/
- * brevwick-sdd.md` § 11.8 / § 12, and enforced end-to-end via `size-limit`
- * (`.size-limit.js` at repo root). Skipped when `dist/` is absent so plain
- * `pnpm test` (no prior build) still passes.
+ * The 25 kB ceiling is mandated by `CLAUDE.md` and enforced end-to-end via
+ * `size-limit` (`.size-limit.js` at repo root). Skipped when `dist/` is
+ * absent so plain `pnpm test` (no prior build) still passes.
  */
 describe('brevwick-react bundle ceiling', () => {
   const dist = resolve(__dirname, '../../dist');

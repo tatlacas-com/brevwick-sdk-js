@@ -105,8 +105,6 @@
     accent hotpink.
   - `BrevwickTheme` type exported from `brevwick-react` for consumers that
     want to type their own theme-selecting state.
-  - SDD § 12 (`brevwick-ops/docs/brevwick-sdd.md`) updated with the new
-    prop + dual-variable contract in a coordinated PR.
 
   The `brevwick-sdk` patch bump is a no-op to keep the two packages in
   lockstep per the repo's pre-1.0 versioning policy.
@@ -149,7 +147,7 @@ page"` so keyboard and screen-reader users discover the affordance
   ring. `modern-screenshot` is declared as an optional peer dependency so
   consumers that never call `captureScreenshot` skip the install.
 
-- [#22](https://github.com/tatlacas-com/brevwick-sdk-js/pull/22) [`d3f6577`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/d3f65776f6b2ad8e17bfe22d08bb970dce576dcb) Thanks [@tatlacas](https://github.com/tatlacas)! - Add `submit(input)` pipeline: presigns each attachment, PUTs to the returned URL, then POSTs `/v1/ingest/issues` under a 30 s `AbortController` budget with one initial attempt + two retries on 5xx / network errors. Public type `SubmitResult` becomes a tagged union — `{ ok: true; issue_id: string } | { ok: false; error: { code: SubmitErrorCode; message: string } }` — so callers discriminate on `ok` and the pipeline never throws (breaking change versus the prior `{ issueId }` shape; tracked in the brevwick-ops SDD § 12 update). New exports: `SubmitError`, `SubmitErrorCode`, and `FeedbackAttachment` (which widens `FeedbackInput.attachments` to `Array<Blob | FeedbackAttachment>`). All free-form text and `user_context` extras run through `redact()` before the wire; `config.user.email` is masked as `a***@d***.tld`; ring snapshots flow through unchanged because they were redacted at capture. Attachments are validated client-side (≤5 count, ≤10 MB each, MIME ∈ {image/png, image/jpeg, image/webp, video/webm}) before any presign round-trip. The submit pipeline lives in its own dynamic-import chunk so the eager core stays under the 2 kB gzip budget.
+- [#22](https://github.com/tatlacas-com/brevwick-sdk-js/pull/22) [`d3f6577`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/d3f65776f6b2ad8e17bfe22d08bb970dce576dcb) Thanks [@tatlacas](https://github.com/tatlacas)! - Add `submit(input)` pipeline: presigns each attachment, PUTs to the returned URL, then POSTs `/v1/ingest/issues` under a 30 s `AbortController` budget with one initial attempt + two retries on 5xx / network errors. Public type `SubmitResult` becomes a tagged union — `{ ok: true; issue_id: string } | { ok: false; error: { code: SubmitErrorCode; message: string } }` — so callers discriminate on `ok` and the pipeline never throws (breaking change versus the prior `{ issueId }` shape). New exports: `SubmitError`, `SubmitErrorCode`, and `FeedbackAttachment` (which widens `FeedbackInput.attachments` to `Array<Blob | FeedbackAttachment>`). All free-form text and `user_context` extras run through `redact()` before the wire; `config.user.email` is masked as `a***@d***.tld`; ring snapshots flow through unchanged because they were redacted at capture. Attachments are validated client-side (≤5 count, ≤10 MB each, MIME ∈ {image/png, image/jpeg, image/webp, video/webm}) before any presign round-trip. The submit pipeline lives in its own dynamic-import chunk so the eager core stays under the 2 kB gzip budget.
 
 - [#33](https://github.com/tatlacas-com/brevwick-sdk-js/pull/33) [`2ff114f`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/2ff114f9f70057c2bb982fdf1a531603bf8fe65f) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(react): light/dark theming + composer shell polish
   - Introduce a `--brw-*` CSS custom-property token set on `:where(:root)`
@@ -256,8 +254,7 @@ flex-end` keeps the send button pinned to the bottom as the textarea
   `crypto.subtle.digest`) and thread the same digest through the presign
   request body, the PUT header echo, and the final issue entry. Without
   this the R2 bucket's required `x-amz-checksum-sha256` header is missing
-  and every screenshot submit 409s. Fixes [#29](https://github.com/tatlacas-com/brevwick-sdk-js/issues/29). Paired server-contract
-  update: SDD § 7 (tatlacas-com/brevwick-ops#20).
+  and every screenshot submit 409s. Fixes [#29](https://github.com/tatlacas-com/brevwick-sdk-js/issues/29).
 
 - [#38](https://github.com/tatlacas-com/brevwick-sdk-js/pull/38) [`d13c28e`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/d13c28e1e14df0f314a4d53f170e41767269353c) Thanks [@tatlacas](https://github.com/tatlacas)! - Internal: enable `minify: true` in the React package's tsup build (~2 kB
   gzip smaller delivered artefact for consumers; no API or runtime-behaviour

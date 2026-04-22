@@ -1,7 +1,5 @@
 /**
  * Brevwick React bindings.
- *
- * See brevwick-ops/docs/brevwick-sdd.md § 12 for the React contract.
  */
 
 declare const __BREVWICK_REACT_VERSION__: string;
