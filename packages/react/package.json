@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-react",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "description": "Brevwick React bindings — provider, FAB, useFeedback hook. Drop-in for any React app.",
   "license": "MIT",
   "type": "module",

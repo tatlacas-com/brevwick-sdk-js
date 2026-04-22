@@ -1,5 +1,30 @@
 # brevwick-react
 
+## 1.0.0-beta.3
+
+### Minor Changes
+
+- [#45](https://github.com/tatlacas-com/brevwick-sdk-js/pull/45) [`eee8b24`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/eee8b24ab22f82533850a545bc5884d08a523055) Thanks [@tatlacas](https://github.com/tatlacas)! - Rename packages to the `@tatlacas` npm scope: `brevwick-sdk` → `@tatlacas/brevwick-sdk` and `brevwick-react` → `@tatlacas/brevwick-react`. The public API surface is unchanged — only the install name differs.
+
+  **Consumers must update their `package.json` and imports:**
+
+  ```diff
+  - import { createBrevwick } from 'brevwick-sdk';
+  + import { createBrevwick } from '@tatlacas/brevwick-sdk';
+  ```
+
+  ```diff
+  - import { BrevwickProvider, FeedbackButton } from 'brevwick-react';
+  + import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+  ```
+
+  Wire-level identifiers (the `sdk.name: 'brevwick-sdk'` field in ingest payloads and the `X-Brevwick-SDK` request header) are intentionally preserved, so server-side filters on the SDK identifier continue to match.
+
+### Patch Changes
+
+- Updated dependencies [[`eee8b24`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/eee8b24ab22f82533850a545bc5884d08a523055)]:
+  - @tatlacas/brevwick-sdk@1.0.0-beta.3
+
 ## 1.0.0-beta.2
 
 ### Major Changes

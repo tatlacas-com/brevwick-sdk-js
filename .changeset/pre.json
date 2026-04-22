@@ -8,6 +8,7 @@
     "brevwick-example-vanilla": "0.0.0"
   },
   "changesets": [
+    "busy-insects-rule",
     "chat-panel-redesign",
     "console-error-ring",
     "create-brevwick-core",
@@ -20,6 +21,7 @@
     "region-capture",
     "release-infrastructure",
     "rename-reports-to-issues",
+    "scope-to-tatlacas-org",
     "screenshot-dialog-title",
     "screenshot",
     "sha256-checksum-on-presign",
