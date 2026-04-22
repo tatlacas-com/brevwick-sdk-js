@@ -8,6 +8,12 @@
  * Wire paths follow SDD § 7 ingest endpoints (`/v1/ingest/presign`,
  * `/v1/ingest/issues`) and the `issue_id` response shape — see
  * `packages/sdk/src/submit.ts` for the canonical source.
+ *
+ * The React package ships a near-twin of this file at
+ * `packages/react/src/__tests__/integration/setup.ts`. The two are
+ * intentionally not collapsed into a `brevwick-sdk/testing/msw` subpath
+ * export — see that file's header for the structural reason (React
+ * variant adds a config handler the SDK suite has no use for).
  */
 import { http, HttpResponse, type PathParams } from 'msw';
 import { setupServer, type SetupServer } from 'msw/node';

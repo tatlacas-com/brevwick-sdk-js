@@ -89,6 +89,14 @@ describe('integration — install → ring capture → submit', () => {
     const userRes = await fetch(USER_API);
     expect(userRes.status).toBe(500);
 
+    // Pre-submit ring-install assertion. If a future regression breaks the
+    // network ring's installation order, the captured POST below will show
+    // `network_errors: []` and the existing `toHaveLength(1)` assertion
+    // will report against `submit()` rather than the real failure site.
+    // Asserting the snapshot length here points the next failure message
+    // squarely at the ring-install boundary.
+    expect(internal.buffers.network.snapshot()).toHaveLength(1);
+
     const result = await instance.submit({
       title: 'integration smoke',
       description: 'see attached evidence',

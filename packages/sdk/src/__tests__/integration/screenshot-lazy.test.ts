@@ -21,7 +21,6 @@ import {
   afterAll,
   afterEach,
   beforeAll,
-  beforeEach,
   describe,
   expect,
   it,
@@ -34,6 +33,16 @@ import {
   KEY,
 } from './setup';
 
+// Module-cache isolation note: `vi.resetModules()` lives ONLY in
+// `afterEach`, after `vi.doUnmock`. Adding a second call in `beforeEach`
+// would skip the `doUnmock` cleanup because resetModules runs before
+// module registration in beforeEach, leaving the next test with the
+// previous mock factory still bound. The first test in the file does
+// not need a pre-test reset because nothing in the integration setup
+// imports `modern-screenshot`. Cross-link: the static-graph counterpart
+// is `chunk-split.test.ts::eager ESM chunk is under the 2.2 kB gzip
+// budget` — do not delete one thinking it covers the other.
+
 const server = createIntegrationServer();
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -43,10 +52,6 @@ afterEach(() => {
   vi.resetModules();
 });
 afterAll(() => server.close());
-
-beforeEach(() => {
-  vi.resetModules();
-});
 
 describe('integration — modern-screenshot lazy load', () => {
   it('does not import modern-screenshot until captureScreenshot() is called', async () => {

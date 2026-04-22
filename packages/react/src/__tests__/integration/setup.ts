@@ -1,9 +1,28 @@
 /**
  * Shared MSW scaffolding for the React integration suite. Parallels
- * `packages/sdk/src/__tests__/integration/setup.ts`; the two files do not
- * share a module because each package owns its own vitest + module-graph
- * boundary and cross-package test imports would break the workspace
- * layout (`packages/react` does not depend on `packages/sdk` internals).
+ * `packages/sdk/src/__tests__/integration/setup.ts`.
+ *
+ * Why a separate file rather than a shared `brevwick-sdk/testing/msw`
+ * subpath export (the precedent set by `brevwick-sdk/testing` for the
+ * registry mutators):
+ *
+ * - The React variant adds a `GET /v1/ingest/config` handler returning
+ *   `204 No Content`. `<FeedbackButton>` opens the panel by calling
+ *   `brevwick.getConfig()` on first render to decide whether to show
+ *   the "Format with AI" toggle; the 204 is the documented "no submitter
+ *   choice" branch (see `packages/sdk/src/types.ts` `ProjectConfig` JSDoc).
+ *   The SDK integration suite never opens a widget so it has no use for
+ *   the config handler.
+ * - Test-namespace identifiers diverge intentionally (`KEY`,
+ *   `OBJECT_KEY_PREFIX`, default `issueId`) so a leak from one package's
+ *   suite into the other shows up as a string mismatch rather than a
+ *   silent collision.
+ *
+ * Parameterising the SDK helper with an "extra handlers" callback to
+ * absorb both points would push more surface (the `extras` shape, the
+ * ordering rules between extras and the core handlers) into the SDK's
+ * public testing API than the copy-paste costs. If a third consumer
+ * appears, revisit.
  */
 import { http, HttpResponse, type PathParams } from 'msw';
 import { setupServer, type SetupServer } from 'msw/node';
