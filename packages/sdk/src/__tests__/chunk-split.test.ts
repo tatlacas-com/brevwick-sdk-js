@@ -86,8 +86,9 @@ describe('bundle chunk split', () => {
      * `http://localhost`, `http://127.0.0.1`, `http://[::1]` for local-dev
      * integrators, which costs ~25 gzipped bytes over the prior ceiling. The
      * 2.2 kB budget is still well under the 2.5 kB upper bound the widget-
-     * open eager cost targets. Without this guard, future code changes can
-     * silently regress past the budget — CI does not yet enforce it (WT-07).
+     * open eager cost targets. CI also enforces this budget end-to-end via
+     * the `size-check` job (`.size-limit.js`); this in-suite assertion is
+     * kept as a fast-feedback guard during local `pnpm test`.
      */
     it('eager ESM chunk is under the 2.2 kB gzip budget', async () => {
       const { gzipSync } = await import('node:zlib');
