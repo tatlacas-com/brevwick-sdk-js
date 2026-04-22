@@ -37,10 +37,26 @@ jobs:
           files: packages/sdk/coverage/lcov.info,packages/react/coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+      # Hand the built artefacts to the size-check job so it doesn't have to
+      # re-run install + build from scratch.
+      - name: Upload package dist artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-dists
+          path: |
+            packages/sdk/dist
+            packages/react/dist
+          retention-days: 1
+          if-no-files-found: error
 
+  # PR-only: branch protection requires `size-check` to pass before merge,
+  # and `main` only receives squash-merged content that already cleared the
+  # gate. Re-running on push to `main` would either be silently lossy
+  # (failures with no audience) or duplicate work — so we scope to PRs.
   size-check:
     runs-on: ubuntu-latest
     needs: check
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       pull-requests: write
@@ -51,23 +67,33 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-      # On PRs, size-limit-action installs + builds + runs size-limit and
-      # posts a diff comment against the base branch. On pushes to main,
-      # there's no PR to comment on, so we run the gate manually.
-      - name: Size check with PR diff comment
-        if: github.event_name == 'pull_request'
-        uses: andresz1/size-limit-action@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          package_manager: pnpm
-          script: pnpm size
-          build_script: build
-      - name: Install (push)
-        if: github.event_name != 'pull_request'
+      # `size-limit` is a devDep, and the on-widget-open entry uses
+      # `@size-limit/esbuild` to re-bundle with the resolved `modern-screenshot`
+      # peer — so we still need a node_modules install. We skip the build
+      # because `check` already produced dist/ and we hand it over via the
+      # `package-dists` artefact below.
+      - name: Install (no build)
         run: pnpm install --frozen-lockfile
-      - name: Build (push)
-        if: github.event_name != 'pull_request'
-        run: pnpm build
-      - name: Size check (push)
-        if: github.event_name != 'pull_request'
+      - name: Restore built dist/ from `check`
+        uses: actions/download-artifact@v4
+        with:
+          name: package-dists
+          path: packages
+      # Run twice: first to capture JSON for the comment renderer regardless
+      # of pass/fail, second to render the human-readable table and propagate
+      # the non-zero exit when a budget is breached. Cheap — both runs are
+      # bounded by the size of the (already-built) artefacts.
+      - name: Capture size-limit JSON
+        run: pnpm -s size --json > size-report.json || true
+      - name: Render PR comment body
+        run: node .github/scripts/render-size-report.mjs size-report.json > size-comment.md
+      - name: Post / update PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: brevwick-size-limit
+          path: size-comment.md
+      # Final gate: human-readable size-limit output and a non-zero exit if
+      # any entry breached its budget. This is the step branch protection
+      # should require — `size-check` job status maps directly to this.
+      - name: Enforce budgets
         run: pnpm size
