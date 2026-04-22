@@ -7,15 +7,22 @@
  * asserting that a user opening the FAB, typing a draft, and hitting
  * Send produces a single POST to `/v1/ingest/issues` with the shape the
  * backend contract expects.
+ *
+ * On the React-bindings version (issue #10's "react golden differs from
+ * the SDK golden by including a react-bindings-version field"): the
+ * production `BrevwickProvider` (`packages/react/src/provider.tsx`) does
+ * NOT thread `BREVWICK_REACT_VERSION` into the wire payload — the
+ * constant is exported and rendered in the credit footer, but it never
+ * lands on `device_context.sdk` or any sibling field. The issue spec
+ * was speculative; encoding it would be a public-API change that
+ * belongs in its own SDD § 12 amendment. The "no bindings_version on
+ * the wire today" assertion below catches a silent regression where a
+ * future Provider refactor leaks the React version into the payload
+ * without an SDD update.
  */
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { BREVWICK_REACT_VERSION } from '../../index';
 import { BrevwickProvider } from '../../provider';
 import { FeedbackButton } from '../../feedback-button';
 import GOLDEN_RAW from './__fixtures__/composed-payload.json' with { type: 'json' };
@@ -36,27 +43,55 @@ afterAll(() => server.close());
 
 /**
  * Strip every field the integration test cannot pin to a deterministic
- * value: timestamps, environment-sourced strings (UA, locale, viewport),
- * `route_path` (happy-dom default), and the `sdk.version` stamp.
+ * value. Inverted projection (strip volatile, retain everything else)
+ * so a future top-level field on the wire fails the assertion loudly
+ * instead of being silently dropped — matches the SDK-side
+ * `freezeShape` in `packages/sdk/src/__tests__/integration/golden-payload.test.ts`.
  */
 function freezeShape(body: Record<string, unknown>): Record<string, unknown> {
-  const deviceCtx = body.device_context as Record<string, unknown>;
-  const sdk = deviceCtx.sdk as Record<string, unknown>;
+  const {
+    route_path: _routePath,
+    ts: _ts,
+    issue_id: _issueId,
+    device_context: deviceCtxRaw,
+    ...rest
+  } = body as {
+    route_path?: unknown;
+    ts?: unknown;
+    issue_id?: unknown;
+    device_context: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  void _routePath;
+  void _ts;
+  void _issueId;
+
+  const {
+    ua: _ua,
+    locale: _locale,
+    viewport: _viewport,
+    sdk: sdkRaw,
+    ...deviceCtxRest
+  } = deviceCtxRaw as {
+    ua?: unknown;
+    locale?: unknown;
+    viewport?: unknown;
+    sdk: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  void _ua;
+  void _locale;
+  void _viewport;
+
+  const { version: _sdkVersion, ...sdkRest } = sdkRaw as {
+    version?: unknown;
+    [key: string]: unknown;
+  };
+  void _sdkVersion;
+
   return {
-    title: body.title,
-    description: body.description,
-    build_sha: body.build_sha,
-    release: body.release,
-    environment: body.environment,
-    user_context: body.user_context,
-    device_context: {
-      platform: deviceCtx.platform,
-      sdk: { name: sdk.name, platform: sdk.platform },
-    },
-    console_errors: body.console_errors,
-    network_errors: body.network_errors,
-    route_trail: body.route_trail,
-    attachments: body.attachments,
+    ...rest,
+    device_context: { ...deviceCtxRest, sdk: sdkRest },
   };
 }
 
@@ -79,11 +114,15 @@ describe('integration — Provider + FeedbackButton → MSW ingest', () => {
       </BrevwickProvider>,
     );
 
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /open feedback form/i }),
-      );
-    });
+    // `fireEvent.*` already wraps every dispatch in `act` synchronously
+    // (testing-library/react ≥ 13), and `waitFor` handles the async
+    // settle for the network round-trip below. An explicit `act(async
+    // () => fireEvent.click(...))` wrapper would be misleading here —
+    // it reads as if `fireEvent` does not handle React 19 batching,
+    // which is wrong.
+    fireEvent.click(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    );
 
     const textarea = screen.getByRole('textbox', {
       name: /feedback message/i,
@@ -94,19 +133,26 @@ describe('integration — Provider + FeedbackButton → MSW ingest', () => {
       },
     });
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
-    });
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
 
     // `submit()` lazy-imports the pipeline and then fans out (presign →
-    // PUT → issue POST). `fireEvent.click` inside act only awaits the
-    // microtask queue, not the subsequent network round-trips — wait for
-    // the MSW server to actually see the terminal POST.
+    // PUT → issue POST). `fireEvent.click` resolves the synchronous
+    // microtask queue but not the subsequent network round-trips —
+    // wait for the MSW server to actually see the terminal POST.
     await waitFor(() => expect(captured.count()).toBe(1));
 
     const body = captured.json();
     expect(body).toBeDefined();
     expect(freezeShape(body!)).toEqual(GOLDEN);
+
+    // Defensive: the React Provider does not currently emit a
+    // `bindings_version` / `react_version` field on the wire (see file
+    // header). If a future refactor adds one without an SDD § 12
+    // amendment, both assertions below trip — the package-level
+    // version string would land in the body via the new field name.
+    const raw = captured.body() ?? '';
+    expect(raw).not.toContain('bindings_version');
+    expect(raw).not.toContain(`"react_version":"${BREVWICK_REACT_VERSION}"`);
 
     // Panel flips into the success state when the POST resolves ok.
     await waitFor(() =>

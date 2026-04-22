@@ -41,32 +41,87 @@ afterEach(() => {
 afterAll(() => server.close());
 
 /**
- * Stable subset of the payload — keeps the keys a contract reader would
- * expect to remain identical across runs, drops the ones that vary by
- * environment or invocation timing.
+ * Strip the volatile keys so the deep-equal stays stable across CI
+ * environments. Inverted projection (strip volatile, retain everything
+ * else) so a future top-level field on the wire fails the assertion
+ * loudly instead of being silently dropped — the golden's whole job
+ * is to catch unannounced shape drift, and an allow-list projection
+ * defeats that.
+ *
+ * Volatile keys stripped:
+ * - top-level `route_path` — happy-dom default `'/'` here, real path in prod.
+ * - top-level `ts` / `issue_id` — not currently emitted by composePayload but
+ *   stripped defensively in case future versions add them; matches the
+ *   `freezeShape` contract documented in the file header.
+ * - `device_context.ua` / `locale` / `viewport` — host environment dependent.
+ * - `device_context.sdk.version` — bumps every release.
+ * - `attachments[*].sha256` / `size_bytes` — derived from the test blob
+ *   bytes; the SHA collisions across CI hosts would be a coincidence, and
+ *   the size digit count varies with PNG header tweaks. `object_key` and
+ *   `mime` are stable per the presign handler contract.
  */
 function freezeShape(body: Record<string, unknown>): Record<string, unknown> {
-  const deviceCtx = body.device_context as Record<string, unknown>;
-  const sdk = deviceCtx.sdk as Record<string, unknown>;
-  const attachments = (body.attachments as Array<Record<string, unknown>>).map(
-    (a) => ({ object_key: a.object_key, mime: a.mime }),
-  );
+  // Top-level volatile keys.
+  const {
+    route_path: _routePath,
+    ts: _ts,
+    issue_id: _issueId,
+    device_context: deviceCtxRaw,
+    attachments: attachmentsRaw,
+    ...rest
+  } = body as {
+    route_path?: unknown;
+    ts?: unknown;
+    issue_id?: unknown;
+    device_context: Record<string, unknown>;
+    attachments: Array<Record<string, unknown>>;
+    [key: string]: unknown;
+  };
+  void _routePath;
+  void _ts;
+  void _issueId;
+
+  const {
+    ua: _ua,
+    locale: _locale,
+    viewport: _viewport,
+    sdk: sdkRaw,
+    ...deviceCtxRest
+  } = deviceCtxRaw as {
+    ua?: unknown;
+    locale?: unknown;
+    viewport?: unknown;
+    sdk: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  void _ua;
+  void _locale;
+  void _viewport;
+
+  const { version: _sdkVersion, ...sdkRest } = sdkRaw as {
+    version?: unknown;
+    [key: string]: unknown;
+  };
+  void _sdkVersion;
+
+  const attachments = attachmentsRaw.map((a) => {
+    const {
+      sha256: _sha256,
+      size_bytes: _sizeBytes,
+      ...attRest
+    } = a as {
+      sha256?: unknown;
+      size_bytes?: unknown;
+      [key: string]: unknown;
+    };
+    void _sha256;
+    void _sizeBytes;
+    return attRest;
+  });
+
   return {
-    title: body.title,
-    description: body.description,
-    expected: body.expected,
-    actual: body.actual,
-    build_sha: body.build_sha,
-    release: body.release,
-    environment: body.environment,
-    user_context: body.user_context,
-    device_context: {
-      platform: deviceCtx.platform,
-      sdk: { name: sdk.name, platform: sdk.platform },
-    },
-    console_errors: body.console_errors,
-    network_errors: body.network_errors,
-    route_trail: body.route_trail,
+    ...rest,
+    device_context: { ...deviceCtxRest, sdk: sdkRest },
     attachments,
   };
 }
