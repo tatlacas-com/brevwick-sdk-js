@@ -1,6 +1,6 @@
 ---
-'brevwick-sdk': major
-'brevwick-react': major
+'@tatlacas/brevwick-sdk': major
+'@tatlacas/brevwick-react': major
 ---
 
 BREAKING: rename Report → Issue across the public API. The SDK now submits

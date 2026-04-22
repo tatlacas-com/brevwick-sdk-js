@@ -1,6 +1,6 @@
 /**
  * Renders `<BrevwickProvider><FeedbackButton/></BrevwickProvider>` against
- * the REAL core SDK (no `vi.mock('brevwick-sdk', ...)`) and lets MSW
+ * the REAL core SDK (no `vi.mock('@tatlacas/brevwick-sdk', ...)`) and lets MSW
  * intercept the ingest wire. The existing suite in
  * `../feedback-button.test.tsx` mocks `createBrevwick` so it never
  * exercises the submit pipeline end-to-end; this file closes that gap by

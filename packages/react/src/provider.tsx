@@ -5,7 +5,7 @@ import {
   createBrevwick,
   type Brevwick,
   type BrevwickConfig,
-} from 'brevwick-sdk';
+} from '@tatlacas/brevwick-sdk';
 import { BrevwickContext, type BrevwickContextValue } from './context';
 
 /**

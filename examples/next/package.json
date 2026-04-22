@@ -9,8 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "brevwick-react": "workspace:*",
-    "brevwick-sdk": "workspace:*",
+    "@tatlacas/brevwick-react": "workspace:*",
+    "@tatlacas/brevwick-sdk": "workspace:*",
     "next": "^16.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

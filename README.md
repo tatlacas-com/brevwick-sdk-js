@@ -1,7 +1,7 @@
 # Brevwick JS SDK
 
-[![npm (sdk)](https://img.shields.io/npm/v/brevwick-sdk/beta?label=brevwick-sdk%40beta)](https://www.npmjs.com/package/brevwick-sdk)
-[![npm (react)](https://img.shields.io/npm/v/brevwick-react/beta?label=brevwick-react%40beta)](https://www.npmjs.com/package/brevwick-react)
+[![npm (sdk)](https://img.shields.io/npm/v/@tatlacas/brevwick-sdk/beta?label=@tatlacas/brevwick-sdk%40beta)](https://www.npmjs.com/package/@tatlacas/brevwick-sdk)
+[![npm (react)](https://img.shields.io/npm/v/@tatlacas/brevwick-react/beta?label=@tatlacas/brevwick-react%40beta)](https://www.npmjs.com/package/@tatlacas/brevwick-react)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Ship feedback from any browser app straight into clean, AI-formatted GitHub issues. Drop in a floating button, collect a description + screenshot + the console/network rings that preceded the bug, and Brevwick turns it all into a triage-ready issue on your repo.
@@ -10,10 +10,10 @@ Ship feedback from any browser app straight into clean, AI-formatted GitHub issu
 
 ## Packages
 
-| Package                              | Description                                                             | API reference                                          |
-| ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------ |
-| [`brevwick-sdk`](./packages/sdk)     | Framework-agnostic core: submit, screenshot, rings.                     | [packages/sdk/README.md](./packages/sdk/README.md)     |
-| [`brevwick-react`](./packages/react) | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19. | [packages/react/README.md](./packages/react/README.md) |
+| Package                                        | Description                                                             | API reference                                          |
+| ---------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------ |
+| [`@tatlacas/brevwick-sdk`](./packages/sdk)     | Framework-agnostic core: submit, screenshot, rings.                     | [packages/sdk/README.md](./packages/sdk/README.md)     |
+| [`@tatlacas/brevwick-react`](./packages/react) | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19. | [packages/react/README.md](./packages/react/README.md) |
 
 ## Install
 
@@ -21,10 +21,10 @@ Pick the one that matches your stack.
 
 ```bash
 # Any browser app (framework-agnostic)
-npm install brevwick-sdk@beta
+npm install @tatlacas/brevwick-sdk@beta
 
-# React / Next.js / Remix — pulls brevwick-sdk in as a peer dep
-npm install brevwick-react@beta brevwick-sdk@beta
+# React / Next.js / Remix — pulls @tatlacas/brevwick-sdk in as a peer dep
+npm install @tatlacas/brevwick-react@beta @tatlacas/brevwick-sdk@beta
 ```
 
 Works with `pnpm add`, `yarn add`, `bun add` — same package names.
@@ -34,7 +34,7 @@ Works with `pnpm add`, `yarn add`, `bun add` — same package names.
 ### React
 
 ```tsx
-import { BrevwickProvider, FeedbackButton } from 'brevwick-react';
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
 
 export default function App() {
   return (
@@ -53,7 +53,7 @@ Full API and theming → [packages/react/README.md](./packages/react/README.md).
 ### Vanilla / any framework
 
 ```ts
-import { createBrevwick } from 'brevwick-sdk';
+import { createBrevwick } from '@tatlacas/brevwick-sdk';
 
 const bw = createBrevwick({
   projectKey: 'pk_live_...',

@@ -1,19 +1,19 @@
-# brevwick-react
+# @tatlacas/brevwick-react
 
-[![npm](https://img.shields.io/npm/v/brevwick-react/beta?label=brevwick-react%40beta)](https://www.npmjs.com/package/brevwick-react)
+[![npm](https://img.shields.io/npm/v/@tatlacas/brevwick-react/beta?label=@tatlacas/brevwick-react%40beta)](https://www.npmjs.com/package/@tatlacas/brevwick-react)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 React bindings for [Brevwick](https://brevwick.dev) — a provider, a drop-in floating feedback button, and a `useFeedback` hook for custom UIs.
 
-Wraps [`brevwick-sdk`](https://www.npmjs.com/package/brevwick-sdk) — all configuration and submit semantics live there. This package adds the React ergonomics.
+Wraps [`@tatlacas/brevwick-sdk`](https://www.npmjs.com/package/@tatlacas/brevwick-sdk) — all configuration and submit semantics live there. This package adds the React ergonomics.
 
 ## Install
 
 ```bash
-npm install brevwick-react@beta brevwick-sdk@beta
+npm install @tatlacas/brevwick-react@beta @tatlacas/brevwick-sdk@beta
 ```
 
-`brevwick-sdk` is a peer dependency. Installers that respect peer deps (npm 7+, pnpm, yarn 3+) will pull it in automatically.
+`@tatlacas/brevwick-sdk` is a peer dependency. Installers that respect peer deps (npm 7+, pnpm, yarn 3+) will pull it in automatically.
 
 **React:** 18.x and 19.x are supported.
 
@@ -22,7 +22,7 @@ npm install brevwick-react@beta brevwick-sdk@beta
 ### Drop-in floating button
 
 ```tsx
-import { BrevwickProvider, FeedbackButton } from 'brevwick-react';
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
 
 export default function App() {
   return (
@@ -40,7 +40,7 @@ export default function App() {
 // app/providers.tsx
 'use client';
 
-import { BrevwickProvider, FeedbackButton } from 'brevwick-react';
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
 
 const config = { projectKey: 'pk_live_...' };
 
@@ -83,10 +83,10 @@ Top-level provider. Creates a single SDK instance, installs rings on mount, unin
 <BrevwickProvider config={brevwickConfig}>{children}</BrevwickProvider>
 ```
 
-| Prop       | Type             | Description                                                                                                                                          |
-| ---------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config`   | `BrevwickConfig` | SDK config — see the [core SDK config reference](https://www.npmjs.com/package/brevwick-sdk#brevwickconfig). **Reference-stable**: hoist or memoise. |
-| `children` | `ReactNode`      | Your tree.                                                                                                                                           |
+| Prop       | Type             | Description                                                                                                                                                    |
+| ---------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`   | `BrevwickConfig` | SDK config — see the [core SDK config reference](https://www.npmjs.com/package/@tatlacas/brevwick-sdk#brevwickconfig). **Reference-stable**: hoist or memoise. |
+| `children` | `ReactNode`      | Your tree.                                                                                                                                                     |
 
 ## `FeedbackButton`
 
@@ -160,7 +160,7 @@ Example:
 
 ### Hiding sensitive content from screenshots
 
-The widget captures the page via `brevwick-sdk`'s `captureScreenshot()`. Any element tagged `data-brevwick-skip` is hidden before capture and restored after:
+The widget captures the page via `@tatlacas/brevwick-sdk`'s `captureScreenshot()`. Any element tagged `data-brevwick-skip` is hidden before capture and restored after:
 
 ```tsx
 <input data-brevwick-skip type="password" />
@@ -174,7 +174,7 @@ The FAB, dialog, and region overlay all carry `data-brevwick-skip` themselves, s
 Hook for building a custom feedback UI against the `BrevwickProvider` instance.
 
 ```tsx
-import { useFeedback } from 'brevwick-react';
+import { useFeedback } from '@tatlacas/brevwick-react';
 
 function MyCustomReporter() {
   const { submit, captureScreenshot, status, reset } = useFeedback();
@@ -205,12 +205,12 @@ function MyCustomReporter() {
 
 ### Return value
 
-| Field               | Type                                              | Description                                                                |
-| ------------------- | ------------------------------------------------- | -------------------------------------------------------------------------- |
-| `submit`            | `(input: FeedbackInput) => Promise<SubmitResult>` | Submit feedback. Returns the same tagged union `brevwick-sdk` returns.     |
-| `captureScreenshot` | `() => Promise<Blob>`                             | Capture a DOM screenshot. Never throws — returns a placeholder on failure. |
-| `status`            | `'idle' \| 'submitting' \| 'success' \| 'error'`  | Current submission lifecycle.                                              |
-| `reset`             | `() => void`                                      | Reset `status` back to `'idle'`. Does not cancel an in-flight submit.      |
+| Field               | Type                                              | Description                                                                      |
+| ------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `submit`            | `(input: FeedbackInput) => Promise<SubmitResult>` | Submit feedback. Returns the same tagged union `@tatlacas/brevwick-sdk` returns. |
+| `captureScreenshot` | `() => Promise<Blob>`                             | Capture a DOM screenshot. Never throws — returns a placeholder on failure.       |
+| `status`            | `'idle' \| 'submitting' \| 'success' \| 'error'`  | Current submission lifecycle.                                                    |
+| `reset`             | `() => void`                                      | Reset `status` back to `'idle'`. Does not cancel an in-flight submit.            |
 
 Throws synchronously on mount when rendered outside a `BrevwickProvider`.
 
@@ -219,8 +219,8 @@ Throws synchronously on mount when rendered outside a `BrevwickProvider`.
 Exported semver string of the installed package — useful for including in error reports or diagnostics.
 
 ```ts
-import { BREVWICK_REACT_VERSION } from 'brevwick-react';
-console.log('brevwick-react', BREVWICK_REACT_VERSION);
+import { BREVWICK_REACT_VERSION } from '@tatlacas/brevwick-react';
+console.log('@tatlacas/brevwick-react', BREVWICK_REACT_VERSION);
 ```
 
 ## SSR
@@ -240,12 +240,12 @@ import type {
   BrevwickTheme,
   FeedbackStatus,
   UseFeedbackResult,
-  // from brevwick-sdk, re-exported for convenience:
+  // from @tatlacas/brevwick-sdk, re-exported for convenience:
   BrevwickConfig,
   FeedbackAttachment,
   FeedbackInput,
   SubmitResult,
-} from 'brevwick-react';
+} from '@tatlacas/brevwick-react';
 ```
 
 ## Bundle
@@ -260,7 +260,7 @@ ES2020 evergreen (Chrome/Edge 90+, Firefox 90+, Safari 15+). Matches the core SD
 
 ## Links
 
-- **Core SDK:** [`brevwick-sdk`](https://www.npmjs.com/package/brevwick-sdk)
+- **Core SDK:** [`@tatlacas/brevwick-sdk`](https://www.npmjs.com/package/@tatlacas/brevwick-sdk)
 - **Docs / dashboard:** [brevwick.dev](https://brevwick.dev)
 - **Source:** [github.com/tatlacas-com/brevwick-sdk-js](https://github.com/tatlacas-com/brevwick-sdk-js)
 - **Issues:** [github.com/tatlacas-com/brevwick-sdk-js/issues](https://github.com/tatlacas-com/brevwick-sdk-js/issues)

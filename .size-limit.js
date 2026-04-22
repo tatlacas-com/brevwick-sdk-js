@@ -35,12 +35,12 @@ const fileEntry = (name, path, limit) => ({ name, path, limit, ...FILE_MODE });
 export default [
   // ── Core eager chunk (≤ 2.2 kB gzip) ─────────────────────────────────────
   fileEntry(
-    'brevwick-sdk core eager (ESM)',
+    '@tatlacas/brevwick-sdk core eager (ESM)',
     'packages/sdk/dist/index.js',
     '2.2 kB',
   ),
   fileEntry(
-    'brevwick-sdk core eager (CJS)',
+    '@tatlacas/brevwick-sdk core eager (CJS)',
     'packages/sdk/dist/index.cjs',
     '2.2 kB',
   ),
@@ -51,19 +51,27 @@ export default [
   // size ~896 B; 1.5 kB leaves room for small additions but flags any large
   // wrapper bloat.
   fileEntry(
-    'brevwick-sdk screenshot wrapper (ESM)',
+    '@tatlacas/brevwick-sdk screenshot wrapper (ESM)',
     'packages/sdk/dist/screenshot-*.js',
     '1.5 kB',
   ),
   fileEntry(
-    'brevwick-sdk screenshot wrapper (CJS)',
+    '@tatlacas/brevwick-sdk screenshot wrapper (CJS)',
     'packages/sdk/dist/screenshot-*.cjs',
     '1.5 kB',
   ),
 
   // ── React bundle (≤ 25 kB gzip) ──────────────────────────────────────────
-  fileEntry('brevwick-react (ESM)', 'packages/react/dist/index.js', '25 kB'),
-  fileEntry('brevwick-react (CJS)', 'packages/react/dist/index.cjs', '25 kB'),
+  fileEntry(
+    '@tatlacas/brevwick-react (ESM)',
+    'packages/react/dist/index.js',
+    '25 kB',
+  ),
+  fileEntry(
+    '@tatlacas/brevwick-react (CJS)',
+    'packages/react/dist/index.cjs',
+    '25 kB',
+  ),
 
   // ── On-widget-open total weight (≤ 25 kB gzip) ───────────────────────────
   // Bundled-import mode: esbuild re-bundles the screenshot module + its
@@ -71,7 +79,7 @@ export default [
   // the async chunk that loads when the user clicks the FAB. This is what
   // CLAUDE.md and SDD § 11.8 actually mean by "on widget open < 25 kB gzip".
   {
-    name: 'brevwick-sdk on widget open (screenshot + modern-screenshot)',
+    name: '@tatlacas/brevwick-sdk on widget open (screenshot + modern-screenshot)',
     path: 'packages/sdk/dist/index.js',
     import: '{ captureScreenshot }',
     limit: '25 kB',

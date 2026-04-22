@@ -62,10 +62,10 @@ importers:
 
   examples/next:
     dependencies:
-      brevwick-react:
+      '@tatlacas/brevwick-react':
         specifier: workspace:*
         version: link:../../packages/react
-      brevwick-sdk:
+      '@tatlacas/brevwick-sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       next:
@@ -93,7 +93,7 @@ importers:
 
   examples/vanilla:
     dependencies:
-      brevwick-sdk:
+      '@tatlacas/brevwick-sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
     devDependencies:
@@ -110,6 +110,9 @@ importers:
         specifier: ^1.1.15
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
     devDependencies:
+      '@tatlacas/brevwick-sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -122,9 +125,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
-      brevwick-sdk:
-        specifier: workspace:*
-        version: link:../sdk
       react:
         specifier: ^19.2.4
         version: 19.2.5

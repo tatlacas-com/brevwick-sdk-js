@@ -1,6 +1,6 @@
 ---
-'brevwick-react': minor
-'brevwick-sdk': minor
+'@tatlacas/brevwick-react': minor
+'@tatlacas/brevwick-sdk': minor
 ---
 
 feat(react): chat-thread panel redesign for FeedbackButton
@@ -37,5 +37,5 @@ bottom-left).
 - No new dependencies. Widget ESM bundle ≈ 6.9 kB gzip (well under the
   25 kB budget); core SDK untouched at 2.0 kB gzip.
 
-The `brevwick-sdk` bump is the lockstep pre-1.0 version (no code
+The `@tatlacas/brevwick-sdk` bump is the lockstep pre-1.0 version (no code
 changes in the SDK for this PR).

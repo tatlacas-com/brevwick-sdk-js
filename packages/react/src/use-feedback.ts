@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import type { FeedbackInput, SubmitResult } from 'brevwick-sdk';
+import type { FeedbackInput, SubmitResult } from '@tatlacas/brevwick-sdk';
 import { useBrevwickInternal } from './context';
 
 /**

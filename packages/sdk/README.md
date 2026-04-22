@@ -1,16 +1,16 @@
-# brevwick-sdk
+# @tatlacas/brevwick-sdk
 
-[![npm](https://img.shields.io/npm/v/brevwick-sdk/beta?label=brevwick-sdk%40beta)](https://www.npmjs.com/package/brevwick-sdk)
+[![npm](https://img.shields.io/npm/v/@tatlacas/brevwick-sdk/beta?label=@tatlacas/brevwick-sdk%40beta)](https://www.npmjs.com/package/@tatlacas/brevwick-sdk)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 Framework-agnostic core SDK for [Brevwick](https://brevwick.dev). Submit issues from any browser app — screenshot, redact, send. AI-formatted into clean, triage-ready GitHub issues.
 
-For React apps, use [`brevwick-react`](https://www.npmjs.com/package/brevwick-react) (provider, hook, floating-action-button widget). This package is the underlying primitive and ships the entire wire protocol.
+For React apps, use [`@tatlacas/brevwick-react`](https://www.npmjs.com/package/@tatlacas/brevwick-react) (provider, hook, floating-action-button widget). This package is the underlying primitive and ships the entire wire protocol.
 
 ## Install
 
 ```bash
-npm install brevwick-sdk@beta
+npm install @tatlacas/brevwick-sdk@beta
 ```
 
 Or with pnpm / yarn / bun — same name. Pre-1.0 releases track the `beta` dist-tag.
@@ -18,7 +18,7 @@ Or with pnpm / yarn / bun — same name. Pre-1.0 releases track the `beta` dist-
 ## Quick start
 
 ```ts
-import { createBrevwick } from 'brevwick-sdk';
+import { createBrevwick } from '@tatlacas/brevwick-sdk';
 
 const bw = createBrevwick({
   projectKey: 'pk_live_...',
@@ -170,7 +170,7 @@ const blob = await bw.captureScreenshot({
 A tree-shakable top-level `captureScreenshot` is also exported for standalone use (no Brevwick instance required). It's dynamically imported on first call so `modern-screenshot` stays out of your initial bundle:
 
 ```ts
-import { captureScreenshot } from 'brevwick-sdk';
+import { captureScreenshot } from '@tatlacas/brevwick-sdk';
 const blob = await captureScreenshot({ quality: 0.9 });
 ```
 
@@ -226,7 +226,7 @@ import type {
   SubmitError,
   SubmitErrorCode,
   SubmitResult,
-} from 'brevwick-sdk';
+} from '@tatlacas/brevwick-sdk';
 ```
 
 ## Browser support
@@ -236,7 +236,7 @@ ES2020 targets — modern evergreen browsers (Chrome/Edge 90+, Firefox 90+, Safa
 ## Links
 
 - **Docs / dashboard:** [brevwick.dev](https://brevwick.dev)
-- **React bindings:** [`brevwick-react`](https://www.npmjs.com/package/brevwick-react)
+- **React bindings:** [`@tatlacas/brevwick-react`](https://www.npmjs.com/package/@tatlacas/brevwick-react)
 - **Source:** [github.com/tatlacas-com/brevwick-sdk-js](https://github.com/tatlacas-com/brevwick-sdk-js)
 - **Issues:** [github.com/tatlacas-com/brevwick-sdk-js/issues](https://github.com/tatlacas-com/brevwick-sdk-js/issues)
 

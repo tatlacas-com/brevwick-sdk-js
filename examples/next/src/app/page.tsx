@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { ConfiguredWidget } from './configured-widget';
 
-// Mirrors the shape enforced by `brevwick-sdk`'s `validateConfig`. Shape-check
+// Mirrors the shape enforced by `@tatlacas/brevwick-sdk`'s `validateConfig`. Shape-check
 // on the server so the Provider is never mounted with a key that would throw
 // synchronously from `createBrevwick(...)` in the client bundle — that would
 // surface as a blank React crash instead of the friendly banner below.
@@ -70,9 +70,9 @@ export default function Home(): ReactElement {
         <h1 style={{ marginTop: 0 }}>Brevwick — Next.js example</h1>
         <p>
           The floating <strong>Feedback</strong> button is rendered by{' '}
-          <code>&lt;FeedbackButton /&gt;</code> from <code>brevwick-react</code>
-          . Click it, fill the dialog, submit, and check{' '}
-          <code>brevwick-web</code>&rsquo;s inbox.
+          <code>&lt;FeedbackButton /&gt;</code> from{' '}
+          <code>@tatlacas/brevwick-react</code>. Click it, fill the dialog,
+          submit, and check <code>brevwick-web</code>&rsquo;s inbox.
         </p>
         {error === 'missing-key' && (
           <p style={{ color: '#b42318' }}>

@@ -1,6 +1,6 @@
 ---
-'brevwick-react': minor
-'brevwick-sdk': patch
+'@tatlacas/brevwick-react': minor
+'@tatlacas/brevwick-sdk': patch
 ---
 
 feat(react): light/dark theming + composer shell polish
@@ -25,6 +25,6 @@ flex-end` keeps the send button pinned to the bottom as the textarea
 - No public API change (props / hooks / payload unchanged); no new
   runtime dependency.
 
-The `brevwick-sdk` bump is a no-op patch to keep the two packages in
+The `@tatlacas/brevwick-sdk` bump is a no-op patch to keep the two packages in
 lockstep per the repo's pre-1.0 versioning policy; the core SDK has
 no code changes in this release.

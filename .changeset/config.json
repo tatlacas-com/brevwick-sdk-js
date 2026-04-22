@@ -6,7 +6,7 @@
   ],
   "commit": false,
   "fixed": [],
-  "linked": [["brevwick-sdk", "brevwick-react"]],
+  "linked": [["@tatlacas/brevwick-sdk", "@tatlacas/brevwick-react"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

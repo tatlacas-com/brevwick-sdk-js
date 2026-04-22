@@ -17,7 +17,7 @@ import type {
   BrevwickConfig,
   ProjectConfig,
   SubmitResult,
-} from 'brevwick-sdk';
+} from '@tatlacas/brevwick-sdk';
 import pkg from '../../package.json' with { type: 'json' };
 
 const submit = vi.fn<(input: unknown) => Promise<SubmitResult>>();
@@ -26,9 +26,10 @@ const getConfig = vi.fn<() => Promise<ProjectConfig | null>>();
 const install = vi.fn();
 const uninstall = vi.fn();
 
-vi.mock('brevwick-sdk', async () => {
-  const actual =
-    await vi.importActual<typeof import('brevwick-sdk')>('brevwick-sdk');
+vi.mock('@tatlacas/brevwick-sdk', async () => {
+  const actual = await vi.importActual<typeof import('@tatlacas/brevwick-sdk')>(
+    '@tatlacas/brevwick-sdk',
+  );
   return {
     ...actual,
     createBrevwick: (_config: BrevwickConfig) =>

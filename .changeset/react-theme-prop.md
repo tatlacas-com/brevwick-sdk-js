@@ -1,6 +1,6 @@
 ---
-'brevwick-react': minor
-'brevwick-sdk': patch
+'@tatlacas/brevwick-react': minor
+'@tatlacas/brevwick-sdk': patch
 ---
 
 feat(react): `theme` prop on `<FeedbackButton>` (light / dark / system)
@@ -19,8 +19,8 @@ feat(react): `theme` prop on `<FeedbackButton>` (light / dark / system)
   rewrite `--brw-X-base`, never the public `--brw-X`. So
   `theme="dark"` + a consumer `--brw-accent: hotpink` still paints the
   accent hotpink.
-- `BrevwickTheme` type exported from `brevwick-react` for consumers that
+- `BrevwickTheme` type exported from `@tatlacas/brevwick-react` for consumers that
   want to type their own theme-selecting state.
 
-The `brevwick-sdk` patch bump is a no-op to keep the two packages in
+The `@tatlacas/brevwick-sdk` patch bump is a no-op to keep the two packages in
 lockstep per the repo's pre-1.0 versioning policy.

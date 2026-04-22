@@ -2,8 +2,8 @@
  * Shared MSW scaffolding for the React integration suite. Parallels
  * `packages/sdk/src/__tests__/integration/setup.ts`.
  *
- * Why a separate file rather than a shared `brevwick-sdk/testing/msw`
- * subpath export (the precedent set by `brevwick-sdk/testing` for the
+ * Why a separate file rather than a shared `@tatlacas/brevwick-sdk/testing/msw`
+ * subpath export (the precedent set by `@tatlacas/brevwick-sdk/testing` for the
  * registry mutators):
  *
  * - The React variant adds a `GET /v1/ingest/config` handler returning

@@ -1,6 +1,6 @@
 ---
-'brevwick-react': minor
-'brevwick-sdk': minor
+'@tatlacas/brevwick-react': minor
+'@tatlacas/brevwick-sdk': minor
 ---
 
 feat(react): submitter Use-AI toggle + project config fetch
@@ -13,7 +13,7 @@ Implements issue #26 per SDD § 12.
   callers and retains a `null` result so failed or malformed responses are
   not retried).
 - New `ProjectConfig` type (`{ ai_enabled, ai_submitter_choice_allowed }`)
-  exported from `brevwick-sdk`; `fetchConfig` never throws — non-2xx,
+  exported from `@tatlacas/brevwick-sdk`; `fetchConfig` never throws — non-2xx,
   malformed shape, and thrown fetch all resolve to `null`.
 - `FeedbackInput` gains optional `use_ai: boolean`; `composePayload`
   threads it through to the ingest body when defined. Booleans skip

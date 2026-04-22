@@ -1,6 +1,6 @@
 ---
-'brevwick-react': patch
-'brevwick-sdk': patch
+'@tatlacas/brevwick-react': patch
+'@tatlacas/brevwick-sdk': patch
 ---
 
 test(integration): MSW + live-API e2e coverage

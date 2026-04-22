@@ -1,7 +1,7 @@
 # brevwick-example-vanilla
 
 Plain HTML + Vite + TypeScript example that imports
-[`brevwick-sdk`](../../packages/sdk) directly and submits a hard-coded
+[`@tatlacas/brevwick-sdk`](../../packages/sdk) directly and submits a hard-coded
 issue when a button is clicked.
 
 ## Works locally
@@ -20,7 +20,7 @@ issue when a button is clicked.
 3. From the repo root, build the SDK and run the example:
    ```bash
    pnpm install
-   pnpm --filter brevwick-sdk build
+   pnpm --filter @tatlacas/brevwick-sdk build
    pnpm --filter brevwick-example-vanilla dev
    ```
 4. Open http://localhost:5173 and click **Send feedback**.

@@ -1,11 +1,11 @@
 ---
-'brevwick-sdk': minor
-'brevwick-react': minor
+'@tatlacas/brevwick-sdk': minor
+'@tatlacas/brevwick-react': minor
 ---
 
 feat(screenshot): captureScreenshot() via dynamic import
 
-Adds `captureScreenshot(opts?)` to `brevwick-sdk`. The function dynamically
+Adds `captureScreenshot(opts?)` to `@tatlacas/brevwick-sdk`. The function dynamically
 imports `modern-screenshot` so the base bundle stays below the 2 kB gzip
 budget. `[data-brevwick-skip]` nodes are hidden during capture and restored
 afterwards — even on failure. Capture never throws: a failure resolves with a

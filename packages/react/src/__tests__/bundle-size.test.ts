@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
  * `size-limit` (`.size-limit.js` at repo root). Skipped when `dist/` is
  * absent so plain `pnpm test` (no prior build) still passes.
  */
-describe('brevwick-react bundle ceiling', () => {
+describe('@tatlacas/brevwick-react bundle ceiling', () => {
   const dist = resolve(__dirname, '../../dist');
   const baseEsm = resolve(dist, 'index.js');
   const baseCjs = resolve(dist, 'index.cjs');

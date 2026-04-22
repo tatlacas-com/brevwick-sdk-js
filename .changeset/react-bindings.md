@@ -1,6 +1,6 @@
 ---
-'brevwick-react': minor
-'brevwick-sdk': minor
+'@tatlacas/brevwick-react': minor
+'@tatlacas/brevwick-sdk': minor
 ---
 
 feat(react): BrevwickProvider + useFeedback + FeedbackButton
@@ -19,5 +19,5 @@ Ships the React bindings per SDD § 12:
 - `data-brevwick-skip` applied to FAB, overlay, and dialog so captured
   screenshots exclude Brevwick's own UI.
 
-The `brevwick-sdk` bump is the lockstep pre-1.0 version (no code change in
+The `@tatlacas/brevwick-sdk` bump is the lockstep pre-1.0 version (no code change in
 the SDK for this PR).

@@ -5,7 +5,7 @@
 declare const __BREVWICK_REACT_VERSION__: string;
 
 /**
- * Semantic version of the installed `brevwick-react` package. Surfaced at
+ * Semantic version of the installed `@tatlacas/brevwick-react` package. Surfaced at
  * runtime so consumers can include it in bug issues or diagnostics.
  */
 export const BREVWICK_REACT_VERSION: string = __BREVWICK_REACT_VERSION__;
@@ -24,4 +24,4 @@ export type {
   FeedbackAttachment,
   FeedbackInput,
   SubmitResult,
-} from 'brevwick-sdk';
+} from '@tatlacas/brevwick-sdk';

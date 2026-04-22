@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in Brevwick. This repo publishes two npm packages (`brevwick-sdk`, `brevwick-react`) from a pnpm workspace.
+Thanks for your interest in Brevwick. This repo publishes two npm packages (`@tatlacas/brevwick-sdk`, `@tatlacas/brevwick-react`) from a pnpm workspace.
 
 ## Prerequisites
 
@@ -28,8 +28,8 @@ pnpm size            # size-limit gate
 ### Per-package
 
 ```bash
-pnpm --filter brevwick-sdk build
-pnpm --filter brevwick-react test
+pnpm --filter @tatlacas/brevwick-sdk build
+pnpm --filter @tatlacas/brevwick-react test
 ```
 
 ## Bundle budgets
@@ -38,7 +38,7 @@ Hard limits enforced by `size-limit` and unit tests. **Do not exceed.**
 
 | Scope                                       | Budget (gzip) |
 | ------------------------------------------- | ------------- |
-| `brevwick-sdk` initial chunk                | ≤ 2.2 kB      |
+| `@tatlacas/brevwick-sdk` initial chunk      | ≤ 2.2 kB      |
 | On widget open (`modern-screenshot` loaded) | ≤ 25 kB       |
 
 Anything heavy must be dynamic-imported (`await import('modern-screenshot')`) so it stays out of the initial bundle.
@@ -60,13 +60,13 @@ Then in the consumer's `package.json`:
 ```json
 {
   "dependencies": {
-    "brevwick-sdk": "1.0.0-beta.2",
-    "brevwick-react": "1.0.0-beta.2"
+    "@tatlacas/brevwick-sdk": "1.0.0-beta.2",
+    "@tatlacas/brevwick-react": "1.0.0-beta.2"
   },
   "pnpm": {
     "overrides": {
-      "brevwick-sdk": "file:/abs/path/to/brevwick-sdk-js/packages/sdk/brevwick-sdk-1.0.0-beta.2.tgz",
-      "brevwick-react": "file:/abs/path/to/brevwick-sdk-js/packages/react/brevwick-react-1.0.0-beta.2.tgz"
+      "@tatlacas/brevwick-sdk": "file:/abs/path/to/brevwick-sdk-js/packages/sdk/brevwick-sdk-1.0.0-beta.2.tgz",
+      "@tatlacas/brevwick-react": "file:/abs/path/to/brevwick-sdk-js/packages/react/brevwick-react-1.0.0-beta.2.tgz"
     }
   }
 }
@@ -135,18 +135,18 @@ CI's `changeset-check` fails the PR if no changeset is present (except when the 
 
 ### npm dist-tags
 
-- `npm install brevwick-sdk@beta` — canonical install during the beta line.
-- `npm install brevwick-sdk` — resolves to `latest` once stabilisation ships. `latest` is intentionally unpopulated during the beta line. Full policy in SDD § 12.
+- `npm install @tatlacas/brevwick-sdk@beta` — canonical install during the beta line.
+- `npm install @tatlacas/brevwick-sdk` — resolves to `latest` once stabilisation ships. `latest` is intentionally unpopulated during the beta line. Full policy in SDD § 12.
 
 ## Repo secrets
 
 Configured under **Settings → Secrets and variables → Actions**.
 
-| Secret          | Purpose                                                                                                                                                                                                                                                  |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NPM_TOKEN`     | Automation token with publish rights for `brevwick-sdk` and `brevwick-react`. `id-token: write` is also granted so npm provenance can attest the build. A move to [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) is on the roadmap. |
-| `GITHUB_TOKEN`  | Provided by Actions. The workflow requests `contents: write` and `pull-requests: write` so Changesets can open the Version Packages PR and create releases.                                                                                              |
-| `CODECOV_TOKEN` | Coverage upload.                                                                                                                                                                                                                                         |
+| Secret          | Purpose                                                                                                                                                                                                                                                                      |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NPM_TOKEN`     | Automation token with publish rights for `@tatlacas/brevwick-sdk` and `@tatlacas/brevwick-react`. `id-token: write` is also granted so npm provenance can attest the build. A move to [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) is on the roadmap. |
+| `GITHUB_TOKEN`  | Provided by Actions. The workflow requests `contents: write` and `pull-requests: write` so Changesets can open the Version Packages PR and create releases.                                                                                                                  |
+| `CODECOV_TOKEN` | Coverage upload.                                                                                                                                                                                                                                                             |
 
 ## Questions?
 

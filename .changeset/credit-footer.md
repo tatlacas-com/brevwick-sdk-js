@@ -1,6 +1,6 @@
 ---
-'brevwick-react': patch
-'brevwick-sdk': patch
+'@tatlacas/brevwick-react': patch
+'@tatlacas/brevwick-sdk': patch
 ---
 
 feat(react): credit footer with version + brevwick.dev link
@@ -20,6 +20,6 @@ feat(react): credit footer with version + brevwick.dev link
   no new source of truth.
 - No public API change; props, hooks, and payload are unchanged.
 
-The `brevwick-sdk` bump is a no-op patch to keep both packages in
+The `@tatlacas/brevwick-sdk` bump is a no-op patch to keep both packages in
 lockstep per the repo's pre-1.0 versioning policy; the core SDK has
 no code changes in this release.

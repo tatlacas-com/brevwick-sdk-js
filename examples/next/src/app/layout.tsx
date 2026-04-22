@@ -3,7 +3,7 @@ import type { ReactElement, ReactNode } from 'react';
 
 export const metadata: Metadata = {
   title: 'Brevwick — Next.js example',
-  description: 'Minimal Next.js app wired up with brevwick-react.',
+  description: 'Minimal Next.js app wired up with @tatlacas/brevwick-react.',
 };
 
 export const viewport: Viewport = {
