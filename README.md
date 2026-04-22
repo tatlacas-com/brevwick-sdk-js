@@ -1,17 +1,56 @@
-# brevwick-sdk-js
+# Brevwick JS SDK
 
-JS/TS SDK for [Brevwick](https://github.com/tatlacas-com/brevwick-ops) — the AI-first QA feedback SaaS.
+[![npm (sdk)](https://img.shields.io/npm/v/brevwick-sdk/beta?label=brevwick-sdk%40beta)](https://www.npmjs.com/package/brevwick-sdk)
+[![npm (react)](https://img.shields.io/npm/v/brevwick-react/beta?label=brevwick-react%40beta)](https://www.npmjs.com/package/brevwick-react)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-This is a pnpm workspace publishing two packages to npm:
+Ship feedback from any browser app straight into clean, AI-formatted GitHub issues. Drop in a floating button, collect a description + screenshot + the console/network rings that preceded the bug, and Brevwick turns it all into a triage-ready issue on your repo.
 
-| Package                              | Purpose                                                        |
-| ------------------------------------ | -------------------------------------------------------------- |
-| [`brevwick-sdk`](./packages/sdk)     | Framework-agnostic core. Submit feedback from any browser app. |
-| [`brevwick-react`](./packages/react) | React provider, floating FAB, `useFeedback` hook.              |
+> **Status — public beta.** Versions are `1.x.x-beta.N` on the `beta` dist-tag. The API defined here is the frozen surface per the [SDK contract](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts) — breaking changes are possible before the `latest` cutover but will be called out in the changelog.
 
-**Canonical contract:** [`brevwick-ops/docs/brevwick-sdd.md` § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts).
+## Packages
 
-## Quick start (Phase 4 preview)
+| Package                              | Description                                                             | API reference                                          |
+| ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------ |
+| [`brevwick-sdk`](./packages/sdk)     | Framework-agnostic core: submit, screenshot, rings.                     | [packages/sdk/README.md](./packages/sdk/README.md)     |
+| [`brevwick-react`](./packages/react) | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19. | [packages/react/README.md](./packages/react/README.md) |
+
+## Install
+
+Pick the one that matches your stack.
+
+```bash
+# Any browser app (framework-agnostic)
+npm install brevwick-sdk@beta
+
+# React / Next.js / Remix — pulls brevwick-sdk in as a peer dep
+npm install brevwick-react@beta brevwick-sdk@beta
+```
+
+Works with `pnpm add`, `yarn add`, `bun add` — same package names.
+
+## Quick start
+
+### React
+
+```tsx
+import { BrevwickProvider, FeedbackButton } from 'brevwick-react';
+
+export default function App() {
+  return (
+    <BrevwickProvider config={{ projectKey: 'pk_live_...' }}>
+      <YourApp />
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+That's it. A floating action button appears in the bottom-right; clicking it opens a feedback dialog with screenshot capture, file attachments, and your project's AI formatting (if enabled).
+
+Full API and theming → [packages/react/README.md](./packages/react/README.md).
+
+### Vanilla / any framework
 
 ```ts
 import { createBrevwick } from 'brevwick-sdk';
@@ -20,106 +59,39 @@ const bw = createBrevwick({
   projectKey: 'pk_live_...',
   buildSha: process.env.BUILD_SHA,
 });
+bw.install(); // starts capturing console + network + route rings
 
-const uninstall = bw.install(); // installs console + fetch rings
+document.querySelector('#report').addEventListener('click', async () => {
+  const result = await bw.submit({
+    description: 'Checkout hangs on second attempt',
+    expected: 'Order completes',
+    actual: 'Spinner forever',
+    attachments: [await bw.captureScreenshot()],
+  });
 
-await bw.submit({
-  description: 'Customer modal hangs on second open',
-  expected: 'Modal opens with details',
-  actual: 'Spinner forever',
+  if (result.ok) console.log('Filed', result.issue_id);
+  else console.error(result.error.code, result.error.message);
 });
 ```
 
-```tsx
-import { BrevwickProvider, FeedbackButton } from 'brevwick-react';
+Full API → [packages/sdk/README.md](./packages/sdk/README.md).
 
-<BrevwickProvider config={{ projectKey: 'pk_live_...' }}>
-  <App />
-  <FeedbackButton />
-</BrevwickProvider>;
-```
+## Why Brevwick
 
-## Bundle budget
+- **Zero-cost until engaged.** Core bundle is **< 2.2 kB gzip**. The screenshot encoder (`modern-screenshot`) is dynamic-imported and only loads when the user opens the widget — on-open budget is **< 25 kB gzip**.
+- **Privacy-first.** Every payload is redacted client-side before it leaves the device — common secrets (Bearer tokens, cookies, email addresses, credit-card patterns) are stripped from console output, network bodies, and routes before anything is sent. Elements tagged with `data-brevwick-skip` are hidden in screenshots.
+- **Typed end-to-end.** Full TypeScript types for config, submit input, results, and errors. `submit()` never throws — it resolves to a tagged `{ ok: true, issue_id }` / `{ ok: false, error }` so you handle failures explicitly.
+- **SSR-safe.** All browser APIs are behind `typeof window` / `typeof document` guards; SSR renders cleanly and rings activate on first client mount.
 
-- Initial chunk (no widget open): **< 2 kB gzip**
-- On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
+## Browser support
 
-## Common commands
+ES2020 targets — modern evergreen browsers (Chrome/Edge 90+, Firefox 90+, Safari 15+). No IE, no transpile-down. Node is a build-time dependency only; the SDK runs in the browser.
 
-```bash
-pnpm install
-pnpm build           # build all packages
-pnpm test            # run vitest in all packages
-pnpm test:cover      # with coverage
-pnpm lint
-pnpm type-check
-pnpm format
-```
+## Links
 
-## Local testing in a host app (pre-publish)
-
-Before a package hits npm, you can consume it from a sibling app checkout (e.g. `tradekit-web`). On Next.js 16+ the `link:` / symlink route does **not** work — Turbopack refuses to resolve packages outside the consumer's project root, even with `transpilePackages` or `turbopack.resolveAlias`. Use a tarball install instead.
-
-**One-shot sync (build → pack → reinstall in the consumer):**
-
-```bash
-scripts/sync-to-tradekit-web.sh
-```
-
-The script defaults to `/home/tatlacas/repos/tradekit/tradekit-web`. Override with `BREVWICK_CONSUMER=/path/to/other/app scripts/sync-to-tradekit-web.sh`. Tarballs land at `packages/{sdk,react}/*.tgz` (git-ignored).
-
-**Consumer-side wiring** (one-time, in the host app's `package.json`):
-
-```json
-{
-  "dependencies": {
-    "brevwick-sdk": "0.1.0-beta.1",
-    "brevwick-react": "0.1.0-beta.1"
-  },
-  "pnpm": {
-    "overrides": {
-      "brevwick-sdk": "file:/abs/path/to/brevwick-sdk-js/packages/sdk/brevwick-sdk-0.1.0-beta.1.tgz",
-      "brevwick-react": "file:/abs/path/to/brevwick-sdk-js/packages/react/brevwick-react-0.1.0-beta.1.tgz"
-    }
-  }
-}
-```
-
-The `dependencies` entries stay after the package publishes to npm; the `pnpm.overrides` block **must be deleted before merging the consumer's PR** (CI installs from npm, not from a local path). Re-run the sync script whenever you change SDK code — there is no live-reload through a tarball.
-
-## Releasing
-
-Releases are driven by [Changesets](https://github.com/changesets/changesets). The two packages are **linked** (version in lockstep) pre-1.0 and currently in **pre-release mode** (`beta`) — `.changeset/pre.json` pins the tag so `changeset version` emits `0.1.0-beta.x` suffixes until the next `changeset pre exit` (planned for the `0.1.0` stabilisation / tradekit cutover, per issue #8).
-
-### Contributor flow
-
-1. On any PR that changes `packages/**`, add a changeset:
-
-   ```bash
-   pnpm changeset
-   ```
-
-   Pick the affected package(s), the bump type, and write a short summary. Commit the generated `.changeset/*.md` file.
-
-2. CI (`changeset-check`) fails the PR if no changeset is present.
-
-### Publish flow
-
-- On merge to `main`, the `release` workflow runs `changesets/action@v1`.
-- If pending changesets exist, the action opens (or updates) a **Version Packages** PR that consumes the changesets, bumps both package versions in lockstep, and updates changelogs.
-- **Squash-merging the Version Packages PR** triggers the same workflow on `main`, which then runs `pnpm release` — building and publishing both packages to npm under the `beta` dist-tag with [provenance](https://docs.npmjs.com/generating-provenance-statements).
-- GitHub Releases are generated automatically from the changelog body.
-
-### npm dist-tags
-
-- `npm add brevwick-sdk@beta` — canonical install during the `0.1.0-beta.x` MVP line (bleeding edge).
-- `npm add brevwick-sdk` — resolves to the `latest` dist-tag once stabilisation at `0.1.0` ships (tradekit cutover). The `latest` tag is intentionally unpopulated during the beta line. The full dist-tag policy is documented in [`brevwick-ops/docs/brevwick-sdd.md` § 12](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-client-sdk-contracts) (tracking: brevwick-ops#3).
-
-### Repo secrets
-
-- `NPM_TOKEN` — automation token with publish rights for `brevwick-sdk` and `brevwick-react`. Set under **Settings → Secrets and variables → Actions**. Required by the `release` workflow; `id-token: write` permission is also granted so npm provenance can attest the build.
-- `GITHUB_TOKEN` — provided by Actions; the workflow requests `contents: write` and `pull-requests: write` so Changesets can open the Version Packages PR and create releases.
-
-## Status
-
-Phase 0 — scaffolding. Both packages are baselined at `0.1.0-beta.0` on the `beta` dist-tag line; the first published artefact will be `0.1.0-beta.1` once the next real changeset merges to `main` (requires `NPM_TOKEN`, tracked in #15). The packages currently contain only types and the redaction helpers. Real submit/screenshot/rings land in Phase 4 alongside `brevwick-api` Phase 2. Issue #8 targets stabilisation at `0.1.0` on tradekit cutover.
+- **Docs / dashboard:** [brevwick.dev](https://brevwick.dev)
+- **API reference (core):** [packages/sdk/README.md](./packages/sdk/README.md)
+- **API reference (React):** [packages/react/README.md](./packages/react/README.md)
+- **Issues & feature requests:** [github.com/tatlacas-com/brevwick-sdk-js/issues](https://github.com/tatlacas-com/brevwick-sdk-js/issues)
+- **Contributing:** [CONTRIBUTING.md](./CONTRIBUTING.md)
+- **License:** [MIT](./LICENSE)
