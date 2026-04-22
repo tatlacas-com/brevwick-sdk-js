@@ -1,6 +1,6 @@
 {
   "name": "brevwick-sdk",
-  "version": "0.1.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Brevwick core SDK — submit issues from any browser app. AI-formatted into clean GitHub-ready issues.",
   "license": "MIT",
   "type": "module",
