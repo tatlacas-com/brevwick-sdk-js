@@ -18,13 +18,13 @@ legible end-to-end:
 
 - **Multiple screenshots per submission** (#56). The composer now keeps
   a bounded array of screenshots instead of a single field; each capture
-  appends rather than replacing the previous one. The combined screenshot
-  + file total caps at 5 (mirrors the SDK's `MAX_ATTACHMENT_COUNT`); the
-  attach buttons disable with an explanatory `aria-label` once the cap
-  is reached. Single-screenshot submissions keep the historical
-  `screenshot.<ext>` wire filename; multi-screenshot submissions
-  disambiguate as `screenshot-1.<ext>`, `screenshot-2.<ext>`, in capture
-  order.
+  appends rather than replacing the previous one. The combined
+  screenshot/file total caps at 5 (mirrors the SDK's
+  `MAX_ATTACHMENT_COUNT`); the attach buttons disable with an explanatory
+  `aria-label` once the cap is reached. Single-screenshot submissions
+  keep the historical `screenshot.<ext>` wire filename; multi-screenshot
+  submissions disambiguate as `screenshot-1.<ext>`, `screenshot-2.<ext>`,
+  in capture order.
 
 - **Tap thumbnail to preview** (#57). The screenshot chip's image is now
   a button that opens a Radix `Dialog` preview at viewport-fit size. Esc,
