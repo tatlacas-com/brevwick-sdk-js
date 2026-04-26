@@ -1022,6 +1022,307 @@ describe('<FeedbackButton>', () => {
   });
 });
 
+/**
+ * Issues #55 / #56 / #57 — multi-screenshot, in-flight loading indicator,
+ * and tap-to-preview thumbnails. The pre-existing single-screenshot tests
+ * above pin the "one capture" wire format; this block locks in the array
+ * shape, the cap, the capturing bubble, and the preview dialog wiring.
+ */
+describe('<FeedbackButton> — multi-screenshot + preview', () => {
+  it('keeps both captures (no replace) and disambiguates filenames on submit', async () => {
+    const first = new Blob(['1'], { type: 'image/png' });
+    const second = new Blob(['2'], { type: 'image/webp' });
+    captureScreenshot.mockResolvedValueOnce(first);
+    captureScreenshot.mockResolvedValueOnce(second);
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_multi' });
+    mount();
+    openPanel();
+
+    await captureFullPage();
+    await captureFullPage();
+
+    expect(
+      screen.getByRole('button', { name: /remove screenshot 1/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /remove screenshot 2/i }),
+    ).toBeInTheDocument();
+
+    typeDraft('two screenshots');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    const input = submit.mock.calls[0]![0] as {
+      attachments: Array<{ blob: Blob; filename: string }>;
+    };
+    expect(input.attachments).toHaveLength(2);
+    expect(input.attachments[0]!.filename).toBe('screenshot-1.png');
+    expect(input.attachments[1]!.filename).toBe('screenshot-2.webp');
+  });
+
+  it('disables the screenshot button once the combined attachment cap (5) is hit', async () => {
+    for (let i = 0; i < 5; i++) {
+      captureScreenshot.mockResolvedValueOnce(
+        new Blob([String(i)], { type: 'image/png' }),
+      );
+    }
+    mount();
+    openPanel();
+    for (let i = 0; i < 5; i++) await captureFullPage();
+
+    expect(
+      screen
+        .getAllByRole('button', { name: /remove screenshot/i })
+        .filter((n) => n.tagName === 'BUTTON'),
+    ).toHaveLength(5);
+    const screenshotBtn = screen.getByRole('button', {
+      name: /maximum 5 attachments reached/i,
+    });
+    expect(screenshotBtn).toBeDisabled();
+    expect(captureScreenshot).toHaveBeenCalledTimes(5);
+  });
+
+  it('shows a "Capturing screenshot…" indicator between region close and the chip render', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    await captureFullPage();
+
+    // Capture is still pending — bubble + spinner should be visible.
+    expect(screen.getByText(/capturing screenshot/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /remove screenshot/i }),
+    ).toBeNull();
+
+    await act(async () => {
+      release(new Blob(['x'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^remove screenshot$/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/capturing screenshot/i)).toBeNull();
+  });
+
+  it('disables the screenshot button while a capture is in flight', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    await captureFullPage();
+
+    expect(
+      screen.getByRole('button', { name: /capturing screenshot/i }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      release(new Blob(['x'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      ).not.toBeDisabled(),
+    );
+  });
+
+  it('blocks Enter-to-send while a capture is in flight (no submit without the pending screenshot)', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    typeDraft('partial draft');
+    await captureFullPage();
+
+    // Send button is disabled because Capture is in flight; Enter-to-send
+    // is independently guarded inside doSubmit so the keyboard path can't
+    // race past the disabled-button protection.
+    expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled();
+    fireEvent.keyDown(getComposer(), { key: 'Enter' });
+    expect(submit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      release(new Blob(['x'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    // After capture resolves, Send re-enables and submission works
+    // normally — the guard only fires while `capturing` is true.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^send$/i }),
+      ).not.toBeDisabled(),
+    );
+  });
+
+  it('surfaces an error when a capture lands after the cap was reached', async () => {
+    // Hit the defence-in-depth branch in performCapture by gating the second
+    // capture on a pending promise: open the region overlay → click Capture
+    // (capture #2 is in flight) → race the cap-fill: in production the cap
+    // fills via concurrent file-attaches, but the easier reproduction is to
+    // attach four files between the click and the resolve so the cap is at
+    // 5 (4 files + 1 first screenshot) when capture #2 lands.
+    const first = new Blob(['1'], { type: 'image/png' });
+    captureScreenshot.mockResolvedValueOnce(first);
+    let releaseSecond: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        releaseSecond = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    await captureFullPage();
+
+    // Kick off capture #2 (still pending).
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture full page/i }),
+      );
+    });
+
+    // Fill the remaining 4 slots with files while capture #2 is in flight.
+    const fileInput = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const dt = new DataTransfer();
+    for (let i = 0; i < 4; i++) {
+      dt.items.add(new File(['f'], `f${i}.png`, { type: 'image/png' }));
+    }
+    fireEvent.change(fileInput, { target: { files: dt.files } });
+
+    // Resolve capture #2 — performCapture's cap guard rejects the new
+    // capture and surfaces the error message.
+    await act(async () => {
+      releaseSecond(new Blob(['2'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByText(/maximum 5 attachments reached/i, {
+          selector: '[role="alert"]',
+        }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('tapping a screenshot thumbnail opens a preview dialog with the captured image', async () => {
+    const blob = new Blob(['x'], { type: 'image/png' });
+    captureScreenshot.mockResolvedValueOnce(blob);
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:mock-preview');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    mount();
+    openPanel();
+    await captureFullPage();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /preview screenshot/i }),
+    );
+    const preview = screen.getByTestId('brw-preview-dialog');
+    expect(preview).toBeInTheDocument();
+    const img = within(preview).getByRole('img', {
+      name: /captured screenshot/i,
+    });
+    expect(img).toHaveAttribute('src', 'blob:mock-preview');
+
+    fireEvent.click(
+      within(preview).getByRole('button', { name: /close preview/i }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId('brw-preview-dialog')).toBeNull(),
+    );
+    createObjectURL.mockRestore();
+  });
+
+  it('Esc dismisses the preview dialog without removing the screenshot', async () => {
+    const blob = new Blob(['x'], { type: 'image/png' });
+    captureScreenshot.mockResolvedValueOnce(blob);
+    mount();
+    openPanel();
+    await captureFullPage();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /preview screenshot/i }),
+    );
+    const preview = screen.getByTestId('brw-preview-dialog');
+    fireEvent.keyDown(preview, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByTestId('brw-preview-dialog')).toBeNull(),
+    );
+    // Chip survives the Esc — Esc on the preview must not bubble up into
+    // the panel's own minimize handler. The chip's preview-button is the
+    // canonical "screenshot is still attached" probe.
+    expect(
+      screen.getByRole('button', { name: /preview screenshot/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('clicking the chip × does not open the preview dialog', async () => {
+    const blob = new Blob(['x'], { type: 'image/png' });
+    captureScreenshot.mockResolvedValueOnce(blob);
+    mount();
+    openPanel();
+    await captureFullPage();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /^remove screenshot$/i }),
+    );
+    expect(screen.queryByTestId('brw-preview-dialog')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /preview screenshot/i }),
+    ).toBeNull();
+  });
+
+  it('removing a screenshot while its preview is open closes the dialog', async () => {
+    const first = new Blob(['1'], { type: 'image/png' });
+    const second = new Blob(['2'], { type: 'image/png' });
+    captureScreenshot.mockResolvedValueOnce(first);
+    captureScreenshot.mockResolvedValueOnce(second);
+    mount();
+    openPanel();
+    await captureFullPage();
+    await captureFullPage();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /preview screenshot 2/i }),
+    );
+    expect(screen.getByTestId('brw-preview-dialog')).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /^remove screenshot 2$/i }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId('brw-preview-dialog')).toBeNull(),
+    );
+  });
+});
+
 describe('<FeedbackButton> — Use AI toggle', () => {
   async function mountAndOpen(): Promise<void> {
     mount();

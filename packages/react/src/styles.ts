@@ -298,6 +298,25 @@ export const BREVWICK_CSS = `
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;
+  display: block;
+}
+/* Tap-to-preview button wrapping the chip thumbnail (issue #57). The button
+   is just a transparent affordance; its child img carries the visual.
+   inline-flex keeps the image vertically centred against the chip text,
+   and the focus ring lands on the button so keyboard users see the
+   activation target without an outline on the image itself. */
+.brw-chip-preview-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.brw-chip-preview-btn:focus-visible {
+  outline: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+  outline-offset: 2px;
 }
 .brw-chip-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .brw-chip-size { color: var(--brw-fg-muted, var(--brw-fg-muted-base)); }
@@ -586,6 +605,46 @@ export const BREVWICK_CSS = `
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-4px); }
   75% { transform: translateX(4px); }
+}
+/* Screenshot preview dialog (issue #57). Sits above the panel and the
+   region overlay z-stack so the dialog is always on top when triggered
+   from a chip in the panel. The image is contain-bounded to 90vw / 80vh
+   so a tall full-page capture stays readable and a small region capture
+   isn't upscaled past its native pixels. */
+.brw-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 2147483006;
+}
+.brw-preview-layer {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483007;
+  outline: none;
+}
+.brw-preview-image {
+  max-width: 90vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+  background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+}
+.brw-preview-close {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+  border: 1px solid var(--brw-border, var(--brw-border-base));
+  box-shadow: var(--brw-shadow, var(--brw-shadow-base));
 }
 @media (prefers-reduced-motion: reduce) {
   .brw-region-shake { animation: none; }
