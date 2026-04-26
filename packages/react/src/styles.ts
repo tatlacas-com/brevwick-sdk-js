@@ -272,7 +272,7 @@ export const BREVWICK_CSS = `
   border-bottom-right-radius: 4px;
 }
 .brw-bubble--receipt {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
   margin-top: 6px;

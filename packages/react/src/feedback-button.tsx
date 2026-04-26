@@ -32,6 +32,19 @@ import {
 declare const __BREVWICK_REACT_VERSION__: string;
 
 /**
+ * Stable snapshot of one attachment that rode along with a submit. We store
+ * only the underlying `Blob` (not the live `ScreenshotAttachment.url`),
+ * because the success path revokes the composer's object URL the moment the
+ * snapshot is appended — keeping the URL on the message would leave a
+ * dangling reference. A future render that wants to preview the attachment
+ * can call `URL.createObjectURL(blob)` itself.
+ */
+interface MessageAttachment {
+  blob: Blob;
+  filename?: string;
+}
+
+/**
  * One bubble in the conversation thread. The greeting and submitted-issue
  * receipt are `assistant` messages; submitted drafts become `user` messages.
  * `attachments` snapshots the screenshot + files that rode along with the
@@ -45,8 +58,8 @@ interface Message {
   sentAt?: number;
   issueSent?: boolean;
   attachments?: {
-    screenshot?: ScreenshotAttachment;
-    files?: readonly FileAttachment[];
+    screenshot?: MessageAttachment;
+    files?: readonly MessageAttachment[];
   };
 }
 
@@ -493,19 +506,26 @@ export function FeedbackButton({
       if (!mountedRef.current) return;
       onSubmit?.(result);
       if (result.ok) {
+        const screenshotSnapshot: MessageAttachment | undefined =
+          submittedScreenshot ? { blob: submittedScreenshot.blob } : undefined;
+        const filesSnapshot: readonly MessageAttachment[] | undefined =
+          submittedFiles.length > 0
+            ? submittedFiles.map(({ file }) => ({
+                blob: file,
+                filename: file.name,
+              }))
+            : undefined;
         const userMessage: Message = {
           id: `msg-${++messageIdRef.current}`,
           role: 'user',
           text: submittedDraft,
           attachments:
-            submittedScreenshot || submittedFiles.length > 0
+            screenshotSnapshot || filesSnapshot
               ? {
-                  ...(submittedScreenshot
-                    ? { screenshot: submittedScreenshot }
+                  ...(screenshotSnapshot
+                    ? { screenshot: screenshotSnapshot }
                     : {}),
-                  ...(submittedFiles.length > 0
-                    ? { files: submittedFiles }
-                    : {}),
+                  ...(filesSnapshot ? { files: filesSnapshot } : {}),
                 }
               : undefined,
         };
@@ -861,9 +881,9 @@ function AssistantBubble({
     <div className="brw-bubble brw-bubble--assistant">
       {children}
       {issueSent && (
-        <span className="brw-bubble--receipt">
+        <div className="brw-bubble--receipt">
           <CheckIcon /> Issue sent · {formatRelativeTime(sentAt)}
-        </span>
+        </div>
       )}
     </div>
   );

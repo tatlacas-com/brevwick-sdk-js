@@ -940,6 +940,36 @@ describe('<FeedbackButton>', () => {
     expect(input.title).toBe('hello world');
   });
 
+  it('submits with a file attachment so the doSubmit + snapshot file paths run', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_files' });
+    mount();
+    openPanel();
+
+    const fileInput = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(['payload'], 'log.txt', { type: 'text/plain' });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fireEvent.change(fileInput, { target: { files: dt.files } });
+
+    typeDraft('with file');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+
+    // Submit payload carries the attached file.
+    const payload = submit.mock.calls[0]![0] as {
+      attachments: Array<{ blob: Blob; filename: string }>;
+    };
+    expect(payload.attachments).toHaveLength(1);
+    expect(payload.attachments[0]!.filename).toBe('log.txt');
+
+    // User bubble persists post-submit, composer is back to empty.
+    expect(screen.getByText('with file')).toBeInTheDocument();
+    expect(getComposer().value).toBe('');
+  });
+
   it('issue-sent receipt timestamp formats minutes, hours, and days', async () => {
     // Pin Date.now() so we can advance the wall clock without firing
     // real timers (which would interfere with the submit pipeline).
