@@ -177,6 +177,11 @@ export const BREVWICK_CSS = `
 }
 .brw-panel-br { right: 24px; }
 .brw-panel-bl { left: 24px; }
+/* Toggled while the region-capture overlay is up (issue #49) so the panel
+   stops occluding page content the user is trying to screenshot. The panel
+   stays in the layout to preserve composer state, focus, and React tree;
+   only painting and hit-testing are suppressed. */
+.brw-panel-hidden { visibility: hidden; pointer-events: none; }
 @keyframes brw-slide-up {
   from { transform: translateY(16px); opacity: 0; }
   to { transform: none; opacity: 1; }

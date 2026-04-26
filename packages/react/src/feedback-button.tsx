@@ -544,7 +544,13 @@ export function FeedbackButton({
         <Dialog.Content
           data-brevwick-skip=""
           data-brw-theme={theme}
-          className={`${rootClassName} brw-panel ${panelPosClass}`}
+          // Hide the panel while the region overlay is up so the user can see
+          // (and select a region over) page content the panel would otherwise
+          // cover. The panel stays mounted — visibility:hidden preserves
+          // composer state, focus is owned by the overlay's nested Dialog,
+          // and the existing `data-brevwick-skip` keeps it out of the
+          // captured image.
+          className={`${rootClassName} brw-panel ${panelPosClass}${regionOpen ? ' brw-panel-hidden' : ''}`}
           aria-describedby={undefined}
         >
           <PanelHeader

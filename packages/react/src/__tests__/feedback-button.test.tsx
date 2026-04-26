@@ -1453,6 +1453,83 @@ describe('<FeedbackButton> — region capture overlay', () => {
     ).toBeInTheDocument();
   });
 
+  // Issue #49: with the overlay up, the panel was still painted at its
+  // anchor corner and obscured page content the user was trying to
+  // screenshot. The fix toggles `brw-panel-hidden` (visibility:hidden +
+  // pointer-events:none) on the panel for the lifetime of the overlay.
+  it('hides the feedback panel while the region overlay is open and restores it on cancel', () => {
+    mount();
+    openPanel();
+    const panel = screen
+      .getByText(/send feedback/i)
+      .closest('.brw-panel') as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(panel.className).not.toMatch(/brw-panel-hidden/);
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /capture screenshot of this page/i,
+      }),
+    );
+    expect(panel.className).toMatch(/brw-panel-hidden/);
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(queryOverlay()).toBeNull();
+    expect(panel.className).not.toMatch(/brw-panel-hidden/);
+  });
+
+  it('preserves the composer draft across an open/cancel of the region overlay', () => {
+    mount();
+    openPanel();
+    typeDraft('regression repro for issue 49');
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /capture screenshot of this page/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(getComposer().value).toBe('regression repro for issue 49');
+  });
+
+  it('keeps the panel hidden through a "Capture full page" round-trip', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['full'], { type: 'image/webp' }),
+    );
+    mount();
+    openPanel();
+    const panel = screen
+      .getByText(/send feedback/i)
+      .closest('.brw-panel') as HTMLElement;
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /capture screenshot of this page/i,
+      }),
+    );
+    expect(panel.className).toMatch(/brw-panel-hidden/);
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture full page/i }),
+      );
+    });
+    // Overlay closes, panel is visible again, screenshot landed in composer.
+    expect(queryOverlay()).toBeNull();
+    expect(panel.className).not.toMatch(/brw-panel-hidden/);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /remove screenshot/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('declares brw-panel-hidden as visibility:hidden in the stylesheet', () => {
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-panel-hidden\s*\{[^}]*visibility:\s*hidden/,
+    );
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-panel-hidden\s*\{[^}]*pointer-events:\s*none/,
+    );
+  });
+
   it('pointer drag produces a visible selection rectangle sized to the drag', () => {
     mount();
     openOverlay();
