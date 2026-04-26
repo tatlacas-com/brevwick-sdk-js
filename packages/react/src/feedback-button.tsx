@@ -32,6 +32,48 @@ import {
 declare const __BREVWICK_REACT_VERSION__: string;
 
 /**
+ * Stable snapshot of one attachment that rode along with a submit. We store
+ * only the underlying `Blob` (not the live `ScreenshotAttachment.url`),
+ * because the success path revokes the composer's object URL the moment the
+ * snapshot is appended — keeping the URL on the message would leave a
+ * dangling reference. A future render that wants to preview the attachment
+ * can call `URL.createObjectURL(blob)` itself.
+ */
+interface MessageAttachment {
+  blob: Blob;
+  filename?: string;
+}
+
+/**
+ * One bubble in the conversation thread. The greeting and submitted-issue
+ * receipt are `assistant` messages; submitted drafts become `user` messages.
+ * `attachments` snapshots the screenshot + files that rode along with the
+ * submit so a follow-up render can show what was sent (currently the bubble
+ * itself just shows text, but the field is there for forward-compat).
+ */
+interface Message {
+  id: string;
+  role: 'assistant' | 'user';
+  text: string;
+  sentAt?: number;
+  issueSent?: boolean;
+  attachments?: {
+    screenshot?: MessageAttachment;
+    files?: readonly MessageAttachment[];
+  };
+}
+
+const GREETING_MESSAGE: Message = {
+  id: 'greeting',
+  role: 'assistant',
+  text: "Hi! Tell us what's happening. A screenshot helps if you have one.",
+};
+
+const initialMessages = (): Message[] => [GREETING_MESSAGE];
+
+const ASSISTANT_RECEIPT_TEXT = 'Thanks — your issue is on its way.';
+
+/**
  * Forced-palette choice for {@link FeedbackButton}. `'system'` defers to the
  * OS-level `prefers-color-scheme` media query (the default and pre-existing
  * behaviour); `'light'` / `'dark'` override it regardless of the OS setting.
@@ -67,9 +109,6 @@ export interface FeedbackButtonProps {
   /** Fired with the SDK's `SubmitResult` after every submit (success or failure). */
   onSubmit?: (result: SubmitResult) => void;
 }
-
-const GREETING =
-  "Hi! Tell us what's happening. A screenshot helps if you have one.";
 
 const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -248,7 +287,7 @@ export function FeedbackButton({
   const [files, setFiles] = useState<readonly FileAttachment[]>([]);
   const [confirmClose, setConfirmClose] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [succeeded, setSucceeded] = useState(false);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [regionOpen, setRegionOpen] = useState(false);
   // Submitter's per-issue AI preference. Defaults to true so the toggle
   // renders "on" the first time; only read on submit when the render-policy
@@ -257,7 +296,7 @@ export function FeedbackButton({
   const mountedRef = useRef(true);
   const screenshotUrlRef = useRef<string | null>(null);
   const fileIdRef = useRef(0);
-  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const messageIdRef = useRef(0);
 
   useBrevwickStyles();
 
@@ -306,7 +345,7 @@ export function FeedbackButton({
     setFiles([]);
     setConfirmClose(false);
     setSubmitError(null);
-    setSucceeded(false);
+    setMessages(initialMessages());
     setUseAi(true);
     reset();
   }, [reset]);
@@ -337,16 +376,12 @@ export function FeedbackButton({
   );
 
   const handleCloseClick = useCallback(() => {
-    if (succeeded) {
-      handleFullClose();
-      return;
-    }
     if (hasContent) {
       setConfirmClose(true);
       return;
     }
     handleFullClose();
-  }, [succeeded, hasContent, handleFullClose]);
+  }, [hasContent, handleFullClose]);
 
   // Split from the historical one-shot capture: the button now only opens
   // the region overlay, and the overlay fans out to either a full-page or
@@ -458,12 +493,63 @@ export function FeedbackButton({
       ...(showAiToggle ? { use_ai: useAi } : {}),
     };
 
+    // Snapshot the current composer state so the success branch can quote
+    // it back into the user bubble even if the user minimized mid-submit
+    // (in which case React's setState below races with whatever they typed
+    // after — the snapshot pins the version of the draft we're submitting).
+    const submittedDraft = draft;
+    const submittedScreenshot = screenshot;
+    const submittedFiles = files;
+
     try {
       const result = await submit(input);
       if (!mountedRef.current) return;
       onSubmit?.(result);
       if (result.ok) {
-        setSucceeded(true);
+        const screenshotSnapshot: MessageAttachment | undefined =
+          submittedScreenshot ? { blob: submittedScreenshot.blob } : undefined;
+        const filesSnapshot: readonly MessageAttachment[] | undefined =
+          submittedFiles.length > 0
+            ? submittedFiles.map(({ file }) => ({
+                blob: file,
+                filename: file.name,
+              }))
+            : undefined;
+        const userMessage: Message = {
+          id: `msg-${++messageIdRef.current}`,
+          role: 'user',
+          text: submittedDraft,
+          attachments:
+            screenshotSnapshot || filesSnapshot
+              ? {
+                  ...(screenshotSnapshot
+                    ? { screenshot: screenshotSnapshot }
+                    : {}),
+                  ...(filesSnapshot ? { files: filesSnapshot } : {}),
+                }
+              : undefined,
+        };
+        const assistantMessage: Message = {
+          id: `msg-${++messageIdRef.current}`,
+          role: 'assistant',
+          text: ASSISTANT_RECEIPT_TEXT,
+          issueSent: true,
+          sentAt: Date.now(),
+        };
+        setMessages((prev) => [...prev, userMessage, assistantMessage]);
+        // Clear the composer in place — composer stays mounted and focus
+        // stays put, so a chained submit reads naturally as the same chat
+        // session continuing.
+        setDraft('');
+        setExpected('');
+        setActual('');
+        setShowExtras(false);
+        setScreenshot((prev) => {
+          if (prev) URL.revokeObjectURL(prev.url);
+          return null;
+        });
+        setFiles([]);
+        setSubmitError(null);
         // If the user minimized mid-submit, pop the panel back open so the
         // success confirmation is actually seen. A silent success while
         // hidden leaves the user unsure whether their issue landed.
@@ -495,28 +581,6 @@ export function FeedbackButton({
     submit,
     useAi,
   ]);
-
-  // Pending-focus flag: "Send another" needs to focus the composer, but the
-  // composer only remounts after the SuccessState unmounts. A layout effect
-  // below consumes the flag after the composer is in the tree.
-  const [focusComposerPending, setFocusComposerPending] = useState(false);
-
-  /**
-   * "Send another" — reset back to the empty Thread+Composer and move focus
-   * into the composer textarea so keyboard users aren't dumped onto whatever
-   * Radix's focus-trap picks next (the close button, in practice).
-   */
-  const handleSendAnother = useCallback(() => {
-    resetAll();
-    setFocusComposerPending(true);
-  }, [resetAll]);
-
-  useIsomorphicLayoutEffect(() => {
-    if (!focusComposerPending) return;
-    if (!composerRef.current) return;
-    composerRef.current.focus();
-    setFocusComposerPending(false);
-  }, [focusComposerPending, succeeded]);
 
   if (hidden) return null;
 
@@ -558,43 +622,35 @@ export function FeedbackButton({
             onMinimize={handleMinimize}
             onClose={handleCloseClick}
           />
-          {succeeded ? (
-            <SuccessState onSendAnother={handleSendAnother} />
-          ) : (
-            <Thread
-              greeting={GREETING}
-              draft={draft}
-              screenshot={screenshot}
-              files={files}
-              showExtras={showExtras}
-              expected={expected}
-              actual={actual}
-              confirmClose={confirmClose}
-              submitError={submitError}
-              status={status}
-              onToggleExtras={() => setShowExtras((v) => !v)}
-              onExpectedChange={setExpected}
-              onActualChange={setActual}
-              onRemoveScreenshot={removeScreenshot}
-              onRemoveFile={removeFile}
-              onConfirmDiscard={handleFullClose}
-              onCancelClose={() => setConfirmClose(false)}
-            />
-          )}
-          {!succeeded && (
-            <Composer
-              ref={composerRef}
-              draft={draft}
-              submitting={status === 'submitting'}
-              showAiToggle={showAiToggle}
-              useAi={useAi}
-              onDraftChange={setDraft}
-              onSubmit={doSubmit}
-              onAttachScreenshot={handleOpenRegionOverlay}
-              onAttachFiles={handleFiles}
-              onUseAiChange={setUseAi}
-            />
-          )}
+          <Thread
+            messages={messages}
+            screenshot={screenshot}
+            files={files}
+            showExtras={showExtras}
+            expected={expected}
+            actual={actual}
+            confirmClose={confirmClose}
+            submitError={submitError}
+            status={status}
+            onToggleExtras={() => setShowExtras((v) => !v)}
+            onExpectedChange={setExpected}
+            onActualChange={setActual}
+            onRemoveScreenshot={removeScreenshot}
+            onRemoveFile={removeFile}
+            onConfirmDiscard={handleFullClose}
+            onCancelClose={() => setConfirmClose(false)}
+          />
+          <Composer
+            draft={draft}
+            submitting={status === 'submitting'}
+            showAiToggle={showAiToggle}
+            useAi={useAi}
+            onDraftChange={setDraft}
+            onSubmit={doSubmit}
+            onAttachScreenshot={handleOpenRegionOverlay}
+            onAttachFiles={handleFiles}
+            onUseAiChange={setUseAi}
+          />
           <PanelFooter />
         </Dialog.Content>
       </Dialog.Portal>
@@ -672,8 +728,7 @@ function PanelFooter(): ReactElement {
 }
 
 interface ThreadProps {
-  greeting: string;
-  draft: string;
+  messages: readonly Message[];
   screenshot: ScreenshotAttachment | null;
   files: readonly FileAttachment[];
   showExtras: boolean;
@@ -692,8 +747,7 @@ interface ThreadProps {
 }
 
 function Thread({
-  greeting,
-  draft,
+  messages,
   screenshot,
   files,
   showExtras,
@@ -710,7 +764,6 @@ function Thread({
   onConfirmDiscard,
   onCancelClose,
 }: ThreadProps): ReactElement {
-  const trimmed = draft.trim();
   return (
     <div
       className="brw-thread"
@@ -718,8 +771,19 @@ function Thread({
       aria-live="polite"
       aria-label="Conversation"
     >
-      <AssistantBubble>{greeting}</AssistantBubble>
-      {trimmed.length > 0 && <UserBubble>{draft}</UserBubble>}
+      {messages.map((message) =>
+        message.role === 'assistant' ? (
+          <AssistantBubble
+            key={message.id}
+            issueSent={message.issueSent}
+            sentAt={message.sentAt}
+          >
+            {message.text}
+          </AssistantBubble>
+        ) : (
+          <UserBubble key={message.id}>{message.text}</UserBubble>
+        ),
+      )}
       {screenshot && (
         <AttachmentChip
           name="screenshot"
@@ -802,12 +866,51 @@ function DiscardConfirm({
   );
 }
 
-function AssistantBubble({ children }: { children: ReactNode }): ReactElement {
-  return <div className="brw-bubble brw-bubble--assistant">{children}</div>;
+interface AssistantBubbleProps {
+  children: ReactNode;
+  issueSent?: boolean;
+  sentAt?: number;
+}
+
+function AssistantBubble({
+  children,
+  issueSent,
+  sentAt,
+}: AssistantBubbleProps): ReactElement {
+  return (
+    <div className="brw-bubble brw-bubble--assistant">
+      {children}
+      {issueSent && (
+        <div className="brw-bubble--receipt">
+          <CheckIcon /> Issue sent · {formatRelativeTime(sentAt)}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UserBubble({ children }: { children: ReactNode }): ReactElement {
   return <div className="brw-bubble brw-bubble--user">{children}</div>;
+}
+
+/**
+ * Cheap relative-time formatter for the issue-sent receipt. The bubble
+ * doesn't auto-refresh — once rendered the timestamp captures the moment
+ * the issue was queued, which is the only thing that actually matters
+ * (the user reads it within seconds of seeing it appear). Intentionally
+ * does not pull in `Intl.RelativeTimeFormat` or `date-fns` so the
+ * react-bundle gzip stays inside the §12 budget.
+ */
+function formatRelativeTime(ms: number | undefined): string {
+  if (ms === undefined) return 'just now';
+  const diffMs = Date.now() - ms;
+  if (diffMs < 60_000) return 'just now';
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} d ago`;
 }
 
 interface AttachmentChipProps {
@@ -1052,34 +1155,6 @@ function AIToggle({ on, disabled, onChange }: AIToggleProps): ReactElement {
         AI
       </span>
     </span>
-  );
-}
-
-interface SuccessStateProps {
-  onSendAnother: () => void;
-}
-
-function SuccessState({ onSendAnother }: SuccessStateProps): ReactElement {
-  return (
-    <div
-      className="brw-thread"
-      role="log"
-      aria-live="polite"
-      aria-label="Confirmation"
-    >
-      <div className="brw-success-wrap">
-        <div className="brw-bubble brw-bubble--success" role="status">
-          Thanks — your issue is on its way.
-        </div>
-        <button
-          type="button"
-          className="brw-btn brw-btn-primary"
-          onClick={onSendAnother}
-        >
-          Send another
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -1452,6 +1527,24 @@ function SendIcon(): ReactElement {
     >
       <path d="M4 20l16-8L4 4l2 8-2 8z" />
       <path d="M6 12h14" />
+    </svg>
+  );
+}
+
+function CheckIcon(): ReactElement {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12l5 5L20 7" />
     </svg>
   );
 }

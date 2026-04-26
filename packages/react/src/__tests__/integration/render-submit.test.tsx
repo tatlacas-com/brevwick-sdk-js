@@ -20,7 +20,13 @@
  * future Provider refactor leaks the React version into the payload
  * without an SDD update.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { BREVWICK_REACT_VERSION } from '../../index';
 import { BrevwickProvider } from '../../provider';
@@ -96,15 +102,15 @@ function freezeShape(body: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe('integration — Provider + FeedbackButton → MSW ingest', () => {
-  // Single `it` covers both the POST-shape and the success-state-visible
-  // dimensions. Splitting them would force a second open-FAB → type → Send
-  // dance per assertion (each render is ~150 ms with happy-dom + the
-  // BrevwickProvider mount), which would push the React suite past the
-  // < 5 s slice of the 15 s CI budget set in issue #10. Both assertions
-  // are downstream of the same single submit call, so a regression in
-  // either dimension still surfaces with a focused stack — the
-  // captured-body assertion fires before the success-state waitFor.
-  it('click FAB → type → Send produces one POST with the expected shape', async () => {
+  // Single `it` covers the POST-shape, the post-submit thread state, and
+  // the chained-submission flow in one open-FAB → type → Send sequence.
+  // Splitting them would force a second BrevwickProvider mount per
+  // assertion (each render is ~150 ms with happy-dom), which would push
+  // the React suite past the < 5 s slice of the 15 s CI budget set in
+  // issue #10. The chained-submit assertions fan out below the first
+  // submit so a regression in either dimension still surfaces with a
+  // focused stack.
+  it('click FAB → type → Send produces one POST + chained submit appends bubbles without a second open', async () => {
     const captured = installIngestHandlers(server, 'issue_react_itest');
 
     render(
@@ -135,11 +141,8 @@ describe('integration — Provider + FeedbackButton → MSW ingest', () => {
     const textarea = screen.getByRole('textbox', {
       name: /feedback message/i,
     }) as HTMLTextAreaElement;
-    fireEvent.change(textarea, {
-      target: {
-        value: 'broken button on home\nsecond line for the description',
-      },
-    });
+    const firstDraft = 'broken button on home\nsecond line for the description';
+    fireEvent.change(textarea, { target: { value: firstDraft } });
 
     fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
 
@@ -162,9 +165,58 @@ describe('integration — Provider + FeedbackButton → MSW ingest', () => {
     expect(raw).not.toContain('bindings_version');
     expect(raw).not.toContain(`"react_version":"${BREVWICK_REACT_VERSION}"`);
 
-    // Panel flips into the success state when the POST resolves ok.
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(/on its way/i),
+    // Submitted user message persists as a bubble. Default `getByText`
+    // normalises whitespace so a multiline draft would not match by
+    // string equality — match on the bubble's exact textContent
+    // instead.
+    const log = await waitFor(() =>
+      screen.getByRole('log', { name: /conversation/i }),
     );
+    await waitFor(() => {
+      const userBubble = log.querySelector('.brw-bubble--user');
+      expect(userBubble?.textContent).toBe(firstDraft);
+    });
+
+    // Assistant 'thank you' bubble appears with the receipt marker.
+    const receipt = screen.getByText(/thanks — your issue is on its way/i);
+    expect(receipt).toBeInTheDocument();
+    const receiptBubble = receipt.closest('.brw-bubble') as HTMLElement;
+    expect(receiptBubble).not.toBeNull();
+    expect(within(receiptBubble).getByText(/issue sent/i)).toBeInTheDocument();
+
+    // Composer survives the submit — same textarea node, not disabled,
+    // ready for a chained message. The send button is disabled only
+    // because the composer is now empty.
+    const composerAfterFirst = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    }) as HTMLTextAreaElement;
+    expect(composerAfterFirst).toBe(textarea);
+    expect(composerAfterFirst).not.toBeDisabled();
+    expect(composerAfterFirst.value).toBe('');
+
+    // Chained submission — type a follow-up, click send, expect a
+    // SECOND POST and a second pair of bubbles below the first.
+    const secondDraft = 'follow-up: console error after retry';
+    fireEvent.change(composerAfterFirst, { target: { value: secondDraft } });
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    await waitFor(() => expect(captured.count()).toBe(2));
+    const secondBody = captured.json();
+    expect(secondBody?.description).toBe(secondDraft);
+
+    // Wait for the second pair of bubbles to land in the DOM.
+    await waitFor(() =>
+      expect(screen.getByText(secondDraft)).toBeInTheDocument(),
+    );
+
+    // Thread now contains: greeting + (user1, assistant1) + (user2, assistant2).
+    expect(log.querySelectorAll('.brw-bubble')).toHaveLength(5);
+
+    // Composer remains empty + active for further submissions.
+    const composerAfterSecond = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    }) as HTMLTextAreaElement;
+    expect(composerAfterSecond.value).toBe('');
+    expect(composerAfterSecond).not.toBeDisabled();
   });
 });
