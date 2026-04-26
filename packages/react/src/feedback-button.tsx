@@ -47,7 +47,7 @@ interface MessageAttachment {
 /**
  * One bubble in the conversation thread. The greeting and submitted-issue
  * receipt are `assistant` messages; submitted drafts become `user` messages.
- * `attachments` snapshots the screenshot + files that rode along with the
+ * `attachments` snapshots the screenshots + files that rode along with the
  * submit so a follow-up render can show what was sent (currently the bubble
  * itself just shows text, but the field is there for forward-compat).
  */
@@ -58,10 +58,19 @@ interface Message {
   sentAt?: number;
   issueSent?: boolean;
   attachments?: {
-    screenshot?: MessageAttachment;
+    screenshots?: readonly MessageAttachment[];
     files?: readonly MessageAttachment[];
   };
 }
+
+/**
+ * Combined screenshot + file cap, mirrored from the SDK's
+ * `MAX_ATTACHMENT_COUNT` in `packages/sdk/src/submit.ts`. Enforced in the
+ * UI by disabling the screenshot and file-attach buttons once the combined
+ * total reaches this ceiling — that way the user can't queue an attachment
+ * the SDK would reject downstream.
+ */
+const MAX_ATTACHMENTS = 5;
 
 const GREETING_MESSAGE: Message = {
   id: 'greeting',
@@ -138,6 +147,12 @@ function formatSize(bytes: number): string {
 }
 
 interface ScreenshotAttachment {
+  /**
+   * Monotonic id assigned at capture time. Same rationale as
+   * {@link FileAttachment.id}: keys based on `url` or array index would
+   * reconcile a removal-of-middle-item against the wrong slot.
+   */
+  readonly id: number;
   readonly blob: Blob;
   readonly url: string;
 }
@@ -281,10 +296,17 @@ export function FeedbackButton({
   const [expected, setExpected] = useState('');
   const [actual, setActual] = useState('');
   const [showExtras, setShowExtras] = useState(false);
-  const [screenshot, setScreenshot] = useState<ScreenshotAttachment | null>(
-    null,
-  );
+  const [screenshots, setScreenshots] = useState<
+    readonly ScreenshotAttachment[]
+  >([]);
   const [files, setFiles] = useState<readonly FileAttachment[]>([]);
+  const [capturing, setCapturing] = useState(false);
+  // Index into `screenshots` of the thumbnail the user tapped to preview;
+  // `null` keeps the preview dialog closed. Storing the id rather than the
+  // index would survive an out-of-band removal, but the chip × is also
+  // disabled while the preview is up so the index is stable for the dialog
+  // lifetime.
+  const [previewId, setPreviewId] = useState<number | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -294,7 +316,10 @@ export function FeedbackButton({
   // matrix below says the toggle should be visible.
   const [useAi, setUseAi] = useState(true);
   const mountedRef = useRef(true);
-  const screenshotUrlRef = useRef<string | null>(null);
+  // Mirrors `screenshots[*].url` for the unmount cleanup so we don't have to
+  // close over a stale `screenshots` value in the cleanup function.
+  const screenshotUrlsRef = useRef<readonly string[]>([]);
+  const screenshotIdRef = useRef(0);
   const fileIdRef = useRef(0);
   const messageIdRef = useRef(0);
 
@@ -315,22 +340,25 @@ export function FeedbackButton({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (screenshotUrlRef.current) {
-        URL.revokeObjectURL(screenshotUrlRef.current);
-        screenshotUrlRef.current = null;
+      for (const url of screenshotUrlsRef.current) {
+        URL.revokeObjectURL(url);
       }
+      screenshotUrlsRef.current = [];
     };
   }, []);
 
   useEffect(() => {
-    screenshotUrlRef.current = screenshot?.url ?? null;
-  }, [screenshot]);
+    screenshotUrlsRef.current = screenshots.map((s) => s.url);
+  }, [screenshots]);
+
+  const attachmentCount = screenshots.length + files.length;
+  const attachmentsAtCap = attachmentCount >= MAX_ATTACHMENTS;
 
   const hasContent =
     draft.trim().length > 0 ||
     expected.length > 0 ||
     actual.length > 0 ||
-    screenshot !== null ||
+    screenshots.length > 0 ||
     files.length > 0;
 
   const resetAll = useCallback(() => {
@@ -338,11 +366,12 @@ export function FeedbackButton({
     setExpected('');
     setActual('');
     setShowExtras(false);
-    setScreenshot((prev) => {
-      if (prev) URL.revokeObjectURL(prev.url);
-      return null;
+    setScreenshots((prev) => {
+      for (const s of prev) URL.revokeObjectURL(s.url);
+      return [];
     });
     setFiles([]);
+    setPreviewId(null);
     setConfirmClose(false);
     setSubmitError(null);
     setMessages(initialMessages());
@@ -391,26 +420,49 @@ export function FeedbackButton({
   // `data-brevwick-skip` on every overlay node, which the SDK's capture
   // path honours before it snapshots. The React unmount lands before the
   // async rasterization / crop work completes and is defence-in-depth.
+  //
+  // `capturing` is the in-thread loading flag (issue #55). The region
+  // overlay closes the moment the user clicks Capture so the panel is
+  // already visible by the time `captureScreenshot()` resolves; the flag
+  // surfaces a "Capturing screenshot…" bubble in the thread to bridge that
+  // gap so the panel re-appearing without the chip is no longer mysterious.
   const performCapture = useCallback(
     async (region: Region | null) => {
       setSubmitError(null);
+      setCapturing(true);
       try {
         const blob = await captureScreenshot();
         if (!mountedRef.current) return;
         const finalBlob = region ? await cropToRegion(blob, region) : blob;
         if (!mountedRef.current) return;
-        setScreenshot((prev) => {
-          if (prev) URL.revokeObjectURL(prev.url);
-          return { blob: finalBlob, url: URL.createObjectURL(finalBlob) };
+        setScreenshots((prev) => {
+          // Defence-in-depth: the screenshot button is disabled at the cap,
+          // but a stale closure or a future race could still land here. Drop
+          // the new capture rather than silently exceed the SDK's combined
+          // attachment ceiling. (Object URL is created inside the branch
+          // that keeps the capture so a rejected one doesn't leak.)
+          if (prev.length + files.length >= MAX_ATTACHMENTS) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: ++screenshotIdRef.current,
+              blob: finalBlob,
+              url: URL.createObjectURL(finalBlob),
+            },
+          ];
         });
       } catch (err) {
         if (!mountedRef.current) return;
         const message =
           err instanceof Error ? err.message : 'Screenshot capture failed';
         setSubmitError(message);
+      } finally {
+        if (mountedRef.current) setCapturing(false);
       }
     },
-    [captureScreenshot],
+    [captureScreenshot, files.length],
   );
 
   const handleOpenRegionOverlay = useCallback(() => {
@@ -435,22 +487,43 @@ export function FeedbackButton({
     void performCapture(null);
   }, [performCapture]);
 
-  const handleFiles = useCallback((list: FileList | null) => {
-    if (!list || list.length === 0) return;
-    setFiles((prev) => {
-      const next = Array.from(list).map<FileAttachment>((file) => ({
-        id: ++fileIdRef.current,
-        file,
-      }));
-      return [...prev, ...next];
+  const handleFiles = useCallback(
+    (list: FileList | null) => {
+      if (!list || list.length === 0) return;
+      setFiles((prev) => {
+        // Cap the combined screenshot+file total at MAX_ATTACHMENTS so a
+        // bulk-add via <input multiple> can't exceed the SDK ceiling. Keep
+        // prefix-of-input semantics: drop the overflow tail rather than
+        // silently dropping arbitrary entries.
+        const remaining = MAX_ATTACHMENTS - (prev.length + screenshots.length);
+        if (remaining <= 0) return prev;
+        const next = Array.from(list)
+          .slice(0, remaining)
+          .map<FileAttachment>((file) => ({
+            id: ++fileIdRef.current,
+            file,
+          }));
+        return [...prev, ...next];
+      });
+    },
+    [screenshots.length],
+  );
+
+  const removeScreenshot = useCallback((id: number) => {
+    setScreenshots((prev) => {
+      const target = prev.find((s) => s.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter((s) => s.id !== id);
     });
+    setPreviewId((current) => (current === id ? null : current));
   }, []);
 
-  const removeScreenshot = useCallback(() => {
-    setScreenshot((prev) => {
-      if (prev) URL.revokeObjectURL(prev.url);
-      return null;
-    });
+  const handlePreviewScreenshot = useCallback((id: number) => {
+    setPreviewId(id);
+  }, []);
+
+  const handleClosePreview = useCallback(() => {
+    setPreviewId(null);
   }, []);
 
   const removeFile = useCallback((id: number) => {
@@ -466,13 +539,18 @@ export function FeedbackButton({
     setSubmitError(null);
 
     const attachments: Array<Blob | FeedbackAttachment> = [];
-    if (screenshot) {
-      const ext = screenshot.blob.type.split('/')[1]?.split('+')[0] || 'webp';
-      attachments.push({
-        blob: screenshot.blob,
-        filename: `screenshot.${ext}`,
-      });
-    }
+    // Single-screenshot filename stays `screenshot.<ext>` (matches pre-#56
+    // wire format and keeps existing tests / server-side identifiers
+    // stable). Multi-screenshot submissions disambiguate with `-1`, `-2`,
+    // … using the array order they were captured in.
+    screenshots.forEach((s, idx) => {
+      const ext = s.blob.type.split('/')[1]?.split('+')[0] || 'webp';
+      const filename =
+        screenshots.length === 1
+          ? `screenshot.${ext}`
+          : `screenshot-${idx + 1}.${ext}`;
+      attachments.push({ blob: s.blob, filename });
+    });
     for (const { file } of files)
       attachments.push({ blob: file, filename: file.name });
 
@@ -498,7 +576,7 @@ export function FeedbackButton({
     // (in which case React's setState below races with whatever they typed
     // after — the snapshot pins the version of the draft we're submitting).
     const submittedDraft = draft;
-    const submittedScreenshot = screenshot;
+    const submittedScreenshots = screenshots;
     const submittedFiles = files;
 
     try {
@@ -506,8 +584,10 @@ export function FeedbackButton({
       if (!mountedRef.current) return;
       onSubmit?.(result);
       if (result.ok) {
-        const screenshotSnapshot: MessageAttachment | undefined =
-          submittedScreenshot ? { blob: submittedScreenshot.blob } : undefined;
+        const screenshotsSnapshot: readonly MessageAttachment[] | undefined =
+          submittedScreenshots.length > 0
+            ? submittedScreenshots.map((s) => ({ blob: s.blob }))
+            : undefined;
         const filesSnapshot: readonly MessageAttachment[] | undefined =
           submittedFiles.length > 0
             ? submittedFiles.map(({ file }) => ({
@@ -520,10 +600,10 @@ export function FeedbackButton({
           role: 'user',
           text: submittedDraft,
           attachments:
-            screenshotSnapshot || filesSnapshot
+            screenshotsSnapshot || filesSnapshot
               ? {
-                  ...(screenshotSnapshot
-                    ? { screenshot: screenshotSnapshot }
+                  ...(screenshotsSnapshot
+                    ? { screenshots: screenshotsSnapshot }
                     : {}),
                   ...(filesSnapshot ? { files: filesSnapshot } : {}),
                 }
@@ -544,11 +624,12 @@ export function FeedbackButton({
         setExpected('');
         setActual('');
         setShowExtras(false);
-        setScreenshot((prev) => {
-          if (prev) URL.revokeObjectURL(prev.url);
-          return null;
+        setScreenshots((prev) => {
+          for (const s of prev) URL.revokeObjectURL(s.url);
+          return [];
         });
         setFiles([]);
+        setPreviewId(null);
         setSubmitError(null);
         // If the user minimized mid-submit, pop the panel back open so the
         // success confirmation is actually seen. A silent success while
@@ -575,7 +656,7 @@ export function FeedbackButton({
     expected,
     files,
     onSubmit,
-    screenshot,
+    screenshots,
     showAiToggle,
     status,
     submit,
@@ -624,8 +705,9 @@ export function FeedbackButton({
           />
           <Thread
             messages={messages}
-            screenshot={screenshot}
+            screenshots={screenshots}
             files={files}
+            capturing={capturing}
             showExtras={showExtras}
             expected={expected}
             actual={actual}
@@ -636,6 +718,7 @@ export function FeedbackButton({
             onExpectedChange={setExpected}
             onActualChange={setActual}
             onRemoveScreenshot={removeScreenshot}
+            onPreviewScreenshot={handlePreviewScreenshot}
             onRemoveFile={removeFile}
             onConfirmDiscard={handleFullClose}
             onCancelClose={() => setConfirmClose(false)}
@@ -643,6 +726,8 @@ export function FeedbackButton({
           <Composer
             draft={draft}
             submitting={status === 'submitting'}
+            capturing={capturing}
+            attachmentsAtCap={attachmentsAtCap}
             showAiToggle={showAiToggle}
             useAi={useAi}
             onDraftChange={setDraft}
@@ -660,6 +745,16 @@ export function FeedbackButton({
         onClose={handleCloseRegion}
         onConfirmRegion={handleConfirmRegion}
         onConfirmFull={handleConfirmFull}
+      />
+      <ScreenshotPreviewDialog
+        open={previewId !== null}
+        screenshot={
+          previewId !== null
+            ? (screenshots.find((s) => s.id === previewId) ?? null)
+            : null
+        }
+        theme={theme}
+        onClose={handleClosePreview}
       />
     </Dialog.Root>
   );
@@ -729,8 +824,9 @@ function PanelFooter(): ReactElement {
 
 interface ThreadProps {
   messages: readonly Message[];
-  screenshot: ScreenshotAttachment | null;
+  screenshots: readonly ScreenshotAttachment[];
   files: readonly FileAttachment[];
+  capturing: boolean;
   showExtras: boolean;
   expected: string;
   actual: string;
@@ -740,7 +836,8 @@ interface ThreadProps {
   onToggleExtras: () => void;
   onExpectedChange: (v: string) => void;
   onActualChange: (v: string) => void;
-  onRemoveScreenshot: () => void;
+  onRemoveScreenshot: (id: number) => void;
+  onPreviewScreenshot: (id: number) => void;
   onRemoveFile: (id: number) => void;
   onConfirmDiscard: () => void;
   onCancelClose: () => void;
@@ -748,8 +845,9 @@ interface ThreadProps {
 
 function Thread({
   messages,
-  screenshot,
+  screenshots,
   files,
+  capturing,
   showExtras,
   expected,
   actual,
@@ -760,6 +858,7 @@ function Thread({
   onExpectedChange,
   onActualChange,
   onRemoveScreenshot,
+  onPreviewScreenshot,
   onRemoveFile,
   onConfirmDiscard,
   onCancelClose,
@@ -784,14 +883,20 @@ function Thread({
           <UserBubble key={message.id}>{message.text}</UserBubble>
         ),
       )}
-      {screenshot && (
-        <AttachmentChip
-          name="screenshot"
-          size={screenshot.blob.size}
-          previewUrl={screenshot.url}
-          onRemove={onRemoveScreenshot}
-        />
-      )}
+      {screenshots.map((s, idx) => {
+        const label =
+          screenshots.length === 1 ? 'screenshot' : `screenshot ${idx + 1}`;
+        return (
+          <AttachmentChip
+            key={s.id}
+            name={label}
+            size={s.blob.size}
+            previewUrl={s.url}
+            onPreview={() => onPreviewScreenshot(s.id)}
+            onRemove={() => onRemoveScreenshot(s.id)}
+          />
+        );
+      })}
       {files.map(({ id, file }) => (
         <AttachmentChip
           key={id}
@@ -800,6 +905,16 @@ function Thread({
           onRemove={() => onRemoveFile(id)}
         />
       ))}
+      {/* In-thread loading indicator (issue #55). The region overlay closes
+          before `captureScreenshot()` resolves, so the panel is already
+          visible when this bubble shows up — it bridges the otherwise-silent
+          gap between the overlay closing and the thumbnail appearing. */}
+      {capturing && (
+        <AssistantBubble>
+          <span className="brw-spinner" aria-hidden="true" /> Capturing
+          screenshot…
+        </AssistantBubble>
+      )}
       <DisclosureExpectedActual
         open={showExtras}
         expected={expected}
@@ -917,6 +1032,10 @@ interface AttachmentChipProps {
   name: string;
   size: number;
   previewUrl?: string;
+  /** When provided alongside `previewUrl`, the thumbnail becomes a button
+   *  that opens the screenshot preview dialog. File chips (no `previewUrl`)
+   *  never receive this — they are not previewable. */
+  onPreview?: () => void;
   onRemove: () => void;
 }
 
@@ -924,11 +1043,30 @@ function AttachmentChip({
   name,
   size,
   previewUrl,
+  onPreview,
   onRemove,
 }: AttachmentChipProps): ReactElement {
+  // Render the thumbnail as a button only when there's something to preview
+  // and a handler to call. The keyboard activation comes free with `<button>`,
+  // so screen-reader users can hit Enter / Space to open the preview the
+  // same way pointer users can click. The remove × is a sibling — clicks on
+  // it don't propagate into the thumbnail's open-preview path because they
+  // are different elements.
   return (
     <div className="brw-chip">
-      {previewUrl && <img src={previewUrl} alt="" />}
+      {previewUrl &&
+        (onPreview ? (
+          <button
+            type="button"
+            className="brw-chip-preview-btn"
+            aria-label={`Preview ${name}`}
+            onClick={onPreview}
+          >
+            <img src={previewUrl} alt="" />
+          </button>
+        ) : (
+          <img src={previewUrl} alt="" />
+        ))}
       <span className="brw-chip-name">{name}</span>
       <span className="brw-chip-size">{formatSize(size)}</span>
       <button
@@ -1003,6 +1141,14 @@ function DisclosureExpectedActual({
 interface ComposerProps {
   draft: string;
   submitting: boolean;
+  /** True while a screenshot is being rasterised/cropped (issue #55). The
+   *  composer disables the screenshot + file-attach buttons so the user
+   *  cannot stack a second capture on top of one already in flight. */
+  capturing: boolean;
+  /** True once `screenshots.length + files.length >= MAX_ATTACHMENTS` (#56).
+   *  Disables the screenshot + file-attach buttons with an explanatory
+   *  aria-label so the user can't queue an attachment the SDK would reject. */
+  attachmentsAtCap: boolean;
   showAiToggle: boolean;
   useAi: boolean;
   onDraftChange: (v: string) => void;
@@ -1017,6 +1163,8 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
     {
       draft,
       submitting,
+      capturing,
+      attachmentsAtCap,
       showAiToggle,
       useAi,
       onDraftChange,
@@ -1055,15 +1203,29 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
       }
     };
 
+    // Once a capture is in flight or the attachment cap is reached, the
+    // screenshot + file-attach controls are disabled. The aria-label on the
+    // screenshot button mutates so AT users hear *why* the control is
+    // unavailable instead of the generic "Capture screenshot of this page,
+    // dimmed" announcement.
+    const attachDisabled = submitting || capturing || attachmentsAtCap;
+    const screenshotLabel = attachmentsAtCap
+      ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
+      : capturing
+        ? 'Capturing screenshot…'
+        : 'Capture screenshot of this page';
+    const fileLabel = attachmentsAtCap
+      ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
+      : 'Attach file';
     return (
       <div className="brw-composer">
         <div className="brw-composer-shell">
           <button
             type="button"
             className="brw-icon-btn"
-            aria-label="Capture screenshot of this page"
+            aria-label={screenshotLabel}
             onClick={onAttachScreenshot}
-            disabled={submitting}
+            disabled={attachDisabled}
           >
             <ScreenshotIcon />
           </button>
@@ -1072,13 +1234,13 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
             <input
               type="file"
               multiple
-              aria-label="Attach file"
+              aria-label={fileLabel}
               className="brw-file-input"
               onChange={(e) => {
                 onAttachFiles(e.target.files);
                 e.target.value = '';
               }}
-              disabled={submitting}
+              disabled={attachDisabled}
             />
           </label>
           <textarea
@@ -1426,6 +1588,83 @@ function RegionCaptureOverlay({
               Capture
             </button>
           </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+interface ScreenshotPreviewDialogProps {
+  open: boolean;
+  /**
+   * The screenshot the dialog should preview. Lifted into a prop (rather
+   * than a `src` string) so the dialog can format its sr-only title from
+   * the same blob metadata the chip uses, keeping the preview-button
+   * `aria-label="Preview <name>"` and the dialog title in sync.
+   *
+   * `null` while the dialog is closed; the `open` prop is the source of
+   * truth for visibility, but Radix mounts the portal regardless so we
+   * defer rendering the `<img>` until a screenshot is actually selected.
+   */
+  screenshot: ScreenshotAttachment | null;
+  theme: BrevwickTheme;
+  onClose: () => void;
+}
+
+/**
+ * Modal dialog that shows the captured screenshot at viewport-fit size so
+ * the submitter can confirm they captured the right region before sending.
+ * Mounted as a sibling Dialog.Root to the panel — same pattern as
+ * `RegionCaptureOverlay` — so Radix owns Esc-to-dismiss, focus trap, and
+ * focus-restore back to the chip's preview button when the dialog closes.
+ *
+ * Carries `data-brevwick-skip=""` on every node so a re-capture initiated
+ * while the dialog is up doesn't snapshot the dialog chrome itself.
+ */
+function ScreenshotPreviewDialog({
+  open,
+  screenshot,
+  theme,
+  onClose,
+}: ScreenshotPreviewDialogProps): ReactElement {
+  return (
+    <Dialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay
+          className="brw-preview-backdrop"
+          data-brevwick-skip=""
+        />
+        <Dialog.Content
+          className="brw-root brw-preview-layer"
+          data-brevwick-skip=""
+          data-brw-theme={theme}
+          data-testid="brw-preview-dialog"
+          aria-label="Screenshot preview"
+          aria-describedby={undefined}
+        >
+          <Dialog.Title className="brw-sr-only">
+            Screenshot preview
+          </Dialog.Title>
+          {screenshot && (
+            <img
+              className="brw-preview-image"
+              src={screenshot.url}
+              alt="Captured screenshot"
+            />
+          )}
+          <button
+            type="button"
+            className="brw-icon-btn brw-preview-close"
+            aria-label="Close preview"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
