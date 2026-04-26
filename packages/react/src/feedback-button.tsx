@@ -1138,7 +1138,6 @@ function AIToggle({ on, disabled, onChange }: AIToggleProps): ReactElement {
   );
 }
 
-
 /**
  * Crop a full-page screenshot Blob to the user-selected viewport rectangle.
  *

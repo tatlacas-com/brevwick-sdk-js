@@ -223,9 +223,7 @@ describe('<FeedbackButton>', () => {
     // and the assistant 'thank you' bubble carrying a receipt marker.
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText('Broken flow')).toBeInTheDocument();
-    const receiptText = screen.getByText(
-      /thanks — your issue is on its way/i,
-    );
+    const receiptText = screen.getByText(/thanks — your issue is on its way/i);
     const receiptBubble = receiptText.closest('.brw-bubble') as HTMLElement;
     expect(receiptBubble).not.toBeNull();
     expect(within(receiptBubble).getByText(/issue sent/i)).toBeInTheDocument();
@@ -711,18 +709,21 @@ describe('<FeedbackButton>', () => {
 
     // Two separate POSTs fired with each draft.
     expect(submit).toHaveBeenCalledTimes(2);
-    expect((submit.mock.calls[0]![0] as { description: string }).description)
-      .toBe('first issue');
-    expect((submit.mock.calls[1]![0] as { description: string }).description)
-      .toBe('second issue');
+    expect(
+      (submit.mock.calls[0]![0] as { description: string }).description,
+    ).toBe('first issue');
+    expect(
+      (submit.mock.calls[1]![0] as { description: string }).description,
+    ).toBe('second issue');
 
     // Thread now contains greeting + (user1, assistant1) + (user2, assistant2).
     const log = screen.getByRole('log', { name: /conversation/i });
     expect(log.querySelectorAll('.brw-bubble')).toHaveLength(5);
     expect(within(log).getByText('first issue')).toBeInTheDocument();
     expect(within(log).getByText('second issue')).toBeInTheDocument();
-    expect(within(log).getAllByText(/thanks — your issue is on its way/i))
-      .toHaveLength(2);
+    expect(
+      within(log).getAllByText(/thanks — your issue is on its way/i),
+    ).toHaveLength(2);
   });
 
   it('close after a successful submit dismisses without a discard confirm', async () => {
@@ -745,9 +746,7 @@ describe('<FeedbackButton>', () => {
 
     openPanel();
     expect(getComposer().value).toBe('');
-    expect(
-      screen.queryByText(/thanks — your issue is on its way/i),
-    ).toBeNull();
+    expect(screen.queryByText(/thanks — your issue is on its way/i)).toBeNull();
   });
 
   it('close button is disabled while a submit is in flight', async () => {
