@@ -960,28 +960,32 @@ describe('<FeedbackButton>', () => {
       };
 
       // Submit-time render: diff < 60s → "just now".
-      expect(within(findReceiptBubble()).getByText(/just now/i))
-        .toBeInTheDocument();
+      expect(
+        within(findReceiptBubble()).getByText(/just now/i),
+      ).toBeInTheDocument();
 
       // 5 minutes later — typing into the composer triggers a re-render
       // of the AssistantBubble (its sentAt is unchanged but Date.now()
       // has moved on).
       nowSpy.mockReturnValue(SENT_AT + 5 * 60_000);
       typeDraft('a');
-      expect(within(findReceiptBubble()).getByText(/5 min ago/i))
-        .toBeInTheDocument();
+      expect(
+        within(findReceiptBubble()).getByText(/5 min ago/i),
+      ).toBeInTheDocument();
 
       // 2 hours later → "2 hr ago".
       nowSpy.mockReturnValue(SENT_AT + 2 * 60 * 60_000);
       typeDraft('b');
-      expect(within(findReceiptBubble()).getByText(/2 hr ago/i))
-        .toBeInTheDocument();
+      expect(
+        within(findReceiptBubble()).getByText(/2 hr ago/i),
+      ).toBeInTheDocument();
 
       // 3 days later → "3 d ago".
       nowSpy.mockReturnValue(SENT_AT + 3 * 24 * 60 * 60_000);
       typeDraft('c');
-      expect(within(findReceiptBubble()).getByText(/3 d ago/i))
-        .toBeInTheDocument();
+      expect(
+        within(findReceiptBubble()).getByText(/3 d ago/i),
+      ).toBeInTheDocument();
     } finally {
       nowSpy.mockRestore();
     }
