@@ -301,11 +301,13 @@ export function FeedbackButton({
   >([]);
   const [files, setFiles] = useState<readonly FileAttachment[]>([]);
   const [capturing, setCapturing] = useState(false);
-  // Index into `screenshots` of the thumbnail the user tapped to preview;
-  // `null` keeps the preview dialog closed. Storing the id rather than the
-  // index would survive an out-of-band removal, but the chip × is also
-  // disabled while the preview is up so the index is stable for the dialog
-  // lifetime.
+  // Stable screenshot id of the thumbnail the user tapped to preview;
+  // `null` keeps the preview dialog closed. Using the id (not the array
+  // index) means the dialog stays bound to the same attachment if the
+  // user removes a sibling screenshot mid-preview — the lookup
+  // `screenshots.find(s => s.id === previewId)` returns `null` only when
+  // the previewed screenshot itself was removed, which is the case
+  // `removeScreenshot()` handles by clearing `previewId`.
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -319,6 +321,12 @@ export function FeedbackButton({
   // Mirrors `screenshots[*].url` for the unmount cleanup so we don't have to
   // close over a stale `screenshots` value in the cleanup function.
   const screenshotUrlsRef = useRef<readonly string[]>([]);
+  // Mirror of `files.length`. The cap check inside `performCapture`'s
+  // `setScreenshots` updater needs the **current** file count, not the
+  // closure-captured one — files attached *during* a long-running capture
+  // would otherwise be invisible to the defence-in-depth guard, letting
+  // the cap silently slip from 5 to 6.
+  const filesLengthRef = useRef(0);
   const screenshotIdRef = useRef(0);
   const fileIdRef = useRef(0);
   const messageIdRef = useRef(0);
@@ -350,6 +358,10 @@ export function FeedbackButton({
   useEffect(() => {
     screenshotUrlsRef.current = screenshots.map((s) => s.url);
   }, [screenshots]);
+
+  useEffect(() => {
+    filesLengthRef.current = files.length;
+  }, [files]);
 
   const attachmentCount = screenshots.length + files.length;
   const attachmentsAtCap = attachmentCount >= MAX_ATTACHMENTS;
@@ -435,13 +447,20 @@ export function FeedbackButton({
         if (!mountedRef.current) return;
         const finalBlob = region ? await cropToRegion(blob, region) : blob;
         if (!mountedRef.current) return;
+        let rejectedAtCap = false;
         setScreenshots((prev) => {
           // Defence-in-depth: the screenshot button is disabled at the cap,
-          // but a stale closure or a future race could still land here. Drop
-          // the new capture rather than silently exceed the SDK's combined
+          // but a long-running capture started before files were attached
+          // can still land after the combined total is at the ceiling.
+          // Read the file count from the ref (not the closure) so we see
+          // anything attached while the capture was in flight. Drop the
+          // new capture rather than silently exceed the SDK's combined
           // attachment ceiling. (Object URL is created inside the branch
-          // that keeps the capture so a rejected one doesn't leak.)
-          if (prev.length + files.length >= MAX_ATTACHMENTS) {
+          // that keeps the capture so a rejected one doesn't leak.) The
+          // user-visible message is set after the setState below so the
+          // updater stays pure.
+          if (prev.length + filesLengthRef.current >= MAX_ATTACHMENTS) {
+            rejectedAtCap = true;
             return prev;
           }
           return [
@@ -453,6 +472,9 @@ export function FeedbackButton({
             },
           ];
         });
+        if (rejectedAtCap) {
+          setSubmitError(`Maximum ${MAX_ATTACHMENTS} attachments reached`);
+        }
       } catch (err) {
         if (!mountedRef.current) return;
         const message =
@@ -462,7 +484,7 @@ export function FeedbackButton({
         if (mountedRef.current) setCapturing(false);
       }
     },
-    [captureScreenshot, files.length],
+    [captureScreenshot],
   );
 
   const handleOpenRegionOverlay = useCallback(() => {
@@ -532,6 +554,13 @@ export function FeedbackButton({
 
   const doSubmit = useCallback(async () => {
     if (status === 'submitting') return;
+    // Block submission while a capture is in flight. Without this, the user
+    // could press Enter in the composer between clicking Capture and the
+    // thumbnail rendering, sending the issue without the screenshot they
+    // intended to include. The Send button itself is disabled in this
+    // state, but the Enter-to-send shortcut bypasses the button so the
+    // guard belongs here on the submit path too.
+    if (capturing) return;
     if (!draft.trim()) {
       setSubmitError('Please describe what happened.');
       return;
@@ -652,6 +681,7 @@ export function FeedbackButton({
     }
   }, [
     actual,
+    capturing,
     draft,
     expected,
     files,
@@ -1264,7 +1294,7 @@ const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
             type="button"
             className="brw-send-btn"
             aria-label="Send"
-            disabled={submitting || draft.trim().length === 0}
+            disabled={submitting || capturing || draft.trim().length === 0}
             onClick={onSubmit}
           >
             <SendIcon />

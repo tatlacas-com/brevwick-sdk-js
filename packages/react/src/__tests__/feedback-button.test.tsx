@@ -1139,6 +1139,96 @@ describe('<FeedbackButton> — multi-screenshot + preview', () => {
     );
   });
 
+  it('blocks Enter-to-send while a capture is in flight (no submit without the pending screenshot)', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    typeDraft('partial draft');
+    await captureFullPage();
+
+    // Send button is disabled because Capture is in flight; Enter-to-send
+    // is independently guarded inside doSubmit so the keyboard path can't
+    // race past the disabled-button protection.
+    expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled();
+    fireEvent.keyDown(getComposer(), { key: 'Enter' });
+    expect(submit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      release(new Blob(['x'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    // After capture resolves, Send re-enables and submission works
+    // normally — the guard only fires while `capturing` is true.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^send$/i }),
+      ).not.toBeDisabled(),
+    );
+  });
+
+  it('surfaces an error when a capture lands after the cap was reached', async () => {
+    // Hit the defence-in-depth branch in performCapture by gating the second
+    // capture on a pending promise: open the region overlay → click Capture
+    // (capture #2 is in flight) → race the cap-fill: in production the cap
+    // fills via concurrent file-attaches, but the easier reproduction is to
+    // attach four files between the click and the resolve so the cap is at
+    // 5 (4 files + 1 first screenshot) when capture #2 lands.
+    const first = new Blob(['1'], { type: 'image/png' });
+    captureScreenshot.mockResolvedValueOnce(first);
+    let releaseSecond: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        releaseSecond = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    await captureFullPage();
+
+    // Kick off capture #2 (still pending).
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture full page/i }),
+      );
+    });
+
+    // Fill the remaining 4 slots with files while capture #2 is in flight.
+    const fileInput = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const dt = new DataTransfer();
+    for (let i = 0; i < 4; i++) {
+      dt.items.add(new File(['f'], `f${i}.png`, { type: 'image/png' }));
+    }
+    fireEvent.change(fileInput, { target: { files: dt.files } });
+
+    // Resolve capture #2 — performCapture's cap guard rejects the new
+    // capture and surfaces the error message.
+    await act(async () => {
+      releaseSecond(new Blob(['2'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByText(/maximum 5 attachments reached/i, {
+          selector: '[role="alert"]',
+        }),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it('tapping a screenshot thumbnail opens a preview dialog with the captured image', async () => {
     const blob = new Blob(['x'], { type: 'image/png' });
     captureScreenshot.mockResolvedValueOnce(blob);
