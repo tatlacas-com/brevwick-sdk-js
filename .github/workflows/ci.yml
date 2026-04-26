@@ -64,7 +64,7 @@ jobs:
         with:
           files: packages/sdk/coverage/lcov.info,packages/react/coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          fail_ci_if_error: true
       # Hand the built artefacts to the size-check job so it doesn't have to
       # re-run install + build from scratch.
       - name: Upload package dist artefacts
