@@ -271,20 +271,15 @@ export const BREVWICK_CSS = `
   color: var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
   border-bottom-right-radius: 4px;
 }
-.brw-bubble--success {
-  align-self: center;
-  background: var(--brw-chip-bg, var(--brw-chip-bg-base));
-  color: var(--brw-fg, var(--brw-fg-base));
-  text-align: center;
-  max-width: 92%;
-}
-.brw-success-wrap {
-  display: flex;
-  flex-direction: column;
+.brw-bubble--receipt {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 24px 8px;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--brw-fg-muted, var(--brw-fg-muted-base));
 }
+.brw-bubble--receipt svg { flex-shrink: 0; }
 .brw-chip {
   align-self: flex-end;
   display: inline-flex;

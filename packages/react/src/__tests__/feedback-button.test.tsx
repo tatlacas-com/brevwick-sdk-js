@@ -152,7 +152,7 @@ describe('<FeedbackButton>', () => {
     expect(link).toHaveTextContent(`Brevwick v${pkg.version}`);
   });
 
-  it('keeps the credit footer visible in the success state', async () => {
+  it('keeps the credit footer visible after a successful submit', async () => {
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_footer' });
     mount();
     openPanel();
@@ -205,7 +205,7 @@ describe('<FeedbackButton>', () => {
     expect(input.title).toBe('line one');
   });
 
-  it('submits via the Send button and shows success + Send another', async () => {
+  it('submit appends user + assistant bubbles and keeps the composer active', async () => {
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ok' });
     mount();
     openPanel();
@@ -219,19 +219,71 @@ describe('<FeedbackButton>', () => {
       ok: true,
       issue_id: 'rep_ok',
     });
-    // Panel stays open, thread replaced with success state.
+    // Panel stays open, thread now contains the submitted user message
+    // and the assistant 'thank you' bubble carrying a receipt marker.
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(/on its way/i);
-    // Composer is gone in the success state.
-    expect(
-      screen.queryByRole('textbox', { name: /feedback message/i }),
-    ).toBeNull();
+    expect(screen.getByText('Broken flow')).toBeInTheDocument();
+    const receiptText = screen.getByText(
+      /thanks — your issue is on its way/i,
+    );
+    const receiptBubble = receiptText.closest('.brw-bubble') as HTMLElement;
+    expect(receiptBubble).not.toBeNull();
+    expect(within(receiptBubble).getByText(/issue sent/i)).toBeInTheDocument();
+    // Composer survives the submit, draft cleared but textarea active.
+    const composer = getComposer();
+    expect(composer).not.toBeDisabled();
+    expect(composer.value).toBe('');
+    // No "Send another" CTA — the composer itself is the next-message
+    // affordance now.
+    expect(screen.queryByRole('button', { name: /send another/i })).toBeNull();
+  });
 
-    // "Send another" resets to an empty thread.
-    fireEvent.click(screen.getByRole('button', { name: /send another/i }));
-    const fresh = getComposer();
-    expect(fresh.value).toBe('');
-    expect(screen.queryByRole('status')).toBeNull();
+  it('typing into the composer does not append a bubble to the thread', () => {
+    mount();
+    openPanel();
+    const log = screen.getByRole('log', { name: /conversation/i });
+    // Greeting bubble is the only thing in the thread on open.
+    expect(log.querySelectorAll('.brw-bubble')).toHaveLength(1);
+
+    typeDraft('still drafting…');
+
+    // The draft only lives in the composer; the thread is unchanged
+    // until the user clicks send.
+    expect(log.querySelectorAll('.brw-bubble')).toHaveLength(1);
+    expect(within(log).queryByText(/still drafting/i)).toBeNull();
+    // The bubble that IS rendered is still the greeting.
+    expect(
+      within(log).getByText(/Hi! Tell us what's happening/i),
+    ).toBeInTheDocument();
+  });
+
+  it('closing and reopening the panel resets the thread to just the greeting', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_reset' });
+    mount();
+    openPanel();
+    typeDraft('first message');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    // Submit lands → thread now has greeting + user + assistant bubbles.
+    expect(
+      screen.getByText(/thanks — your issue is on its way/i),
+    ).toBeInTheDocument();
+
+    // Composer is empty after submit, so × closes immediately (no
+    // discard confirm) and routes through the resetAll path.
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    openPanel();
+    const log = screen.getByRole('log', { name: /conversation/i });
+    // Only the greeting remains in the thread.
+    expect(log.querySelectorAll('.brw-bubble')).toHaveLength(1);
+    expect(
+      within(log).getByText(/Hi! Tell us what's happening/i),
+    ).toBeInTheDocument();
+    // Composer is empty as well.
+    expect(getComposer().value).toBe('');
   });
 
   it('does not submit when the composer is empty (send button disabled)', () => {
@@ -484,7 +536,7 @@ describe('<FeedbackButton>', () => {
     expect(log).toHaveAttribute('aria-live', 'polite');
   });
 
-  it('thread log switches to confirmation after success for assistive tech', async () => {
+  it('thread log keeps a polite aria-live region after success for assistive tech', async () => {
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_live' });
     mount();
     openPanel();
@@ -492,8 +544,14 @@ describe('<FeedbackButton>', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
-    const log = screen.getByRole('log', { name: /confirmation/i });
+    // Thread is the same `role="log"` region — the new assistant bubble
+    // is announced via the polite live region instead of a separate
+    // confirmation slot.
+    const log = screen.getByRole('log', { name: /conversation/i });
     expect(log).toHaveAttribute('aria-live', 'polite');
+    expect(
+      within(log).getByText(/thanks — your issue is on its way/i),
+    ).toBeInTheDocument();
   });
 
   it('disables composer send + icons while submitting (guards double-send)', async () => {
@@ -522,7 +580,11 @@ describe('<FeedbackButton>', () => {
       release({ ok: true, issue_id: 'rep_done' });
       await Promise.resolve();
     });
-    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.getByText(/thanks — your issue is on its way/i),
+      ).toBeInTheDocument(),
+    );
   });
 
   it('bundles a slide-up animation with a prefers-reduced-motion override', () => {
@@ -587,7 +649,9 @@ describe('<FeedbackButton>', () => {
       await Promise.resolve();
     });
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(/on its way/i),
+      expect(
+        screen.getByText(/thanks — your issue is on its way/i),
+      ).toBeInTheDocument(),
     );
   });
 
@@ -623,24 +687,45 @@ describe('<FeedbackButton>', () => {
     );
   });
 
-  it('"Send another" returns focus to the composer textarea', async () => {
-    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_focus' });
+  it('chained submissions append additional bubbles without remounting the composer', async () => {
     mount();
     openPanel();
-    typeDraft('will send');
+    const composerBefore = getComposer();
+
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_chain_1' });
+    typeDraft('first issue');
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
-    expect(screen.getByRole('status')).toBeInTheDocument();
 
+    // Same textarea node, draft cleared.
+    const composerAfter1 = getComposer();
+    expect(composerAfter1).toBe(composerBefore);
+    expect(composerAfter1.value).toBe('');
+
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_chain_2' });
+    typeDraft('second issue');
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /send another/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
-    const textarea = getComposer();
-    expect(document.activeElement).toBe(textarea);
+
+    // Two separate POSTs fired with each draft.
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect((submit.mock.calls[0]![0] as { description: string }).description)
+      .toBe('first issue');
+    expect((submit.mock.calls[1]![0] as { description: string }).description)
+      .toBe('second issue');
+
+    // Thread now contains greeting + (user1, assistant1) + (user2, assistant2).
+    const log = screen.getByRole('log', { name: /conversation/i });
+    expect(log.querySelectorAll('.brw-bubble')).toHaveLength(5);
+    expect(within(log).getByText('first issue')).toBeInTheDocument();
+    expect(within(log).getByText('second issue')).toBeInTheDocument();
+    expect(within(log).getAllByText(/thanks — your issue is on its way/i))
+      .toHaveLength(2);
   });
 
-  it('close on a success-state panel dismisses without a confirm', async () => {
+  it('close after a successful submit dismisses without a discard confirm', async () => {
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_succ_close' });
     mount();
     openPanel();
@@ -648,17 +733,21 @@ describe('<FeedbackButton>', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(
+      screen.getByText(/thanks — your issue is on its way/i),
+    ).toBeInTheDocument();
 
-    // × on the success-state panel: no confirm dialog, panel closes,
-    // next open is empty.
+    // × after a clean submit: composer is empty so no discard confirm
+    // appears, the panel closes, and reopening starts a fresh thread.
     fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
     expect(screen.queryByRole('alert', { name: /discard draft/i })).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
 
     openPanel();
     expect(getComposer().value).toBe('');
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(
+      screen.queryByText(/thanks — your issue is on its way/i),
+    ).toBeNull();
   });
 
   it('close button is disabled while a submit is in flight', async () => {
