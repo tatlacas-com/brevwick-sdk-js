@@ -14,6 +14,7 @@
     "console-error-ring",
     "create-brevwick-core",
     "credit-footer",
+    "hide-panel-during-region-overlay",
     "integration-msw-coverage",
     "loopback-http-endpoint",
     "network-ring",
