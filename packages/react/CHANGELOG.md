@@ -2,7 +2,7 @@
 
 ## 1.0.0-beta.6
 
-### Minor Changes
+### Minor Changes.
 
 - [#53](https://github.com/tatlacas-com/brevwick-sdk-js/pull/53) [`9a33e1d`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/9a33e1d6b3b6a535e02087128ce2c262db31657d) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(react): redesign feedback panel as continuous chat thread
 
