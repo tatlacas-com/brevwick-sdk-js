@@ -1,0 +1,23 @@
+{
+  "name": "brevwick-example-vue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3001",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --port 3001"
+  },
+  "dependencies": {
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "@tatlacas/brevwick-vue": "workspace:*",
+    "modern-screenshot": "^4.0.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.2.0"
+  }
+}
