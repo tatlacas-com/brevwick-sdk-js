@@ -27,7 +27,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
   };
 });
 
-import { BrevwickPlugin } from '../plugin';
+import { BrevwickPlugin, BREVWICK_INJECTION_KEY } from '../plugin';
 import { useFeedback } from '../composables/use-feedback';
 
 afterEach(() => {
@@ -101,5 +101,25 @@ describe('useFeedback', () => {
     await expect(api.captureScreenshot()).resolves.toBe(blob);
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
     app.unmount();
+  });
+
+  it('throws a distinguishable SSR error when the plugin provided null', () => {
+    // Simulate the SSR install path: the plugin runs server-side, finds no
+    // `window`, and provides the sentinel `null` so a misuse from a
+    // non-onMounted code path surfaces a clear error instead of a generic
+    // "called outside plugin" message.
+    expect(() => {
+      const Probe = defineComponent({
+        setup() {
+          useFeedback();
+          return () => h('div');
+        },
+      });
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const app = createApp({ render: () => h(Probe) });
+      app.provide(BREVWICK_INJECTION_KEY, null);
+      app.mount(host);
+    }).toThrow(/SSR/);
   });
 });

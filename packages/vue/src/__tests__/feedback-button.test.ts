@@ -141,4 +141,50 @@ describe('FeedbackButton', () => {
     expect((sendBtn!.element as HTMLButtonElement).disabled).toBe(true);
     expect(submit).not.toHaveBeenCalled();
   });
+
+  it('shows a friendly error when the SDK submit chunk fails to load', async () => {
+    submit.mockRejectedValueOnce(new Error('chunk load failed'));
+    const wrapper = mountFab();
+    await wrapper.find('button.brw-fab').trigger('click');
+    await wrapper.find('textarea.brw-textarea').setValue('boom');
+    const sendBtn = wrapper
+      .findAll('button.brw-btn')
+      .find((b) => b.text().toLowerCase().includes('send'));
+    await sendBtn!.trigger('click');
+    await flushPromises();
+    const alert = wrapper.find('[role="alert"]');
+    expect(alert.exists()).toBe(true);
+    expect(alert.text()).toContain('chunk load failed');
+  });
+
+  it('captures a screenshot blob with no MIME and submits with a webp filename fallback', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:fake-url-2');
+    URL.revokeObjectURL = vi.fn();
+    // Blob with empty type — exercises the screenshot ext fallback that
+    // defaults to 'webp' when the MIME is unparseable.
+    const blob = new Blob(['x'], { type: '' });
+    captureScreenshot.mockResolvedValueOnce(blob);
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_fallback' });
+
+    const wrapper = mountFab();
+    await wrapper.find('button.brw-fab').trigger('click');
+    const screenshotBtn = wrapper
+      .findAll('button.brw-btn')
+      .find((b) => b.text().toLowerCase().includes('screenshot'));
+    await screenshotBtn!.trigger('click');
+    await flushPromises();
+
+    await wrapper.find('textarea.brw-textarea').setValue('with shot');
+    const sendBtn = wrapper
+      .findAll('button.brw-btn')
+      .find((b) => b.text().toLowerCase().includes('send'));
+    await sendBtn!.trigger('click');
+    await flushPromises();
+
+    expect(submit).toHaveBeenCalledTimes(1);
+    const submitted = submit.mock.calls[0]![0] as {
+      attachments: Array<{ filename: string }>;
+    };
+    expect(submitted.attachments[0]!.filename).toBe('screenshot.webp');
+  });
 });
