@@ -73,6 +73,19 @@ export default [
     '25 kB',
   ),
 
+  // ── Svelte adapter eager entry (≤ 5 kB gzip) ─────────────────────────────
+  // svelte-package does not bundle peers — `@tatlacas/brevwick-sdk` and
+  // `svelte` resolve at consumer build time. The adapter itself is mostly
+  // re-exports plus the FeedbackButton SFC, so the eager entry is small.
+  // The on-widget-open weight is captured by the SDK's existing
+  // "on widget open" entry above (modern-screenshot dynamic chunk shared
+  // across every framework binding).
+  fileEntry(
+    '@tatlacas/brevwick-svelte eager',
+    'packages/svelte/dist/index.js',
+    '5 kB',
+  ),
+
   // ── On-widget-open total weight (≤ 25 kB gzip) ───────────────────────────
   // Bundled-import mode: esbuild re-bundles the screenshot module + its
   // resolved `modern-screenshot` peer the way a consumer's bundler would for
