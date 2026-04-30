@@ -21,7 +21,7 @@ SDK surface; framework adapters reach it through the existing
 `useFeedback()` gains:
 
 - `phase`: `'idle' | 'capturing' | 'sanitising' | 'formatting' | 'sent'
-  | 'error'` — backwards-compatible alongside the existing `status`.
+| 'error'` — backwards-compatible alongside the existing `status`.
 - `error`: tagged `SubmitError | null` from the most recent failed
   submit.
 - `retry()`: re-runs the most recent `submit()` with the same input.
