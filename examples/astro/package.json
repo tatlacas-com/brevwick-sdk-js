@@ -9,7 +9,6 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@astrojs/check": "^0.9.4",
     "@astrojs/react": "^4.2.0",
     "@tatlacas/brevwick-react": "workspace:*",
     "@tatlacas/brevwick-sdk": "workspace:*",
@@ -19,6 +18,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@astrojs/check": "^0.9.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "typescript": "^5.9.3"

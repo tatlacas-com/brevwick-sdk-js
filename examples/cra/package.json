@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "//": "DISABLE_ESLINT_PLUGIN=true: CRA 5.0.1 ships ESLint 8 (legacy .eslintrc) which conflicts with the workspace's ESLint 9 flat-config. Disabling CRA's bundled plugin lets the workspace lint job own this example without ejecting / craco / a CRA fork.",
     "dev": "DISABLE_ESLINT_PLUGIN=true react-scripts start",
     "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
     "test": "react-scripts test --watchAll=false --passWithNoTests",
