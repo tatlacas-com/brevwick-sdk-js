@@ -15,10 +15,11 @@ export default tseslint.config(
       '**/.next/**',
       '**/.svelte-kit/**',
       '**/build/**',
-      // Svelte SFCs are processed via svelte-eslint-parser; without it
-      // wired up, plain `eslint .` would parse `.svelte` files as TS.
-      // Keeping them out of the lint pass for now — type-check covers them
-      // via svelte2tsx-emitted .d.ts files.
+      // Svelte SFCs are not parsed by eslint here. `svelte-check` /
+      // svelte2tsx via the per-package `type-check` script covers the
+      // type-level issues plain eslint would flag. Wiring up
+      // `svelte-eslint-parser` is intentionally deferred — type-check is
+      // the load-bearing static-analysis gate for the .svelte surface.
       '**/*.svelte',
     ],
   },

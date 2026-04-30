@@ -3,10 +3,9 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["@testing-library/jest-dom", "node"],
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "verbatimModuleSyntax": false
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte"]
+  "include": ["src/lib/**/*.ts", "src/lib/**/*.svelte"]
 }

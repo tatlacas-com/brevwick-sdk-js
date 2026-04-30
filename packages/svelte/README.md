@@ -15,7 +15,7 @@ pnpm add @tatlacas/brevwick-svelte@beta @tatlacas/brevwick-sdk@beta
 
 `@tatlacas/brevwick-sdk` and `svelte` are peer dependencies. Installers that respect peers (npm 7+, pnpm, yarn 3+) pull them in automatically.
 
-**Svelte:** `^5.0.0`. The package compiles cleanly under both runes and the legacy reactivity model.
+**Svelte:** `^5.0.0`. The package targets Svelte 5 only — it compiles under both Svelte 5's runes and legacy reactivity modes, but does not support Svelte 4.
 
 ## Quick start
 

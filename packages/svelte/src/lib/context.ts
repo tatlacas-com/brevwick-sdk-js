@@ -1,4 +1,4 @@
-import { setContext, getContext } from 'svelte';
+import { setContext, getContext, onDestroy } from 'svelte';
 import { writable, type Readable } from 'svelte/store';
 import {
   createBrevwick,
@@ -70,6 +70,12 @@ export function setBrevwickContext(config: BrevwickConfig): Brevwick | null {
   if (typeof window !== 'undefined') {
     sdk = createBrevwick(config);
     sdk.install();
+    // Detach console / network / route rings when the host component is
+    // destroyed (HMR, SPA navigation, test cleanup) so listener queues do
+    // not grow monotonically. Mirrors the React provider's lifecycle pairing.
+    onDestroy(() => {
+      sdk?.uninstall();
+    });
   }
   setContext<BrevwickContextValue>(BREVWICK_KEY, { sdk });
   return sdk;
@@ -103,7 +109,7 @@ export function getFeedback(): FeedbackHandle {
   const requireSdk = (): Brevwick => {
     if (!ctx.sdk) {
       throw new Error(
-        'Brevwick SDK is unavailable during SSR. Call submit / captureScreenshot from onMount or an event handler.',
+        'Brevwick SDK was not initialised — setBrevwickContext ran in a server / non-browser environment, or before `window` was available. Call submit / captureScreenshot from onMount or an event handler.',
       );
     }
     return ctx.sdk;

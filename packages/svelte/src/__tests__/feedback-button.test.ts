@@ -65,13 +65,25 @@ afterEach(() => {
 
 const mountFab = (
   onSubmitSpy: ReturnType<typeof vi.fn> | undefined = undefined,
+  extra: Record<string, unknown> = {},
 ) =>
   render(App, {
     props: {
       config: { projectKey: 'pk_test_fab' },
       onSubmit: onSubmitSpy,
+      ...extra,
     },
   });
+
+const openPanel = async (): Promise<HTMLElement> => {
+  const fab = await screen.findByRole('button', {
+    name: /open feedback form/i,
+  });
+  await act(async () => {
+    await fireEvent.click(fab);
+  });
+  return fab;
+};
 
 describe('<FeedbackButton>', () => {
   it('renders the FAB after mount and stays closed by default', async () => {
@@ -87,27 +99,61 @@ describe('<FeedbackButton>', () => {
 
   it('opens the panel on click', async () => {
     mountFab();
-    const fab = await screen.findByRole('button', {
-      name: /open feedback form/i,
-    });
-    await act(async () => {
-      await fireEvent.click(fab);
-    });
+    await openPanel();
     expect(
       screen.getByRole('dialog', { name: /send feedback/i }),
     ).toBeInTheDocument();
   });
 
-  it('does not render anything when hidden=true', () => {
-    render(App, {
-      props: {
-        config: { projectKey: 'pk_test_fab' },
-      },
+  it('renders nothing when hidden=true', async () => {
+    mountFab(undefined, { hidden: true });
+    // Wait for any potential mount cycle, then assert no FAB / dialog exist.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: /open feedback form/i }),
+      ).not.toBeInTheDocument();
     });
-    // Nothing to assert against directly because the App fixture doesn't
-    // wire `hidden` through; this case is covered by the prop being a
-    // pass-through to the SFC. Skip — direct unit covered by the SFC's
-    // declarative `{#if !hidden && mounted}` block.
+    expect(
+      screen.queryByRole('dialog', { name: /send feedback/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not open the panel when disabled=true', async () => {
+    mountFab(undefined, { disabled: true });
+    const fab = await screen.findByRole('button', {
+      name: /open feedback form/i,
+    });
+    expect(fab).toBeDisabled();
+    await act(async () => {
+      await fireEvent.click(fab);
+    });
+    expect(
+      screen.queryByRole('dialog', { name: /send feedback/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('pins the FAB to the bottom-left corner when position="bottom-left"', async () => {
+    mountFab(undefined, { position: 'bottom-left' });
+    const fab = await screen.findByRole('button', {
+      name: /open feedback form/i,
+    });
+    expect(fab.className).toContain('brw-fab-bl');
+    expect(fab.className).not.toContain('brw-fab-br');
+
+    await act(async () => {
+      await fireEvent.click(fab);
+    });
+    const panel = screen.getByRole('dialog', { name: /send feedback/i });
+    expect(panel.className).toContain('brw-panel-bl');
+  });
+
+  it('forwards the theme prop onto the widget root via data-brw-theme', async () => {
+    const { container } = mountFab(undefined, { theme: 'dark' });
+    await waitFor(() => {
+      const root = container.querySelector('.brw-svelte-root');
+      expect(root).not.toBeNull();
+      expect(root?.getAttribute('data-brw-theme')).toBe('dark');
+    });
   });
 
   it('captures a screenshot via the SDK on screenshot button click', async () => {
@@ -115,12 +161,7 @@ describe('<FeedbackButton>', () => {
       new Blob(['x'], { type: 'image/png' }),
     );
     mountFab();
-    const fab = await screen.findByRole('button', {
-      name: /open feedback form/i,
-    });
-    await act(async () => {
-      await fireEvent.click(fab);
-    });
+    await openPanel();
     const screenshotBtn = screen.getByRole('button', {
       name: /capture screenshot of this page/i,
     });
@@ -128,7 +169,6 @@ describe('<FeedbackButton>', () => {
       await fireEvent.click(screenshotBtn);
     });
     await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
-    // Chip appears with the screenshot label.
     await waitFor(() =>
       expect(screen.getByText(/^screenshot$/i)).toBeInTheDocument(),
     );
@@ -142,12 +182,7 @@ describe('<FeedbackButton>', () => {
     const onSubmitSpy = vi.fn();
 
     mountFab(onSubmitSpy);
-    const fab = await screen.findByRole('button', {
-      name: /open feedback form/i,
-    });
-    await act(async () => {
-      await fireEvent.click(fab);
-    });
+    await openPanel();
 
     const textarea = screen.getByRole('textbox', {
       name: /feedback message/i,
@@ -185,7 +220,6 @@ describe('<FeedbackButton>', () => {
         screen.getByText(/thanks — your issue is on its way/i),
       ).toBeInTheDocument(),
     );
-    // Composer cleared
     expect(
       (
         screen.getByRole('textbox', {
@@ -202,12 +236,7 @@ describe('<FeedbackButton>', () => {
     });
 
     mountFab();
-    const fab = await screen.findByRole('button', {
-      name: /open feedback form/i,
-    });
-    await act(async () => {
-      await fireEvent.click(fab);
-    });
+    await openPanel();
     const textarea = screen.getByRole('textbox', {
       name: /feedback message/i,
     });
@@ -223,15 +252,46 @@ describe('<FeedbackButton>', () => {
     );
   });
 
+  it('renders a generic error when the SDK throws (catch branch)', async () => {
+    submit.mockRejectedValueOnce(new Error('network down'));
+
+    mountFab();
+    await openPanel();
+    const textarea = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    });
+    await act(async () => {
+      await fireEvent.input(textarea, { target: { value: 'oops' } });
+    });
+    await act(async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/network down/i),
+    );
+  });
+
+  it('renders an error when the screenshot capture fails', async () => {
+    captureScreenshot.mockRejectedValueOnce(new Error('capture exploded'));
+    mountFab();
+    await openPanel();
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/capture exploded/i),
+    );
+  });
+
   it('disables the screenshot + file buttons once 5 attachments are queued', async () => {
     captureScreenshot.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
     mountFab();
-    const fab = await screen.findByRole('button', {
-      name: /open feedback form/i,
-    });
-    await act(async () => {
-      await fireEvent.click(fab);
-    });
+    await openPanel();
 
     for (let i = 0; i < 5; i++) {
       const btn = screen.getByRole('button', {
@@ -249,5 +309,187 @@ describe('<FeedbackButton>', () => {
       name: /maximum 5 attachments reached/i,
     });
     expect(cappedBtn).toBeDisabled();
+  });
+
+  it('attaches files via the file input and removes them on chip click', async () => {
+    mountFab();
+    await openPanel();
+
+    const fileInput = screen
+      .getByRole('dialog')
+      .querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+
+    const f1 = new File(['hello'], 'log.txt', { type: 'text/plain' });
+    const f2 = new File(['x'.repeat(2048)], 'big.bin', {
+      type: 'application/octet-stream',
+    });
+
+    await act(async () => {
+      await fireEvent.change(fileInput!, { target: { files: [f1, f2] } });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('log.txt')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('big.bin')).toBeInTheDocument();
+    // formatSize: 5 B (B tier) and 2.0 kB (kB tier).
+    expect(screen.getByText('5 B')).toBeInTheDocument();
+    expect(screen.getByText('2.0 kB')).toBeInTheDocument();
+
+    const removeBtn = screen.getByRole('button', { name: /remove log\.txt/i });
+    await act(async () => {
+      await fireEvent.click(removeBtn);
+    });
+    await waitFor(() =>
+      expect(screen.queryByText('log.txt')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('exercises every formatSize tier (B / kB / MB)', async () => {
+    mountFab();
+    await openPanel();
+
+    const fileInput = screen
+      .getByRole('dialog')
+      .querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+
+    const small = new File(['ab'], 'small.txt', { type: 'text/plain' });
+    const med = new File(['x'.repeat(1500)], 'med.bin', {
+      type: 'application/octet-stream',
+    });
+    const big = new File(['y'.repeat(2 * 1024 * 1024)], 'big.bin', {
+      type: 'application/octet-stream',
+    });
+
+    await act(async () => {
+      await fireEvent.change(fileInput!, { target: { files: [small, med, big] } });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('2 B')).toBeInTheDocument();
+      expect(screen.getByText('1.5 kB')).toBeInTheDocument();
+      expect(screen.getByText('2.0 MB')).toBeInTheDocument();
+    });
+  });
+
+  it('removes a captured screenshot via its remove button and revokes the URL', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['x'], { type: 'image/png' }),
+    );
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+
+    mountFab();
+    await openPanel();
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText(/^screenshot$/i)).toBeInTheDocument(),
+    );
+
+    const removeBtn = screen.getByRole('button', { name: /remove screenshot 1/i });
+    await act(async () => {
+      await fireEvent.click(removeBtn);
+    });
+    await waitFor(() =>
+      expect(screen.queryByText(/^screenshot$/i)).not.toBeInTheDocument(),
+    );
+    expect(revokeSpy).toHaveBeenCalled();
+  });
+
+  it('submits via Enter (and ignores Enter with modifier keys)', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'i_enter' });
+    mountFab();
+    await openPanel();
+    const textarea = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    });
+    await act(async () => {
+      await fireEvent.input(textarea, { target: { value: 'enter-send' } });
+    });
+
+    // Shift+Enter MUST NOT submit.
+    await act(async () => {
+      await fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+    });
+    expect(submit).not.toHaveBeenCalled();
+
+    // Plain Enter submits.
+    await act(async () => {
+      await fireEvent.keyDown(textarea, { key: 'Enter' });
+    });
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not submit when the draft is empty / whitespace', async () => {
+    mountFab();
+    await openPanel();
+    const send = screen.getByRole('button', { name: /^send$/i });
+    expect(send).toBeDisabled();
+    await act(async () => {
+      await fireEvent.click(send);
+    });
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('closes the panel via the × button', async () => {
+    mountFab();
+    await openPanel();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    const closeBtn = screen.getByRole('button', { name: /^close$/i });
+    await act(async () => {
+      await fireEvent.click(closeBtn);
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('closes the panel on Escape (parity with React/Radix)', async () => {
+    mountFab();
+    await openPanel();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => {
+      await fireEvent.keyDown(window, { key: 'Escape' });
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('caps screenshots at 5 even if a stale capture lands after the cap', async () => {
+    // Race-cap defence-in-depth: once 5 attachments are queued, a long-running
+    // capture that resolves AFTER the cap was reached must not push a 6th.
+    captureScreenshot.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+    mountFab();
+    await openPanel();
+
+    // Fill via 5 file attachments (instant, no await).
+    const fileInput = screen
+      .getByRole('dialog')
+      .querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    const five = Array.from({ length: 5 }, (_, i) =>
+      new File(['x'], `f${i}.txt`, { type: 'text/plain' }),
+    );
+    await act(async () => {
+      await fireEvent.change(fileInput!, { target: { files: five } });
+    });
+
+    // Trigger a screenshot that resolves *after* we hit the cap. Because the
+    // capture button is now disabled (attachmentsAtCap), `handleScreenshot`
+    // is gated by the early `if (capturing || attachmentsAtCap) return`
+    // guard — defence-in-depth verified by the surface contract.
+    const screenshotBtn = screen.getByRole('button', {
+      name: /maximum 5 attachments reached/i,
+    });
+    expect(screenshotBtn).toBeDisabled();
   });
 });

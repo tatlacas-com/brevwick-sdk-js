@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": ["@testing-library/jest-dom", "node"]
+  },
+  "include": [
+    "src/lib/**/*.ts",
+    "src/lib/**/*.svelte",
+    "src/__tests__/**/*.ts",
+    "src/__tests__/**/*.svelte",
+    "vitest.config.ts",
+    "vitest.setup.ts"
+  ]
+}

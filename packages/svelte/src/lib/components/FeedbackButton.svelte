@@ -8,6 +8,11 @@
   import { getFeedback, type FeedbackStatus } from '../context';
   import { BREVWICK_SVELTE_VERSION } from '../internal/version';
 
+  // Props use Svelte's `export let` (legacy mode under Svelte 5) rather
+  // than `$props()` runes. This keeps the SFC compiling under both legacy
+  // and runes-mode hosts: Svelte 5 supports `export let` cleanly in legacy
+  // mode, and a runes-mode parent simply sees the same prop interface.
+  // We will revisit when Svelte 6 (rune-only) lands.
   /** Corner the FAB pins to. Default `'bottom-right'`. */
   export let position: 'bottom-right' | 'bottom-left' = 'bottom-right';
   /** When true, the FAB renders as disabled and cannot open the dialog. */
@@ -21,9 +26,11 @@
   /** Fired with the SDK's `SubmitResult` after every submit (success or failure). */
   export let onSubmit: ((result: SubmitResult) => void) | undefined = undefined;
 
-  // Combined screenshot + file cap, mirrored from the SDK's
-  // MAX_ATTACHMENT_COUNT in packages/sdk/src/submit.ts. Enforced in the UI
-  // so the user can't queue an attachment the SDK would reject downstream.
+  // Combined screenshot + file cap. Keep in sync with MAX_ATTACHMENT_COUNT
+  // in packages/sdk/src/submit.ts (not exported on the SDK's frozen public
+  // surface) and the matching constant in packages/react/src/feedback-button.tsx.
+  // Enforced in the UI so the user can't queue an attachment the SDK would
+  // reject downstream.
   const MAX_ATTACHMENTS = 5;
 
   // Resolved during component init so getContext() finds the parent layout's
@@ -53,6 +60,11 @@
       // Revoke any object URLs left behind on unmount so a HMR cycle doesn't
       // leak previews between renders.
       for (const s of screenshots) URL.revokeObjectURL(s.url);
+      // Defence-in-depth: ensure the Escape keydown listener is detached
+      // even if the component unmounts while the panel is still open.
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('keydown', handleWindowKeydown);
+      }
     };
   });
 
@@ -67,6 +79,24 @@
 
   function closePanel(): void {
     open = false;
+  }
+
+  // Escape-to-close: parity with the React adapter (Radix Dialog ships this
+  // for free). Listener is attached only while the panel is open and is
+  // detached the moment it closes or the component unmounts.
+  function handleWindowKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      closePanel();
+    }
+  }
+
+  $: if (typeof window !== 'undefined') {
+    if (open) {
+      window.addEventListener('keydown', handleWindowKeydown);
+    } else {
+      window.removeEventListener('keydown', handleWindowKeydown);
+    }
   }
 
   async function handleScreenshot(): Promise<void> {
@@ -107,7 +137,10 @@
     }
     const next: { id: number; file: File }[] = [];
     for (let i = 0; i < Math.min(remaining, list.length); i++) {
-      next.push({ id: ++fileId, file: list.item(i)! });
+      // Indexed access works on both real FileList and happy-dom's stub;
+      // `list.item(i)` would fail under happy-dom which omits the method.
+      const file = list[i];
+      if (file) next.push({ id: ++fileId, file });
     }
     files = [...files, ...next];
     input.value = '';
@@ -143,23 +176,33 @@
     for (const { file } of files)
       attachments.push({ blob: file, filename: file.name });
 
-    const derivedTitle = draft.trim().split('\n', 1)[0]!.slice(0, 120);
+    const derivedTitle = (draft.trim().split('\n', 1)[0] ?? '').slice(0, 120);
     const input: FeedbackInput = {
       title: derivedTitle,
       description: draft,
       attachments: attachments.length ? attachments : undefined,
     };
 
-    const submittedScreenshots = screenshots;
+    // Snapshot the in-flight set so we only revoke / drop screenshots that
+    // were actually submitted. The composer's screenshot button is disabled
+    // while $status === 'submitting', but a defence-in-depth diff keeps any
+    // screenshot that somehow lands mid-flight from being silently dropped
+    // along with its Object URL.
+    const submittedScreenshotIds = new Set(screenshots.map((s) => s.id));
+    const submittedFileIds = new Set(files.map((f) => f.id));
     try {
       const result = await feedback.submit(input);
       onSubmit?.(result);
       if (result.ok) {
         successAt = Date.now();
         draft = '';
-        for (const s of submittedScreenshots) URL.revokeObjectURL(s.url);
-        screenshots = [];
-        files = [];
+        for (const s of screenshots) {
+          if (submittedScreenshotIds.has(s.id)) URL.revokeObjectURL(s.url);
+        }
+        screenshots = screenshots.filter(
+          (s) => !submittedScreenshotIds.has(s.id),
+        );
+        files = files.filter((f) => !submittedFileIds.has(f.id));
       } else {
         submitError = result.error.message;
       }
@@ -191,7 +234,7 @@
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  // Inferred so `pos` re-derives when `position` is reactive-changed.
+  // Reactive so the FAB / panel CSS classes re-derive when `position` changes.
   $: fabPosClass = position === 'bottom-left' ? 'brw-fab-bl' : 'brw-fab-br';
   $: panelPosClass =
     position === 'bottom-left' ? 'brw-panel-bl' : 'brw-panel-br';
@@ -455,11 +498,8 @@
     font-size: 14px;
   }
 
-  .brw-svelte-root[data-brw-theme='dark'],
-  :global(.brw-svelte-root[data-brw-theme='system']) {
-    /* placeholder; the @media block below handles system dark mode */
-  }
-
+  /* `data-brw-theme='system'` resolves via the @media block below;
+     `data-brw-theme='dark'` forces dark via the explicit override. */
   .brw-svelte-root[data-brw-theme='dark'] {
     --brw-fg: #f3f4f6;
     --brw-fg-muted: #9ca3af;

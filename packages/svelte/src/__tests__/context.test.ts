@@ -61,6 +61,24 @@ describe('setBrevwickContext', () => {
     expect(captured.sdk).not.toBeNull();
     expect(install).toHaveBeenCalledTimes(1);
   });
+
+  it('calls sdk.uninstall() when the provider component is destroyed', async () => {
+    const { unmount } = render(Provider, {
+      props: {
+        config: { projectKey: 'pk_test_ctx_destroy' },
+        onSdk: () => undefined,
+      },
+    });
+
+    expect(install).toHaveBeenCalledTimes(1);
+    expect(uninstall).not.toHaveBeenCalled();
+
+    await act(async () => {
+      unmount();
+    });
+
+    expect(uninstall).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('getFeedback outside setBrevwickContext', () => {

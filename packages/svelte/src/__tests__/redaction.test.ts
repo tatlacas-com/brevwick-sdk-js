@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe('redaction — every payload passes through SDK redact()', () => {
-  it('strips JWTs, Bearer tokens, and emails from the wire payload', async () => {
+  it('strips JWTs, Authorization headers, Bearer tokens, and emails from the wire payload', async () => {
     const captured: { body?: string } = {};
     const fetchSpy = vi.fn(
       async (url: string | URL | Request, init?: RequestInit) => {
@@ -63,11 +63,14 @@ describe('redaction — every payload passes through SDK redact()', () => {
     const email = 'leak.me@example.com';
 
     // Place each secret on its own line so the SDK's `Authorization:[^\n]+`
-    // header pattern does not greedily swallow the JWT / email tokens before
-    // their dedicated patterns fire.
+    // header pattern does not greedily swallow the JWT / email / standalone
+    // Bearer tokens before their dedicated patterns fire. The standalone
+    // Bearer line exercises the Bearer pattern independently of the
+    // Authorization-line pattern.
+    const standaloneBearer = 'Bearer abcDEF123-_+/.=';
     await act(async () => {
       const result = await handle.submit({
-        description: `bug repro:\nsession token ${jwt}\ncontact: ${email}\nheader Authorization: Bearer abc.def`,
+        description: `bug repro:\nsession token ${jwt}\ncontact: ${email}\nstandalone ${standaloneBearer}\nheader Authorization: Bearer auth-line-token`,
       });
       expect(result.ok).toBe(true);
     });
@@ -78,10 +81,13 @@ describe('redaction — every payload passes through SDK redact()', () => {
     // Original secrets must not appear on the wire.
     expect(body).not.toContain(jwt);
     expect(body).not.toContain(email);
+    expect(body).not.toContain(standaloneBearer);
 
     // Redaction markers from packages/sdk/src/core/internal/redact.ts.
     expect(body).toContain('[jwt]');
     expect(body).toContain('[email]');
     expect(body).toMatch(/Authorization: \[redacted\]/);
+    // Independent Bearer pattern fired on the standalone-line token.
+    expect(body).toContain('Bearer [redacted]');
   });
 });
