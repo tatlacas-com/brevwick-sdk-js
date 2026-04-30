@@ -73,6 +73,23 @@ export default [
     '25 kB',
   ),
 
+  // ── Vue bundle (≤ 5 kB gzip eager) ───────────────────────────────────────
+  // The Vue adapter is intentionally a thinner surface than React (no Radix
+  // dialog, no AI toggle, no region overlay, no preview dialog). The 5 kB
+  // ceiling reflects what a Vue 3 plugin + composable + minimal FAB
+  // component costs once minified — current size sits well under this and
+  // any drift surfaces as a CI failure here before it ships.
+  fileEntry(
+    '@tatlacas/brevwick-vue (ESM)',
+    'packages/vue/dist/index.js',
+    '5 kB',
+  ),
+  fileEntry(
+    '@tatlacas/brevwick-vue (CJS)',
+    'packages/vue/dist/index.cjs',
+    '5 kB',
+  ),
+
   // ── On-widget-open total weight (≤ 25 kB gzip) ───────────────────────────
   // Bundled-import mode: esbuild re-bundles the screenshot module + its
   // resolved `modern-screenshot` peer the way a consumer's bundler would for
