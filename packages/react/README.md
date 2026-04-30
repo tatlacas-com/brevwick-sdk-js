@@ -119,6 +119,69 @@ SSR-safety doesn't apply here — Vite and CRA always render on the client. The 
 
 End-to-end runnable apps: [`examples/vite-react`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/vite-react), [`examples/cra`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/cra).
 
+### Remix
+
+Remix server-renders the document, but the provider is SSR-safe — `createBrevwick` runs in `useMemo` and the rings install in `useEffect`, so the SDK is a no-op on the server. Mount the provider inside `app/root.tsx`'s `<Layout>` so it wraps the `<Outlet />`: every route reached via the outlet is inside the provider, and `useFeedback()` works in any of them.
+
+```bash
+pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot
+```
+
+```tsx
+// app/configured-widget.tsx
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+import type { ReactNode } from 'react';
+
+const projectKey = process.env.REMIX_PUBLIC_BREVWICK_PROJECT_KEY ?? '';
+const config = { projectKey };
+
+export function ConfiguredWidget({ children }: { children: ReactNode }) {
+  if (!projectKey) return <>{children}</>;
+  return (
+    <BrevwickProvider config={config}>
+      {children}
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+```tsx
+// app/root.tsx
+import {
+  Outlet,
+  Links,
+  Meta,
+  Scripts,
+  ScrollRestoration,
+} from '@remix-run/react';
+import { ConfiguredWidget } from './configured-widget.client';
+
+export function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        <ConfiguredWidget>{children}</ConfiguredWidget>
+        <ScrollRestoration />
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+export default function App() {
+  return <Outlet />;
+}
+```
+
+**Env-var convention:** Remix exposes anything you pass through `process.env` at build time. By convention, vars meant for the client tree carry a `REMIX_PUBLIC_` prefix; everything else stays server-only and never lands in the bundle.
+
+End-to-end runnable app: [`examples/remix`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/remix).
+
 ## `BrevwickProvider`
 
 Top-level provider. Creates a single SDK instance, installs rings on mount, uninstalls on unmount.
