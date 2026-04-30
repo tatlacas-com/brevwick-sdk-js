@@ -11,11 +11,12 @@ Ship feedback from any browser app straight into clean, AI-formatted GitHub issu
 
 ## Packages
 
-| Package                                        | Description                                                                | API reference                                          |
-| ---------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------ |
-| [`@tatlacas/brevwick-sdk`](./packages/sdk)     | Framework-agnostic core: submit, screenshot, rings.                        | [packages/sdk/README.md](./packages/sdk/README.md)     |
-| [`@tatlacas/brevwick-react`](./packages/react) | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19.    | [packages/react/README.md](./packages/react/README.md) |
-| [`@tatlacas/brevwick-vue`](./packages/vue)     | Plugin, floating FAB component, and `useFeedback` composable for Vue 3.4+. | [packages/vue/README.md](./packages/vue/README.md)     |
+| Package                                          | Description                                                                | API reference                                            |
+| ------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------- |
+| [`@tatlacas/brevwick-sdk`](./packages/sdk)       | Framework-agnostic core: submit, screenshot, rings.                        | [packages/sdk/README.md](./packages/sdk/README.md)       |
+| [`@tatlacas/brevwick-react`](./packages/react)   | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19.    | [packages/react/README.md](./packages/react/README.md)   |
+| [`@tatlacas/brevwick-vue`](./packages/vue)       | Plugin, floating FAB component, and `useFeedback` composable for Vue 3.4+. | [packages/vue/README.md](./packages/vue/README.md)       |
+| [`@tatlacas/brevwick-svelte`](./packages/svelte) | Context setter, FAB, and `getFeedback()` for Svelte 5 and SvelteKit.       | [packages/svelte/README.md](./packages/svelte/README.md) |
 
 ## Install
 

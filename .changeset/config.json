@@ -10,7 +10,8 @@
     [
       "@tatlacas/brevwick-sdk",
       "@tatlacas/brevwick-react",
-      "@tatlacas/brevwick-vue"
+      "@tatlacas/brevwick-vue",
+      "@tatlacas/brevwick-svelte"
     ]
   ],
   "access": "public",

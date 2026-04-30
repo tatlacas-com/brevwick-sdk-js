@@ -13,8 +13,15 @@ export default tseslint.config(
       '**/coverage/**',
       '**/*.config.*',
       '**/.next/**',
-      '**/build/**',
+      '**/.svelte-kit/**',
       '**/.astro/**',
+      '**/build/**',
+      // Svelte SFCs are not parsed by eslint here. `svelte-check` /
+      // svelte2tsx via the per-package `type-check` script covers the
+      // type-level issues plain eslint would flag. Wiring up
+      // `svelte-eslint-parser` is intentionally deferred — type-check is
+      // the load-bearing static-analysis gate for the .svelte surface.
+      '**/*.svelte',
     ],
   },
   {

@@ -8,6 +8,8 @@ coverage/
 .vscode/
 *.tsbuildinfo
 *.tgz
+.svelte-kit/
+build/
 
 # Local-only consumer sync scripts (tarball build + install into a sibling app).
 scripts/sync-*.sh
