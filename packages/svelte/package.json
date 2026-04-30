@@ -1,0 +1,63 @@
+{
+  "name": "@tatlacas/brevwick-svelte",
+  "version": "0.1.0-beta.1",
+  "description": "Brevwick Svelte bindings — context, FAB, getFeedback. Drop-in for Svelte 5 and SvelteKit apps.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "svelte": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "svelte-package -i src/lib -o dist && publint",
+    "dev": "svelte-package -i src/lib -o dist --watch",
+    "test": "vitest run",
+    "test:cover": "vitest run --coverage",
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
+  },
+  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",
+    "directory": "packages/svelte"
+  },
+  "keywords": [
+    "brevwick",
+    "svelte",
+    "sveltekit",
+    "qa",
+    "feedback",
+    "bug-issue"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "peerDependencies": {
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/package": "^2.5.7",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/svelte": "^5.2.6",
+    "publint": "^0.3.0",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.1.1"
+  }
+}

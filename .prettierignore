@@ -1,7 +1,12 @@
 pnpm-lock.yaml
 node_modules
 **/dist
+**/build
 coverage
 notes
 **/.next/**
+**/.astro/**
+**/.svelte-kit/**
+**/.vinxi/**
+**/.output/**
 **/next-env.d.ts

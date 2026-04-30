@@ -1,0 +1,43 @@
+{
+  "name": "brevwick-example-cra",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "//": "DISABLE_ESLINT_PLUGIN=true: CRA 5.0.1 ships ESLint 8 (legacy .eslintrc) which conflicts with the workspace's ESLint 9 flat-config. Disabling CRA's bundled plugin lets the workspace lint job own this example without ejecting / craco / a CRA fork.",
+    "dev": "DISABLE_ESLINT_PLUGIN=true react-scripts start",
+    "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
+    "test": "react-scripts test --watchAll=false --passWithNoTests",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "@tatlacas/brevwick-react": "workspace:*",
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "modern-screenshot": "^4.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-scripts": "5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^4.9.5"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  }
+}
