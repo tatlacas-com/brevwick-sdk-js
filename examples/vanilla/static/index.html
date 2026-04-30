@@ -61,43 +61,58 @@
     </main>
 
     <!--
-      Replace `pk_test_demo` below with your own test key from brevwick.dev →
-      project → Keys. The bare `@beta` dist-tag tracks all pre-1.0 releases.
+      Replace `pk_test_replace_me` below with your own test key from
+      brevwick.dev → project → Keys. The CDN URL is pinned to a specific
+      version so this no-build example never silently shifts under you;
+      bump the pin when you upgrade.
     -->
     <script type="module">
-      import { createBrevwick } from 'https://esm.sh/@tatlacas/brevwick-sdk@beta';
+      import { createBrevwick } from 'https://esm.sh/@tatlacas/brevwick-sdk@1.0.0-beta.7';
 
-      const brevwick = createBrevwick({
-        projectKey: 'pk_test_demo',
-        environment: 'dev',
-      });
+      // Replace this with a real key before running. `createBrevwick`
+      // validates synchronously, so we short-circuit on the seeded
+      // placeholder to render a friendly message instead of throwing.
+      const PROJECT_KEY = 'pk_test_replace_me';
+      const PLACEHOLDER_KEY = 'pk_test_replace_me';
 
       const button = document.getElementById('send');
       const result = document.getElementById('result');
 
-      button.addEventListener('click', async () => {
+      if (PROJECT_KEY === PLACEHOLDER_KEY) {
         button.disabled = true;
-        result.className = '';
-        result.textContent = 'Sending…';
-        try {
-          const res = await brevwick.submit({
-            title: 'Hello from the vanilla static example',
-            description: 'Test issue',
-          });
-          if (res.ok) {
-            result.className = 'ok';
-            result.textContent = `Issue sent: ${res.issue_id}`;
-          } else {
+        result.className = 'err';
+        result.textContent =
+          'Replace pk_test_replace_me in this file with a real test key from brevwick.dev → project → Keys.';
+      } else {
+        const brevwick = createBrevwick({
+          projectKey: PROJECT_KEY,
+          environment: 'dev',
+        });
+
+        button.addEventListener('click', async () => {
+          button.disabled = true;
+          result.className = '';
+          result.textContent = 'Sending…';
+          try {
+            const res = await brevwick.submit({
+              title: 'Hello from the vanilla static example',
+              description: 'Test issue',
+            });
+            if (res.ok) {
+              result.className = 'ok';
+              result.textContent = `Issue sent: ${res.issue_id}`;
+            } else {
+              result.className = 'err';
+              result.textContent = `Error [${res.error.code}]: ${res.error.message}`;
+            }
+          } catch (err) {
             result.className = 'err';
-            result.textContent = `Error [${res.error.code}]: ${res.error.message}`;
+            result.textContent = `Unexpected error: ${String(err)}`;
+          } finally {
+            button.disabled = false;
           }
-        } catch (err) {
-          result.className = 'err';
-          result.textContent = `Unexpected error: ${String(err)}`;
-        } finally {
-          button.disabled = false;
-        }
-      });
+        });
+      }
     </script>
   </body>
 </html>

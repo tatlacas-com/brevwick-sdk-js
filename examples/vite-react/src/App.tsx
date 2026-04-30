@@ -1,7 +1,17 @@
 import type { ReactElement } from 'react';
 import { ConfiguredWidget } from './configured-widget';
 
+// Mirrors `validateConfig` from `@tatlacas/brevwick-sdk` so we render a
+// friendly banner instead of crashing the React tree when the env file still
+// holds the seeded placeholder. `createBrevwick(...)` would throw
+// synchronously inside the provider's `useMemo` otherwise.
+const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
+const PLACEHOLDER_KEY = 'pk_test_replace_me';
 const projectKey = import.meta.env.VITE_BREVWICK_PROJECT_KEY ?? '';
+const keyIsReady =
+  projectKey.length > 0 &&
+  projectKey !== PLACEHOLDER_KEY &&
+  PROJECT_KEY_PATTERN.test(projectKey);
 
 export function App(): ReactElement {
   return (
@@ -31,15 +41,16 @@ export function App(): ReactElement {
           submit, and check your project inbox at{' '}
           <a href="https://brevwick.dev">brevwick.dev</a>.
         </p>
-        {!projectKey && (
+        {!keyIsReady && (
           <p style={{ color: '#b42318' }}>
-            Missing <code>VITE_BREVWICK_PROJECT_KEY</code>. Copy{' '}
-            <code>.env.example</code> to <code>.env.local</code>, set your{' '}
-            <code>pk_test_…</code> key, and reload.
+            Set <code>VITE_BREVWICK_PROJECT_KEY</code> to a real{' '}
+            <code>pk_test_…</code> key. Copy <code>.env.example</code> to{' '}
+            <code>.env.local</code>, replace <code>pk_test_replace_me</code>,
+            and reload.
           </p>
         )}
       </section>
-      {projectKey ? <ConfiguredWidget projectKey={projectKey} /> : null}
+      {keyIsReady ? <ConfiguredWidget projectKey={projectKey} /> : null}
     </main>
   );
 }
