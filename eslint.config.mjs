@@ -13,6 +13,10 @@ export default tseslint.config(
       '**/coverage/**',
       '**/*.config.*',
       '**/.next/**',
+      // SolidStart (vinxi) regenerates these on every dev/build; they are
+      // already in .gitignore so they should not be linted either.
+      '**/.vinxi/**',
+      '**/.output/**',
     ],
   },
   {

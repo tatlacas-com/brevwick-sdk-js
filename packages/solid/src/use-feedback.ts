@@ -22,7 +22,15 @@ export interface UseFeedbackResult {
   submit: (input: FeedbackInput) => Promise<SubmitResult>;
   /** Capture a DOM screenshot via the core SDK (dynamic import). */
   captureScreenshot: () => Promise<Blob>;
-  /** Current submission status. Reactive accessor. */
+  /**
+   * Current submission status. Reactive accessor.
+   *
+   * Status is **per `useFeedback()` call** (each call creates an independent
+   * signal), not global. Two components consuming the hook each track their
+   * own lifecycle — calling `submit()` on one will not flip `status()` on the
+   * other. Hoist a shared signal into your own context if a single status
+   * across the app is required.
+   */
   status: Accessor<FeedbackStatus>;
   /** Reset `status` back to `'idle'`. Does not cancel an in-flight submit. */
   reset: () => void;
@@ -32,10 +40,12 @@ export interface UseFeedbackResult {
  * Solid hook that exposes the Brevwick submission primitives against the
  * instance supplied by the nearest {@link BrevwickProvider}.
  *
- * Throws synchronously when called outside a provider. Throws when the SDK
- * has not yet hydrated on the client (rare; consumers usually gate the FAB
- * behind a `Show` so this only surfaces if `submit()` is called from a route
- * loader or top-level module side-effect).
+ * Throws synchronously when called outside a provider. The returned `submit`
+ * and `captureScreenshot` functions both **reject** with an `Error` if they
+ * are invoked before the SDK has hydrated on the client (rare; consumers
+ * usually gate the FAB behind `Show when={isClient}` so this only surfaces if
+ * the calls run from a route loader or top-level module side-effect). Both
+ * paths surface the missing-SDK error asymmetry-free as a rejected promise.
  */
 export function useFeedback(): UseFeedbackResult {
   const ctx = useContext(BrevwickContext);
@@ -61,7 +71,18 @@ export function useFeedback(): UseFeedbackResult {
   };
 
   const submit = async (input: FeedbackInput): Promise<SubmitResult> => {
-    const sdk = requireSdk();
+    // Resolve the SDK before flipping status so a pre-hydration call still
+    // surfaces an `'error'` end state rather than getting stuck on
+    // `'submitting'`. The status transition lands inside the same async
+    // boundary as the await, keeping `(input) => Promise<SubmitResult>` the
+    // single observable surface.
+    let sdk;
+    try {
+      sdk = requireSdk();
+    } catch (error) {
+      setStatus('error');
+      throw error;
+    }
     setStatus('submitting');
     try {
       const result = await sdk.submit(input);
@@ -77,8 +98,19 @@ export function useFeedback(): UseFeedbackResult {
     }
   };
 
-  const captureScreenshot = (): Promise<Blob> =>
-    requireSdk().captureScreenshot();
+  // Try/catch so a missing-SDK throw from `requireSdk()` surfaces as a
+  // rejected promise — same shape as `submit()`. Without this guard, a
+  // pre-hydration call would throw synchronously from a function whose
+  // return type is `Promise<Blob>`, and `try/catch (await ...)` consumers
+  // would miss it. Kept as a non-`async` arrow to avoid the helper-emission
+  // overhead an `async` wrapper would add.
+  const captureScreenshot = (): Promise<Blob> => {
+    try {
+      return requireSdk().captureScreenshot();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
 
   const reset = (): void => {
     setStatus('idle');

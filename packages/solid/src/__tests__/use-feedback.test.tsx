@@ -29,7 +29,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
   };
 });
 
-import { BrevwickProvider } from '../provider';
+import { BrevwickContext, BrevwickProvider } from '../provider';
 import { useFeedback, type UseFeedbackResult } from '../use-feedback';
 
 afterEach(() => {
@@ -100,11 +100,79 @@ describe('useFeedback', () => {
     expect(hook.status()).toBe('error');
   });
 
+  it('submit() rejects (not synchronously throws) when called pre-hydration', async () => {
+    // Mount the hook against a context whose accessor is a permanent `null`
+    // — i.e. a provider that has not yet hit `onMount`. Both `submit()` and
+    // `captureScreenshot()` must surface the missing-SDK error as a rejected
+    // promise; a synchronous throw from a function whose return type is
+    // `Promise<…>` would slip past `try/catch (await …)` consumers.
+    let captured: UseFeedbackResult | undefined;
+    const Capture = (): JSX.Element => {
+      captured = useFeedback();
+      return null;
+    };
+    render(() => (
+      <BrevwickContext.Provider value={{ brevwick: () => null }}>
+        <Capture />
+      </BrevwickContext.Provider>
+    ));
+    if (!captured) throw new Error('hook not mounted');
+
+    await expect(captured.submit({ description: 'x' })).rejects.toThrow(
+      /not yet initialised/i,
+    );
+    expect(captured.status()).toBe('error');
+    await expect(captured.captureScreenshot()).rejects.toThrow(
+      /not yet initialised/i,
+    );
+  });
+
   it('throws when used outside a provider', () => {
     const Crash = (): JSX.Element => {
       useFeedback();
       return null;
     };
     expect(() => render(() => <Crash />)).toThrow(/BrevwickProvider/);
+  });
+
+  it('gives each useFeedback() call an independent status signal', async () => {
+    submit.mockImplementation(
+      () =>
+        new Promise<SubmitResult>((resolve) => {
+          // Resolve on the next microtask so the caller sits in 'submitting'
+          // long enough for the assertion below.
+          queueMicrotask(() => resolve({ ok: true, issue_id: 'rep_iso' }));
+        }),
+    );
+
+    let hookA: UseFeedbackResult | undefined;
+    let hookB: UseFeedbackResult | undefined;
+    const CaptureA = (): JSX.Element => {
+      hookA = useFeedback();
+      return null;
+    };
+    const CaptureB = (): JSX.Element => {
+      hookB = useFeedback();
+      return null;
+    };
+    render(() => (
+      <BrevwickProvider config={{ projectKey: 'pk_test_iso' }}>
+        <CaptureA />
+        <CaptureB />
+      </BrevwickProvider>
+    ));
+    if (!hookA || !hookB) throw new Error('hooks not mounted');
+
+    expect(hookA.status()).toBe('idle');
+    expect(hookB.status()).toBe('idle');
+
+    const inflight = hookA.submit({ description: 'A only' });
+    // Hook A flips immediately; hook B must stay idle.
+    expect(hookA.status()).toBe('submitting');
+    expect(hookB.status()).toBe('idle');
+
+    await inflight;
+    expect(hookA.status()).toBe('success');
+    expect(hookB.status()).toBe('idle');
   });
 });

@@ -44,5 +44,17 @@ describe('@tatlacas/brevwick-solid bundle ceiling', () => {
         /from\s*["']solid-js["']|require\(["']solid-js["']\)/,
       );
     });
+
+    it('base chunk does not bundle solid-js/web (peer dep is external)', () => {
+      const baseSrc = readFileSync(baseEsm, 'utf8');
+      // JSX compiled by `babel-preset-solid` emits imports from
+      // `solid-js/web` (`template`, `delegateEvents`, `insert`, …). They
+      // must remain bare-module references; bundling the DOM runtime would
+      // both inflate the chunk and cause two copies of the reactive root to
+      // exist alongside the consumer's own `solid-js/web`.
+      expect(baseSrc).toMatch(
+        /from\s*["']solid-js\/web["']|require\(["']solid-js\/web["']\)/,
+      );
+    });
   });
 });

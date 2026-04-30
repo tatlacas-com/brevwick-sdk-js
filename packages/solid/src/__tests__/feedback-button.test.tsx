@@ -209,4 +209,102 @@ describe('FeedbackButton', () => {
     });
     expect(fab).toHaveClass('brw-fab-bl');
   });
+
+  it('revokes queued screenshot object URLs when closed without submitting', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['png'], { type: 'image/png' }),
+    );
+
+    let urlSeq = 0;
+    const createSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(() => `blob:close-leak-${++urlSeq}`);
+    const revokeSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {
+        // jsdom no-op; we only care about the call set.
+      });
+
+    try {
+      mount();
+      openPanel();
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture screenshot/i }),
+      );
+      await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
+
+      const createdUrls = createSpy.mock.results.map((r) => r.value as string);
+      expect(createdUrls).toHaveLength(1);
+
+      // Close without submitting — every queued URL must be revoked.
+      fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+
+      const revoked = revokeSpy.mock.calls.map((c) => c[0]);
+      for (const url of createdUrls) expect(revoked).toContain(url);
+    } finally {
+      createSpy.mockRestore();
+      revokeSpy.mockRestore();
+    }
+  });
+
+  it('revokes queued screenshot object URLs when submit() returns ok:false', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['png'], { type: 'image/png' }),
+    );
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'no' },
+    });
+
+    let urlSeq = 0;
+    const createSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(() => `blob:err-leak-${++urlSeq}`);
+    const revokeSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {
+        // jsdom no-op
+      });
+
+    try {
+      mount();
+      openPanel();
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture screenshot/i }),
+      );
+      await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
+
+      fireEvent.input(await screen.findByLabelText(/feedback message/i), {
+        target: { value: 'broken' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /send/i }));
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+      await screen.findByRole('alert');
+
+      // ok:false leaves the queue intact (so the user can retry the same
+      // shot). Closing the panel must then revoke the URL.
+      fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+
+      const created = createSpy.mock.results.map((r) => r.value as string);
+      const revoked = revokeSpy.mock.calls.map((c) => c[0]);
+      for (const url of created) expect(revoked).toContain(url);
+    } finally {
+      createSpy.mockRestore();
+      revokeSpy.mockRestore();
+    }
+  });
+
+  it('trims leading/trailing whitespace from the submitted description', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_trim' });
+    mount();
+    openPanel();
+    fireEvent.input(await screen.findByLabelText(/feedback message/i), {
+      target: { value: '   hi there   \n' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const [input] = submit.mock.calls[0]!;
+    expect(input.title).toBe('hi there');
+    expect(input.description).toBe('hi there');
+  });
 });

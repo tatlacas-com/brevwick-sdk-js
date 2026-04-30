@@ -1,6 +1,7 @@
 import {
   Show,
   createSignal,
+  onCleanup,
   onMount,
   type Component,
   type JSX,
@@ -41,7 +42,7 @@ export interface FeedbackButtonProps {
 }
 
 interface ScreenshotAttachment {
-  readonly id: number;
+  readonly id: string;
   readonly blob: Blob;
   readonly url: string;
 }
@@ -96,8 +97,6 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
   const [capturing, setCapturing] = createSignal(false);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
 
-  let nextId = 0;
-
   const fabPosClass = () =>
     props.position === 'bottom-left' ? 'brw-fab-bl' : 'brw-fab-br';
   const panelPosClass = () =>
@@ -114,7 +113,13 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     setCapturing(true);
     try {
       const blob = await captureScreenshot();
-      const id = ++nextId;
+      // `crypto.randomUUID()` (universal in modern browsers + Node ≥ 19) is
+      // preferred over Solid's `createUniqueId()` here because the id is
+      // generated inside an event handler, not during component setup.
+      const id =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `brw-shot-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const url = URL.createObjectURL(blob);
       setScreenshots((prev) => [...prev, { id, blob, url }]);
     } catch (err) {
@@ -126,7 +131,7 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     }
   };
 
-  const removeScreenshot = (id: number): void => {
+  const removeScreenshot = (id: string): void => {
     setScreenshots((prev) => {
       const target = prev.find((s) => s.id === id);
       if (target) URL.revokeObjectURL(target.url);
@@ -143,19 +148,28 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     }
     setErrorMsg(null);
 
-    const attachments: FeedbackAttachment[] = screenshots().map((s, idx) => {
+    // Snapshot the queued screenshots once at submit-time so a chip removal
+    // mid-await (`removeScreenshot()`) can't desync the attachment payload
+    // from the post-success revoke loop. The user's intent at the moment of
+    // clicking Send is what we transmit.
+    const queued = screenshots();
+    const attachments: FeedbackAttachment[] = queued.map((s, idx) => {
       const ext = s.blob.type.split('/')[1]?.split('+')[0] || 'webp';
       const filename =
-        screenshots().length === 1
+        queued.length === 1
           ? `screenshot.${ext}`
           : `screenshot-${idx + 1}.${ext}`;
       return { blob: s.blob, filename };
     });
 
     const derivedTitle = text.split('\n', 1)[0]!.slice(0, 120);
+    // Trim the description to match `derivedTitle` — submitting raw
+    // `draft()` would ship `"   hi   \n"` while the title shows `"hi"`,
+    // surfacing leading whitespace to ingest. The React adapter's intent is
+    // "no leading whitespace in submitted descriptions"; mirror it here.
     const input: FeedbackInput = {
       title: derivedTitle,
-      description: draft(),
+      description: text,
       attachments: attachments.length ? attachments : undefined,
     };
 
@@ -163,7 +177,7 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
       const result = await submit(input);
       props.onSubmit?.(result);
       if (result.ok) {
-        for (const s of screenshots()) URL.revokeObjectURL(s.url);
+        for (const s of queued) URL.revokeObjectURL(s.url);
         setScreenshots([]);
         setDraft('');
       } else {
@@ -178,9 +192,29 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     }
   };
 
+  /**
+   * Revoke every currently-queued blob URL and clear the screenshot list.
+   * Object URLs persist for the document's lifetime unless explicitly
+   * revoked — without this the close-without-submit and `ok:false` paths
+   * leak one allocation per captured screenshot. `revokeObjectURL` on an
+   * already-revoked URL is a no-op, so calling this from both `handleClose`
+   * and `onCleanup` is safe.
+   */
+  const revokeAllScreenshots = (): void => {
+    for (const s of screenshots()) URL.revokeObjectURL(s.url);
+    setScreenshots([]);
+  };
+
+  // Catch the rare unmount-without-close path (route change, parent
+  // re-render that swaps the FAB out, HMR teardown).
+  onCleanup(() => {
+    for (const s of screenshots()) URL.revokeObjectURL(s.url);
+  });
+
   const handleClose = (): void => {
     setOpen(false);
     setErrorMsg(null);
+    revokeAllScreenshots();
     if (status() !== 'submitting') reset();
   };
 

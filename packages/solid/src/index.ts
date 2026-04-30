@@ -4,8 +4,8 @@
 
 export { BREVWICK_SOLID_VERSION } from './internal/version';
 
-export { BrevwickProvider, BrevwickContext } from './provider';
-export type { BrevwickProviderProps, BrevwickContextValue } from './provider';
+export { BrevwickProvider } from './provider';
+export type { BrevwickProviderProps } from './provider';
 
 export { useFeedback } from './use-feedback';
 export type { FeedbackStatus, UseFeedbackResult } from './use-feedback';
