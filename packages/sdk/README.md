@@ -17,6 +17,48 @@ Or with pnpm / yarn / bun — same name. Pre-1.0 releases track the `beta` dist-
 
 ## Quick start
 
+### Drop into any HTML page — no build step
+
+The fastest possible install. Paste this anywhere a `<script type="module">` tag works (static sites, Webflow, WordPress, classic templating layers):
+
+```html
+<button id="feedback-btn" type="button">Report a bug</button>
+
+<script type="module">
+  import { createBrevwick } from 'https://esm.sh/@tatlacas/brevwick-sdk@beta';
+
+  const bw = createBrevwick({ projectKey: 'pk_live_...' });
+  bw.install();
+
+  document
+    .getElementById('feedback-btn')
+    .addEventListener('click', async () => {
+      const result = await bw.submit({
+        description: prompt('What went wrong?') ?? '',
+        attachments: [await bw.captureScreenshot()],
+      });
+      alert(
+        result.ok
+          ? `Filed issue ${result.issue_id}`
+          : `Failed: ${result.error.message}`,
+      );
+    });
+</script>
+```
+
+Either CDN works — pick whichever your CSP allows:
+
+| CDN      | URL                                                             |
+| -------- | --------------------------------------------------------------- |
+| esm.sh   | `https://esm.sh/@tatlacas/brevwick-sdk@beta`                    |
+| jsdelivr | `https://cdn.jsdelivr.net/npm/@tatlacas/brevwick-sdk@beta/+esm` |
+
+Pre-1.0 releases track the `@beta` dist-tag; pin a specific version (`@1.0.0-beta.7`) once you go to production.
+
+End-to-end runnable example (no build tool, serve over `python -m http.server`): [`examples/vanilla/static`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/vanilla/static).
+
+### With a bundler (Vite / Webpack / Rollup / Next / etc.)
+
 ```ts
 import { createBrevwick } from '@tatlacas/brevwick-sdk';
 
@@ -43,6 +85,28 @@ if (result.ok) {
 ```
 
 `submit()` never throws for normal failures — callers discriminate on `result.ok`.
+
+### Button-driven submit (no FAB)
+
+For sites without a floating-action-button widget — wire any DOM event to `bw.submit()`. The example below assumes you already have a form / dialog / chat composer in your own UI:
+
+```ts
+import { createBrevwick } from '@tatlacas/brevwick-sdk';
+
+const bw = createBrevwick({ projectKey: 'pk_live_...' });
+bw.install();
+
+document.querySelector('#report-bug')?.addEventListener('click', async () => {
+  const description =
+    document.querySelector<HTMLTextAreaElement>('#bug-body')?.value ?? '';
+  const screenshot = await bw.captureScreenshot();
+
+  const result = await bw.submit({ description, attachments: [screenshot] });
+  if (!result.ok) {
+    console.error('[brevwick]', result.error.code, result.error.message);
+  }
+});
+```
 
 ## Configuration
 
