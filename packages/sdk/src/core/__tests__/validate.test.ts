@@ -10,7 +10,19 @@ describe('validateConfig', () => {
     expect(cfg.endpoint).toBe('https://api.brevwick.com');
     expect(cfg.enabled).toBe(true);
     expect(cfg.fingerprintOptOut).toBe(false);
-    expect(cfg.rings).toEqual({ console: true, network: true, route: true });
+    expect(cfg.rings.console).toEqual({
+      enabled: true,
+      levels: ['log', 'info', 'warn', 'error', 'debug'],
+      max: 50,
+    });
+    expect(cfg.rings.network).toEqual({
+      enabled: true,
+      captureSuccess: true,
+      max: 20,
+    });
+    expect(cfg.rings.route).toBe(true);
+    expect(cfg.redact.disable.size).toBe(0);
+    expect(cfg.redact.custom).toEqual([]);
     expect(cfg.environment).toBeUndefined();
     expect(cfg.buildSha).toBeUndefined();
     expect(cfg.release).toBeUndefined();
@@ -50,16 +62,39 @@ describe('validateConfig', () => {
     ['user id not string', { projectKey: VALID_KEY, user: { id: 42 } }],
     ['rings not object', { projectKey: VALID_KEY, rings: true }],
     [
-      'rings.console not boolean',
+      'rings.console wrong type',
       { projectKey: VALID_KEY, rings: { console: 'on' } },
     ],
     [
-      'rings.network not boolean',
+      'rings.network wrong type',
       { projectKey: VALID_KEY, rings: { network: 1 } },
     ],
     [
       'rings.route not boolean',
       { projectKey: VALID_KEY, rings: { route: 'off' } },
+    ],
+    [
+      'rings.console.levels with bad level name',
+      {
+        projectKey: VALID_KEY,
+        rings: { console: { levels: ['log', 'trace'] } },
+      },
+    ],
+    [
+      'rings.console.max above ceiling',
+      { projectKey: VALID_KEY, rings: { console: { max: 500 } } },
+    ],
+    [
+      'rings.network.max above ceiling',
+      { projectKey: VALID_KEY, rings: { network: { max: 500 } } },
+    ],
+    [
+      'redact.disable with unknown name',
+      { projectKey: VALID_KEY, redact: { disable: ['nope'] } },
+    ],
+    [
+      'redact.custom with non-RegExp entry',
+      { projectKey: VALID_KEY, redact: { custom: ['nope'] } },
     ],
   ])('rejects %s with BREVWICK_INVALID_CONFIG', (_label, input) => {
     try {
@@ -76,7 +111,50 @@ describe('validateConfig', () => {
       projectKey: VALID_KEY,
       rings: { console: false, network: true, route: false },
     });
-    expect(cfg.rings).toEqual({ console: false, network: true, route: false });
+    expect(cfg.rings.console.enabled).toBe(false);
+    expect(cfg.rings.network.enabled).toBe(true);
+    expect(cfg.rings.network.captureSuccess).toBe(true);
+    expect(cfg.rings.route).toBe(false);
+  });
+
+  it('accepts the new console object form: levels + max', () => {
+    const cfg = validateConfig({
+      projectKey: VALID_KEY,
+      rings: { console: { levels: ['error'], max: 10 } },
+    });
+    expect(cfg.rings.console).toEqual({
+      enabled: true,
+      levels: ['error'],
+      max: 10,
+    });
+  });
+
+  it('accepts the new network object form: captureSuccess=false', () => {
+    const cfg = validateConfig({
+      projectKey: VALID_KEY,
+      rings: { network: { captureSuccess: false } },
+    });
+    expect(cfg.rings.network).toEqual({
+      enabled: true,
+      captureSuccess: false,
+      max: 20,
+    });
+  });
+
+  it('accepts redact.disable + redact.custom', () => {
+    const re = /secret-\w+/g;
+    const cfg = validateConfig({
+      projectKey: VALID_KEY,
+      redact: {
+        disable: ['phone', 'card'],
+        custom: [re, { pattern: /xxx/, replacement: '[xxx]' }],
+      },
+    });
+    expect(cfg.redact.disable.has('phone')).toBe(true);
+    expect(cfg.redact.disable.has('card')).toBe(true);
+    expect(cfg.redact.custom).toHaveLength(2);
+    expect(cfg.redact.custom[0]?.pattern).toBe(re);
+    expect(cfg.redact.custom[0]?.replacement).toBe('[redacted]');
   });
 
   it('accepts every valid environment', () => {

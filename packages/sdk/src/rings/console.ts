@@ -1,11 +1,17 @@
-import type { ConsoleEntry } from '../types';
+import type { ConsoleEntry, ConsoleLevel } from '../types';
 import type { RingContext, RingDefinition } from '../core/internal';
-import { redact } from '../core/internal/redact';
+import { createRedactor } from '../core/internal/redact';
 
 const DEDUPE_WINDOW_MS = 500;
 const MAX_STACK_FRAMES = 20;
 
-type PatchLevel = 'error' | 'warn';
+const ALL_LEVELS: readonly ConsoleLevel[] = [
+  'log',
+  'info',
+  'warn',
+  'error',
+  'debug',
+];
 
 /**
  * Coerce a single console arg to a string without JSON-stringifying Errors —
@@ -72,36 +78,47 @@ function firstFrame(stack: string | undefined): string {
 }
 
 function dedupeKey(message: string, stack: string | undefined): string {
-  return `${message}\u0001${firstFrame(stack)}`;
-}
-
-function buildEntry(
-  level: PatchLevel,
-  message: string,
-  stack: string | undefined,
-  now: number,
-): ConsoleEntry {
-  const entry: ConsoleEntry = {
-    kind: 'console',
-    level,
-    message: redact(message),
-    timestamp: now,
-    count: 1,
-  };
-  if (stack) entry.stack = redact(trimStack(stack));
-  return entry;
+  return `${message}${firstFrame(stack)}`;
 }
 
 export function installConsoleRing(ctx: RingContext): () => void {
-  const originalError = console.error;
-  const originalWarn = console.warn;
+  const redact = createRedactor(
+    ctx.config.redact.disable,
+    ctx.config.redact.custom,
+  );
+  const enabledLevels = new Set<ConsoleLevel>(ctx.config.rings.console.levels);
+
+  const originals = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+    debug: console.debug,
+  } as const;
+
+  function buildEntry(
+    level: ConsoleLevel,
+    message: string,
+    stack: string | undefined,
+    now: number,
+  ): ConsoleEntry {
+    const entry: ConsoleEntry = {
+      kind: 'console',
+      level,
+      message: redact(message),
+      timestamp: now,
+      count: 1,
+    };
+    if (stack) entry.stack = redact(trimStack(stack));
+    return entry;
+  }
 
   // Map key -> the *pushed* entry reference, so a repeat within the window
   // mutates `count` on the same object already sitting in the ring buffer.
   const recent = new Map<string, ConsoleEntry>();
 
   function record(
-    level: PatchLevel,
+    level: ConsoleLevel,
     message: string,
     stack: string | undefined,
   ): void {
@@ -131,7 +148,10 @@ export function installConsoleRing(ctx: RingContext): () => void {
     }
   }
 
-  function patched(level: PatchLevel, original: typeof console.error) {
+  function patched(
+    level: ConsoleLevel,
+    original: (...args: unknown[]) => void,
+  ) {
     return function (this: unknown, ...args: unknown[]): void {
       try {
         const err = firstError(args);
@@ -144,8 +164,11 @@ export function installConsoleRing(ctx: RingContext): () => void {
     };
   }
 
-  console.error = patched('error', originalError) as typeof console.error;
-  console.warn = patched('warn', originalWarn) as typeof console.warn;
+  for (const level of ALL_LEVELS) {
+    if (!enabledLevels.has(level)) continue;
+    const replacement = patched(level, originals[level]);
+    (console as unknown as Record<string, unknown>)[level] = replacement;
+  }
 
   const errorListener = (event: ErrorEvent): void => {
     const err = event.error;
@@ -177,8 +200,9 @@ export function installConsoleRing(ctx: RingContext): () => void {
     // layered on top of ours will be broken either way, and leaving our
     // wrapper in place guarantees a memory leak plus a double-patch on
     // the next install cycle.
-    console.error = originalError;
-    console.warn = originalWarn;
+    for (const level of ALL_LEVELS) {
+      (console as unknown as Record<string, unknown>)[level] = originals[level];
+    }
     window.removeEventListener('error', errorListener);
     window.removeEventListener('unhandledrejection', rejectionListener);
     recent.clear();

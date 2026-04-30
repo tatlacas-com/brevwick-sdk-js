@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { redact, redactValue } from '../redact';
+import { createRedactor, redact, redactValue } from '../redact';
 
-describe('redact', () => {
+describe('redact (default)', () => {
   it('strips Authorization headers', () => {
     expect(redact('Authorization: Bearer abc.def.ghi')).not.toMatch(/abc\.def/);
   });
@@ -31,6 +31,62 @@ describe('redact', () => {
     expect(redact('the modal hangs on second open')).toBe(
       'the modal hangs on second open',
     );
+  });
+
+  it('redacts a Luhn-pass card number, leaves a Luhn-fail run alone', () => {
+    expect(redact('pan: 4242 4242 4242 4242')).toBe('pan: [card]');
+    // Luhn-fail: 1234 5678 9012 3456 → checksum 64 → not divisible by 10.
+    expect(redact('order: 1234 5678 9012 3456')).toContain(
+      '1234 5678 9012 3456',
+    );
+  });
+
+  it('redacts IPv4 and IPv6 literals', () => {
+    expect(redact('peer at 10.0.42.55 today')).toBe('peer at [ip] today');
+    expect(redact('peer at 2001:db8:0:1::abcd today')).toContain('[ip]');
+  });
+
+  it('redacts US SSN and UK NI numbers', () => {
+    expect(redact('ssn: 987-65-4321')).toBe('ssn: [ssn]');
+    expect(redact('ni: AB 12 34 56 C')).toBe('ni: [ssn]');
+  });
+
+  it('redacts E.164 phone numbers, gated on 8-15 digit length', () => {
+    expect(redact('call +1 415 555 0199')).toContain('[phone]');
+    // 6 digits is below the sanity floor — not redacted.
+    expect(redact('issue#12-34-56')).toContain('12-34-56');
+  });
+
+  it('redacts AWS access keys', () => {
+    expect(redact('key=AKIAIOSFODNN7EXAMPLE')).toBe('key=[aws-key]');
+  });
+
+  it('redacts GitHub tokens', () => {
+    expect(redact('tok=ghp_01234567890123456789012345678901abcd')).toBe(
+      'tok=[gh-token]',
+    );
+  });
+});
+
+describe('createRedactor — disable + custom', () => {
+  it('skips a built-in pattern when its name is disabled', () => {
+    const r = createRedactor(new Set(['phone']));
+    expect(r('call +1 415 555 0199')).toContain('+1 415 555 0199');
+  });
+
+  it('appends custom patterns after built-ins', () => {
+    const r = createRedactor(new Set(), [
+      { pattern: /widget-\d+/g, replacement: '[w]' },
+    ]);
+    expect(r('hits: widget-42 widget-99')).toBe('hits: [w] [w]');
+  });
+
+  it('default replacement for bare RegExp custom is [redacted]', () => {
+    const re = /xyz-\w+/g;
+    const r = createRedactor(new Set(), [
+      { pattern: re, replacement: '[redacted]' },
+    ]);
+    expect(r('seen xyz-abc')).toBe('seen [redacted]');
   });
 });
 

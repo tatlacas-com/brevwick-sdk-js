@@ -1,4 +1,10 @@
-import type { BrevwickConfig, Environment } from '../types';
+import type {
+  BrevwickConfig,
+  ConsoleLevel,
+  Environment,
+  RedactCustomPattern,
+  RedactPatternName,
+} from '../types';
 
 export const INVALID_CONFIG_CODE = 'BREVWICK_INVALID_CONFIG';
 
@@ -18,12 +24,34 @@ const VALID_ENVIRONMENTS = [
   'prod',
 ] as const satisfies readonly Environment[];
 
+export interface ValidatedConsoleRing {
+  enabled: boolean;
+  levels: readonly ConsoleLevel[];
+  max: number;
+}
+
+export interface ValidatedNetworkRing {
+  enabled: boolean;
+  captureSuccess: boolean;
+  max: number;
+}
+
+export interface ValidatedRedact {
+  disable: ReadonlySet<RedactPatternName>;
+  custom: readonly RedactCustomPattern[];
+}
+
 export interface ValidatedConfig extends Required<
   Pick<BrevwickConfig, 'projectKey' | 'endpoint'>
 > {
   enabled: boolean;
   fingerprintOptOut: boolean;
-  rings: { console: boolean; network: boolean; route: boolean };
+  rings: {
+    console: ValidatedConsoleRing;
+    network: ValidatedNetworkRing;
+    route: boolean;
+  };
+  redact: ValidatedRedact;
   environment?: Environment;
   buildSha?: string;
   release?: string;
@@ -154,19 +182,12 @@ export function validateConfig(input: unknown): ValidatedConfig {
   }
   const ringsIn = (rawRings ?? {}) as Record<string, unknown>;
   const rings: ValidatedConfig['rings'] = {
-    console: true,
-    network: true,
-    route: true,
+    console: parseConsoleRing(ringsIn.console),
+    network: parseNetworkRing(ringsIn.network),
+    route: parseBooleanRing(ringsIn.route, 'route'),
   };
-  for (const key of ['console', 'network', 'route'] as const) {
-    const value = ringsIn[key];
-    if (value !== undefined) {
-      if (typeof value !== 'boolean') {
-        throw new BrevwickConfigError(`rings.${key} must be a boolean`);
-      }
-      rings[key] = value;
-    }
-  }
+
+  const redact = parseRedact(input.redact);
 
   return {
     projectKey,
@@ -174,10 +195,169 @@ export function validateConfig(input: unknown): ValidatedConfig {
     enabled,
     fingerprintOptOut,
     rings,
+    redact,
     environment,
     buildSha,
     release,
     userContext,
     user,
   };
+}
+
+const CONSOLE_LEVELS: readonly ConsoleLevel[] = [
+  'log',
+  'info',
+  'warn',
+  'error',
+  'debug',
+];
+
+const REDACT_PATTERN_NAMES: readonly RedactPatternName[] = [
+  'auth',
+  'cookie',
+  'bearer',
+  'jwt',
+  'email',
+  'card',
+  'ip',
+  'ssn',
+  'phone',
+  'aws',
+  'github',
+  'base64',
+];
+
+function parseBooleanRing(value: unknown, key: string): boolean {
+  if (value === undefined) return true;
+  if (typeof value !== 'boolean') {
+    throw new BrevwickConfigError(`rings.${key} must be a boolean`);
+  }
+  return value;
+}
+
+/**
+ * Shared scaffold for the console / network ring config parsers. Accepts the
+ * boolean shorthand or the object form; rejects everything else with a
+ * uniform error. Defaults + per-ring extras are filled in by the caller via
+ * the `extras` callback.
+ */
+function parseRingConfig<T extends { enabled: boolean; max: number }>(
+  value: unknown,
+  field: string,
+  defaults: T,
+  ceiling: number,
+  extras: (raw: Record<string, unknown>, base: T) => T,
+): T {
+  if (value === undefined || value === true) return { ...defaults };
+  if (value === false) return { ...defaults, enabled: false };
+  if (!isPlainObject(value)) {
+    throw new BrevwickConfigError(`${field} must be a boolean or object`);
+  }
+  const max = parseRingMax(value.max, `${field}.max`, defaults.max, ceiling);
+  return extras(value, { ...defaults, max });
+}
+
+function parseConsoleRing(value: unknown): ValidatedConsoleRing {
+  return parseRingConfig<ValidatedConsoleRing>(
+    value,
+    'rings.console',
+    { enabled: true, levels: CONSOLE_LEVELS, max: 50 },
+    200,
+    (raw, base) => {
+      if (raw.levels === undefined) return base;
+      if (!Array.isArray(raw.levels)) {
+        throw new BrevwickConfigError('rings.console.levels must be an array');
+      }
+      for (const level of raw.levels) {
+        if (!CONSOLE_LEVELS.includes(level as ConsoleLevel)) {
+          throw new BrevwickConfigError(
+            `rings.console.levels must be one of ${CONSOLE_LEVELS.join(', ')}`,
+          );
+        }
+      }
+      return { ...base, levels: raw.levels as readonly ConsoleLevel[] };
+    },
+  );
+}
+
+function parseNetworkRing(value: unknown): ValidatedNetworkRing {
+  return parseRingConfig<ValidatedNetworkRing>(
+    value,
+    'rings.network',
+    { enabled: true, captureSuccess: true, max: 20 },
+    100,
+    (raw, base) => {
+      if (raw.captureSuccess === undefined) return base;
+      if (typeof raw.captureSuccess !== 'boolean') {
+        throw new BrevwickConfigError(
+          'rings.network.captureSuccess must be a boolean',
+        );
+      }
+      return { ...base, captureSuccess: raw.captureSuccess };
+    },
+  );
+}
+
+function parseRingMax(
+  raw: unknown,
+  field: string,
+  fallback: number,
+  ceiling: number,
+): number {
+  if (raw === undefined) return fallback;
+  if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1) {
+    throw new BrevwickConfigError(`${field} must be a positive integer`);
+  }
+  if (raw > ceiling) {
+    throw new BrevwickConfigError(`${field} must be ≤ ${ceiling}`);
+  }
+  return raw;
+}
+
+function parseRedact(value: unknown): ValidatedRedact {
+  if (value === undefined) return { disable: new Set(), custom: [] };
+  if (!isPlainObject(value)) {
+    throw new BrevwickConfigError('redact must be an object');
+  }
+  const disable = new Set<RedactPatternName>();
+  if (value.disable !== undefined) {
+    if (!Array.isArray(value.disable)) {
+      throw new BrevwickConfigError('redact.disable must be an array');
+    }
+    for (const name of value.disable) {
+      if (!REDACT_PATTERN_NAMES.includes(name as RedactPatternName)) {
+        throw new BrevwickConfigError(
+          `redact.disable entries must be one of ${REDACT_PATTERN_NAMES.join(', ')}`,
+        );
+      }
+      disable.add(name as RedactPatternName);
+    }
+  }
+  const custom: RedactCustomPattern[] = [];
+  if (value.custom !== undefined) {
+    if (!Array.isArray(value.custom)) {
+      throw new BrevwickConfigError('redact.custom must be an array');
+    }
+    for (const entry of value.custom) {
+      if (entry instanceof RegExp) {
+        custom.push({ pattern: entry, replacement: '[redacted]' });
+        continue;
+      }
+      if (
+        isPlainObject(entry) &&
+        entry.pattern instanceof RegExp &&
+        typeof entry.replacement === 'string'
+      ) {
+        custom.push({
+          pattern: entry.pattern,
+          replacement: entry.replacement,
+        });
+        continue;
+      }
+      throw new BrevwickConfigError(
+        'redact.custom entries must be RegExp or { pattern, replacement }',
+      );
+    }
+  }
+  return { disable, custom };
 }

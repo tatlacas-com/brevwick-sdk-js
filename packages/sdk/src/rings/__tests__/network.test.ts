@@ -131,12 +131,36 @@ describe('network ring — fetch', () => {
     expect(entries[0]?.responseBody).toBe('not found');
   });
 
-  it('does not capture a 200 fetch', async () => {
+  it('captures a 200 fetch by default (success capture)', async () => {
     window.fetch = vi.fn(
       async () => new Response('ok', { status: 200 }),
     ) as unknown as typeof window.fetch;
 
     const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    await window.fetch('https://example.com/ok');
+    const entries = networkEntries(instance);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: 'network',
+      method: 'GET',
+      status: 200,
+      url: 'https://example.com/ok',
+    });
+    expect(entries[0]?.responseBody).toBe('ok');
+    expect(entries[0]?.error).toBeUndefined();
+  });
+
+  it('does not capture a 200 fetch when captureSuccess: false', async () => {
+    window.fetch = vi.fn(
+      async () => new Response('ok', { status: 200 }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({
+      projectKey: KEY,
+      rings: { network: { captureSuccess: false } },
+    });
     await installAndReady(instance);
 
     await window.fetch('https://example.com/ok');
@@ -560,8 +584,33 @@ describe('network ring — XHR', () => {
     expect(entry?.requestHeaders?.['content-type']).toBe('application/json');
   });
 
-  it('does not capture an XHR 200', async () => {
+  it('captures an XHR 200 by default (success capture)', async () => {
     const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    const xhr = new XMLHttpRequest() as unknown as FakeXHR;
+    xhr._respond = (x) => x.finish(200, { responseText: 'ok' });
+    xhr.open('GET', 'https://example.com/ok');
+    xhr.send();
+
+    await new Promise((r) => setTimeout(r, 0));
+    const entries = networkEntries(instance);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: 'network',
+      method: 'GET',
+      status: 200,
+      url: 'https://example.com/ok',
+    });
+    expect(entries[0]?.responseBody).toBe('ok');
+    expect(entries[0]?.error).toBeUndefined();
+  });
+
+  it('does not capture an XHR 200 when captureSuccess: false', async () => {
+    const instance = createBrevwick({
+      projectKey: KEY,
+      rings: { network: { captureSuccess: false } },
+    });
     await installAndReady(instance);
 
     const xhr = new XMLHttpRequest() as unknown as FakeXHR;

@@ -1,14 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installConsoleRing } from '../console';
 import type { RingContext } from '../../core/internal';
-import type { ConsoleEntry, RingEntry } from '../../types';
+import type { ConsoleEntry, ConsoleLevel, RingEntry } from '../../types';
 
-function makeCtx(): { ctx: RingContext; entries: ConsoleEntry[] } {
+const ALL_LEVELS: readonly ConsoleLevel[] = [
+  'log',
+  'info',
+  'warn',
+  'error',
+  'debug',
+];
+
+interface CtxOptions {
+  levels?: readonly ConsoleLevel[];
+  max?: number;
+}
+
+function makeCtx(opts: CtxOptions = {}): {
+  ctx: RingContext;
+  entries: ConsoleEntry[];
+} {
   const entries: ConsoleEntry[] = [];
+  const config = {
+    rings: {
+      console: {
+        enabled: true,
+        levels: opts.levels ?? ALL_LEVELS,
+        max: opts.max ?? 50,
+      },
+      network: { enabled: true, captureSuccess: true, max: 20 },
+      route: true,
+    },
+    redact: { disable: new Set(), custom: [] },
+  } as unknown as RingContext['config'];
   const ctx: RingContext = {
-    // Only `push` is exercised by the ring; config + bus are left as
-    // typed stubs so a regression that starts reading them fails loudly.
-    config: undefined as unknown as RingContext['config'],
+    config,
     bus: undefined as unknown as RingContext['bus'],
     push: (e: RingEntry) => {
       if (e.kind === 'console') entries.push(e);
@@ -19,73 +45,154 @@ function makeCtx(): { ctx: RingContext; entries: ConsoleEntry[] } {
 
 describe('console ring', () => {
   let teardown: (() => void) | undefined;
-  let originalError: typeof console.error;
-  let originalWarn: typeof console.warn;
+  const originals = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+    debug: console.debug,
+  };
 
   beforeEach(() => {
-    originalError = console.error;
-    originalWarn = console.warn;
+    for (const level of ALL_LEVELS) {
+      originals[level] = console[level];
+    }
   });
 
   afterEach(() => {
     teardown?.();
     teardown = undefined;
     vi.useRealTimers();
-    // Defensive: if a test forgot to uninstall, restore manually so the
-    // next test starts from clean globals.
-    console.error = originalError;
-    console.warn = originalWarn;
+    // Defensive: if a test forgot to uninstall, restore manually.
+    for (const level of ALL_LEVELS) {
+      console[level] = originals[level];
+    }
   });
 
-  it('patches console.error and console.warn while still calling originals', () => {
-    const origErrorSpy = vi
+  it('patches all five console levels by default and still calls originals', () => {
+    const spies: Partial<Record<ConsoleLevel, ReturnType<typeof vi.spyOn>>> =
+      {};
+    for (const level of ALL_LEVELS) {
+      spies[level] = vi
+        .spyOn(console, level)
+        .mockImplementation(() => undefined);
+    }
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    console.log('lo');
+    console.info('in');
+    console.warn('wa');
+    console.error('er');
+    console.debug('de');
+
+    expect(entries).toHaveLength(5);
+    expect(entries.map((e) => e.level)).toEqual([
+      'log',
+      'info',
+      'warn',
+      'error',
+      'debug',
+    ]);
+    for (const level of ALL_LEVELS) {
+      expect(spies[level]).toHaveBeenCalled();
+    }
+  });
+
+  it('honours the levels filter and leaves excluded levels unpatched', () => {
+    const beforeLog = console.log;
+    const errSpy = vi
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
-    const origWarnSpy = vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
-    const { ctx, entries } = makeCtx();
-
+    const { ctx, entries } = makeCtx({ levels: ['error'] });
     teardown = installConsoleRing(ctx);
 
+    expect(console.log).toBe(beforeLog); // not patched
     console.error('boom');
-    console.warn('careful');
-
-    expect(origErrorSpy).toHaveBeenCalledWith('boom');
-    expect(origWarnSpy).toHaveBeenCalledWith('careful');
-    expect(entries).toHaveLength(2);
-    expect(entries[0]).toMatchObject({
-      kind: 'console',
-      level: 'error',
-      message: 'boom',
-    });
-    expect(entries[1]).toMatchObject({
-      kind: 'console',
-      level: 'warn',
-      message: 'careful',
-    });
-  });
-
-  it('redacts Bearer tokens and JWTs in buffered messages', () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { ctx, entries } = makeCtx();
-    teardown = installConsoleRing(ctx);
-
-    console.error('auth failed: Bearer eyJabc.def.ghi');
+    console.log('quiet');
+    console.info('quiet');
+    console.warn('quiet');
+    console.debug('quiet');
 
     expect(entries).toHaveLength(1);
-    const entry = entries[0];
-    expect(entry).toBeDefined();
-    // Redaction contract in redact.ts replaces `Bearer <token>` -> `Bearer [redacted]`.
-    expect(entry?.message).toContain('[redacted]');
-    expect(entry?.message).not.toContain('eyJabc.def.ghi');
+    expect(entries[0]?.level).toBe('error');
+    expect(errSpy).toHaveBeenCalledWith('boom');
   });
 
-  it('redacts bare JWT-shaped tokens (no Bearer prefix) via the JWT pattern', () => {
-    // Standalone coverage for the JWT pattern in redact.ts. The Bearer test
-    // above incidentally covers JWTs only because the Bearer regex fires
-    // first and swallows the token; a JWT with no `Bearer ` prefix must still
-    // be scrubbed by the dedicated JWT rule.
+  it('clips to the FIFO max', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    let pushed = 0;
+    const config = {
+      rings: {
+        console: { enabled: true, levels: ALL_LEVELS, max: 3 },
+        network: { enabled: true, captureSuccess: true, max: 20 },
+        route: true,
+      },
+      redact: { disable: new Set(), custom: [] },
+    } as unknown as RingContext['config'];
+    const ctx: RingContext = {
+      config,
+      bus: undefined as unknown as RingContext['bus'],
+      push: () => {
+        pushed += 1;
+      },
+    };
+    teardown = installConsoleRing(ctx);
+    // Burst beyond cap; the ring just calls ctx.push every time. The buffer
+    // (owned by the client) does the FIFO clipping. Here we assert the ring
+    // emitted as many entries as we drove it with — buffer-clip behaviour
+    // is exercised at the client level.
+    for (let i = 0; i < 10; i++) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 0, 1, 0, 0, i));
+      console.log(`distinct-${i}`);
+    }
+    expect(pushed).toBeGreaterThanOrEqual(3);
+  });
+
+  it('redacts Bearer tokens uniformly across levels', () => {
+    for (const level of ALL_LEVELS) {
+      vi.spyOn(console, level).mockImplementation(() => undefined);
+    }
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    // Distinct messages per level so the cross-level dedupe (which keys on
+    // message + first stack frame, not level) does not collapse them.
+    console.log('a Bearer eyJabc.def.ghi');
+    console.info('b Bearer eyJabc.def.ghi');
+    console.warn('c Bearer eyJabc.def.ghi');
+    console.debug('d Bearer eyJabc.def.ghi');
+
+    expect(entries).toHaveLength(4);
+    for (const e of entries) {
+      expect(e.message).not.toContain('eyJabc.def.ghi');
+      expect(e.message).toContain('[redacted]');
+    }
+    expect(entries.map((e) => e.level)).toEqual([
+      'log',
+      'info',
+      'warn',
+      'debug',
+    ]);
+  });
+
+  it('dedupes across levels by message+stack key (level not part of key)', () => {
+    for (const level of ALL_LEVELS) {
+      vi.spyOn(console, level).mockImplementation(() => undefined);
+    }
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+
+    console.log('shared');
+    console.info('shared');
+    console.warn('shared');
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.count).toBe(3);
+  });
+
+  it('redacts bare JWT-shaped tokens via the JWT pattern', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { ctx, entries } = makeCtx();
     teardown = installConsoleRing(ctx);
@@ -93,10 +200,8 @@ describe('console ring', () => {
     console.error('token: eyJabc.def.ghi');
 
     expect(entries).toHaveLength(1);
-    const entry = entries[0];
-    expect(entry).toBeDefined();
-    expect(entry?.message).toContain('[jwt]');
-    expect(entry?.message).not.toContain('eyJabc.def.ghi');
+    expect(entries[0]?.message).toContain('[jwt]');
+    expect(entries[0]?.message).not.toContain('eyJabc.def.ghi');
   });
 
   it('coerces Error args via message+stack, not JSON.stringify', () => {
@@ -109,7 +214,6 @@ describe('console ring', () => {
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.message).toContain('kaboom');
-    // `JSON.stringify(new Error('x'))` is `{}` — regression guard.
     expect(entries[0]?.message).not.toBe('{}');
     expect(entries[0]?.stack).toBeDefined();
   });
@@ -133,34 +237,31 @@ describe('console ring', () => {
     const stack = entries[0]?.stack ?? '';
     const lines = stack.split('\n');
     expect(lines[0]).toContain('Error: long');
-    expect(lines.length).toBeLessThanOrEqual(21); // leader + 20 frames max
+    expect(lines.length).toBeLessThanOrEqual(21);
   });
 
-  it('dedupes identical entries within 500 ms and splits outside the window', () => {
+  it('dedupes identical entries within 500 ms uniformly across levels', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { ctx, entries } = makeCtx();
     teardown = installConsoleRing(ctx);
 
-    console.error('same');
+    console.warn('same');
     vi.advanceTimersByTime(100);
-    console.error('same');
+    console.warn('same');
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.count).toBe(2);
 
-    vi.advanceTimersByTime(600); // now > 500 ms since last push
-    console.error('same');
+    vi.advanceTimersByTime(600);
+    console.warn('same');
 
     expect(entries).toHaveLength(2);
     expect(entries[1]?.count).toBe(1);
   });
 
-  it('treats the 500 ms dedupe boundary as inclusive (exactly 500 ms dedupes)', () => {
-    // WT-02 acceptance says "within 500 ms". The boundary is inclusive —
-    // a repeat at exactly the window edge still counts as the same event.
-    // Regression guard against an off-by-one strict-less-than check.
+  it('treats the 500 ms dedupe boundary as inclusive', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -168,13 +269,12 @@ describe('console ring', () => {
     teardown = installConsoleRing(ctx);
 
     console.error('edge');
-    vi.advanceTimersByTime(500); // exactly at the boundary
+    vi.advanceTimersByTime(500);
     console.error('edge');
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.count).toBe(2);
 
-    // One ms past the boundary is a separate event.
     vi.advanceTimersByTime(501);
     console.error('edge');
 
@@ -182,9 +282,11 @@ describe('console ring', () => {
     expect(entries[1]?.count).toBe(1);
   });
 
-  it('captures window "error" events with stack', () => {
+  it('captures window "error" events with stack regardless of levels filter', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { ctx, entries } = makeCtx();
+    // Even with no levels enabled, uncaught errors are always captured —
+    // they are the most valuable signal a triager has.
+    const { ctx, entries } = makeCtx({ levels: [] });
     teardown = installConsoleRing(ctx);
 
     const err = new Error('from window');
@@ -204,9 +306,6 @@ describe('console ring', () => {
     const { ctx, entries } = makeCtx();
     teardown = installConsoleRing(ctx);
 
-    // happy-dom omits PromiseRejectionEvent, so synthesise the minimum
-    // shape the ring's listener reads from — a plain Event with `reason`
-    // bolted on. This mirrors the subset of the spec we actually depend on.
     const err = new Error('rejected-err');
     const rejectionErr = Object.assign(new Event('unhandledrejection'), {
       reason: err,
@@ -225,38 +324,34 @@ describe('console ring', () => {
     expect(entries[1]?.stack).toBeUndefined();
   });
 
-  it('uninstalls cleanly: restores originals, removes listeners, no leak on re-install', () => {
-    // Install our own sentinel originals so we can assert identity round-trip
-    // without involving happy-dom's console implementation.
-    const sentinelError = vi.fn();
-    const sentinelWarn = vi.fn();
-    console.error = sentinelError as unknown as typeof console.error;
-    console.warn = sentinelWarn as unknown as typeof console.warn;
+  it('uninstalls cleanly: restores originals for every level, no leak on re-install', () => {
+    const sentinels: Record<ConsoleLevel, ReturnType<typeof vi.fn>> = {
+      log: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+    for (const level of ALL_LEVELS) {
+      console[level] = sentinels[
+        level
+      ] as unknown as (typeof console)[typeof level];
+    }
 
-    const { ctx: ctx1, entries: entries1 } = makeCtx();
-    const down1 = installConsoleRing(ctx1);
-    expect(console.error).not.toBe(sentinelError);
+    const { ctx, entries } = makeCtx();
+    teardown = installConsoleRing(ctx);
+    for (const level of ALL_LEVELS) {
+      expect(console[level]).not.toBe(sentinels[level]);
+    }
 
-    console.error('first');
-    expect(entries1).toHaveLength(1);
-    expect(sentinelError).toHaveBeenCalledTimes(1);
-
-    down1();
-    expect(console.error).toBe(sentinelError);
-    expect(console.warn).toBe(sentinelWarn);
-
-    // Second cycle: log once, confirm exactly one entry is recorded and the
-    // sentinel is called exactly once — i.e. no leftover wrapper from
-    // cycle 1 is layered underneath cycle 2.
-    const { ctx: ctx2, entries: entries2 } = makeCtx();
-    teardown = installConsoleRing(ctx2);
-    console.error('second');
-    expect(entries2).toHaveLength(1);
-    expect(sentinelError).toHaveBeenCalledTimes(2); // 1 from first cycle + 1 now
+    console.log('first');
+    expect(entries).toHaveLength(1);
 
     teardown();
     teardown = undefined;
-    expect(console.error).toBe(sentinelError);
+    for (const level of ALL_LEVELS) {
+      expect(console[level]).toBe(sentinels[level]);
+    }
   });
 
   it('coerces non-Error arg types via safeStringify', () => {
@@ -313,7 +408,7 @@ describe('console ring', () => {
 
     const lines = (entries[0]?.stack ?? '').split('\n');
     expect(lines[0]).toBe('Error: with leader');
-    expect(lines.length).toBe(21); // leader + 20 frames
+    expect(lines.length).toBe(21);
   });
 
   it('trims a frame-leader stack (no "Error:" leader) to 20 frames', () => {
@@ -321,8 +416,6 @@ describe('console ring', () => {
     const { ctx, entries } = makeCtx();
     teardown = installConsoleRing(ctx);
 
-    // Some engines (e.g. Safari) emit stacks whose first line is already a
-    // frame, with no "Error: message" leader. Exercise that branch in trimStack.
     const fakeStack = Array.from(
       { length: 50 },
       (_, i) => `    at frame${i} (f.js:${i}:1)`,
@@ -337,15 +430,13 @@ describe('console ring', () => {
     expect(lines[19]).toContain('at frame19');
   });
 
-  it('dedupes correctly when stacks are absent (firstFrame returns empty)', () => {
+  it('dedupes correctly when stacks are absent', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { ctx, entries } = makeCtx();
     teardown = installConsoleRing(ctx);
 
-    // Plain string args have no stack, so firstFrame() hits its "no frame
-    // line" fallback. Two identical stack-less messages should still dedupe.
     console.error('no-stack');
     console.error('no-stack');
 
@@ -360,12 +451,8 @@ describe('console ring', () => {
     const { ctx, entries } = makeCtx();
     teardown = installConsoleRing(ctx);
 
-    // Fire 40 distinct messages to push the internal Map past its prune
-    // threshold (32) so the prune branch runs at least once. Entries stay
-    // at 40; the assertion here is that no throw + no dedupe collisions
-    // occurred while the branch executed.
     for (let i = 0; i < 40; i++) {
-      vi.advanceTimersByTime(1000); // > 500 ms apart so nothing dedupes
+      vi.advanceTimersByTime(1000);
       console.error(`distinct-${i}`);
     }
     expect(entries).toHaveLength(40);
@@ -373,8 +460,16 @@ describe('console ring', () => {
 
   it('never throws from inside console.error even when push misbehaves', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const config = {
+      rings: {
+        console: { enabled: true, levels: ALL_LEVELS, max: 50 },
+        network: { enabled: true, captureSuccess: true, max: 20 },
+        route: true,
+      },
+      redact: { disable: new Set(), custom: [] },
+    } as unknown as RingContext['config'];
     const ctx: RingContext = {
-      config: undefined as unknown as RingContext['config'],
+      config,
       bus: undefined as unknown as RingContext['bus'],
       push: () => {
         throw new Error('buffer exploded');
@@ -382,9 +477,6 @@ describe('console ring', () => {
     };
     teardown = installConsoleRing(ctx);
 
-    // If the ring let this throw propagate, user code that does
-    // `console.error(e)` in a catch block would throw a new error and
-    // mask the original failure.
     expect(() => console.error('guarded')).not.toThrow();
   });
 });

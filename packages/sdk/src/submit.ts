@@ -15,7 +15,11 @@ import type {
   SubmitErrorCode,
   SubmitResult,
 } from './types';
-import { redact, redactValue } from './core/internal/redact';
+import {
+  createRedactor,
+  redactValue,
+  type Redactor,
+} from './core/internal/redact';
 import { SDK_USER_AGENT, SDK_VERSION } from './core/internal/sdk-version';
 
 const TOTAL_BUDGET_MS = 30_000;
@@ -123,7 +127,10 @@ export function dispatchSubmit(
   return runSubmit(internal, input).catch(unexpectedSubmitFailure);
 }
 
-function redactOptional(value: string | undefined): string | undefined {
+function redactOptional(
+  value: string | undefined,
+  redact: Redactor,
+): string | undefined {
   return value === undefined ? undefined : redact(value);
 }
 
@@ -152,7 +159,10 @@ function maskEmail(email: string): string {
  * Always returns a fresh object — the empty-object case is handled at the
  * call site by checking `config.user`, so this never needs a sentinel.
  */
-function redactUser(user: Record<string, unknown>): Record<string, unknown> {
+function redactUser(
+  user: Record<string, unknown>,
+  redact: Redactor,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(user)) {
     if (k === 'id') {
@@ -163,7 +173,7 @@ function redactUser(user: Record<string, unknown>): Record<string, unknown> {
       out[k] = maskEmail(v);
       continue;
     }
-    out[k] = redactValue(v);
+    out[k] = redactValue(v, redact);
   }
   return out;
 }
@@ -358,6 +368,7 @@ async function postIssue(
   projectKey: string,
   payload: unknown,
   signal: AbortSignal,
+  redact: Redactor,
 ): Promise<SubmitResult> {
   const url = `${endpoint}/v1/ingest/issues`;
   const init: RequestInit = {
@@ -471,24 +482,25 @@ function composePayload(
   internal: BrevwickInternal,
   input: FeedbackInput,
   resolved: ResolvedAttachment[],
+  redact: Redactor,
 ): Record<string, unknown> {
   const { config, buffers } = internal;
   const userCtxExtra = readUserContextExtra(internal);
   const userCtx: Record<string, unknown> = {};
   if (config.user) {
-    userCtx.user = redactUser(config.user);
+    userCtx.user = redactUser(config.user, redact);
   }
   if (userCtxExtra) {
-    Object.assign(userCtx, redactValue(userCtxExtra));
+    Object.assign(userCtx, redactValue(userCtxExtra, redact));
   }
 
   const { ua, locale, viewport, routePath } = readDeviceContext();
 
   return {
-    title: redactOptional(input.title),
+    title: redactOptional(input.title, redact),
     description: redact(input.description),
-    expected: redactOptional(input.expected),
-    actual: redactOptional(input.actual),
+    expected: redactOptional(input.expected, redact),
+    actual: redactOptional(input.actual, redact),
     // Submitter's per-issue AI preference (widget toggle). The key is
     // present only when the caller supplied it so the in-memory payload
     // matches the wire shape — a later `'use_ai' in payload` check should
@@ -511,7 +523,7 @@ function composePayload(
     // do NOT re-run redact() here; that would risk double-masking already
     // redacted markers and introduce drift from the network ring's output.
     console_errors: buffers.console.snapshot(),
-    network_errors: buffers.network.snapshot(),
+    network_calls: buffers.network.snapshot(),
     route_trail: buffers.route.snapshot(),
     attachments: resolved,
   };
@@ -522,6 +534,7 @@ export async function runSubmit(
   input: FeedbackInput,
 ): Promise<SubmitResult> {
   const { config } = internal;
+  const redact = createRedactor(config.redact.disable, config.redact.custom);
   const attachments = input.attachments ?? [];
   // Validate before the first presign round-trip so a bad attachment list
   // never burns server quota or partially allocates R2 object keys.
@@ -555,12 +568,13 @@ export async function runSubmit(
       return submitError('ATTACHMENT_UPLOAD_FAILED', message);
     }
 
-    const payload = composePayload(internal, input, resolved);
+    const payload = composePayload(internal, input, resolved, redact);
     return await postIssue(
       config.endpoint,
       config.projectKey,
       payload,
       controller.signal,
+      redact,
     );
   } finally {
     clearTimeout(timer);

@@ -1,12 +1,75 @@
 export type Environment = 'dev' | 'stg' | 'prod';
 
+export type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
+
+export interface ConsoleRingConfig {
+  /**
+   * Levels to capture. Default `['log', 'info', 'warn', 'error', 'debug']`
+   * — all five console methods. Pass a narrower list (e.g. `['error']`) to
+   * reproduce the legacy "errors only" behaviour.
+   */
+  levels?: ConsoleLevel[];
+  /** FIFO ring cap. Default 50. Hard ceiling 200 (rejected at validation). */
+  max?: number;
+}
+
+export interface NetworkRingConfig {
+  /**
+   * Capture successful 2xx/3xx requests in addition to failures. Default
+   * `true` (a behaviour change from earlier releases — see CHANGELOG).
+   * Pass `false` to reproduce the legacy "failures only" mode.
+   */
+  captureSuccess?: boolean;
+  /** FIFO ring cap. Default 20. Hard ceiling 100 (rejected at validation). */
+  max?: number;
+}
+
 export interface BrevwickRingsConfig {
-  /** Capture uncaught errors and console.error calls for inclusion in submitted issues. Default true. */
-  console?: boolean;
-  /** Capture failed network calls so triagers see the request context of the bug. Default true. */
-  network?: boolean;
+  /**
+   * Capture console output for inclusion in submitted issues. Default true
+   * (all five levels, 50-entry FIFO). Pass `false` to disable; pass an object
+   * to narrow the captured levels or change the cap.
+   */
+  console?: boolean | ConsoleRingConfig;
+  /**
+   * Capture network calls so triagers see the request context. Default true
+   * (success + failure, 20-entry FIFO). Pass `false` to disable; pass an
+   * object to opt into failures-only or change the cap.
+   */
+  network?: boolean | NetworkRingConfig;
   /** Record route transitions so reproduction steps include the path the user was on. Default true. */
   route?: boolean;
+}
+
+/** Names of built-in redaction patterns that can be selectively disabled. */
+export type RedactPatternName =
+  | 'auth'
+  | 'cookie'
+  | 'bearer'
+  | 'jwt'
+  | 'email'
+  | 'card'
+  | 'ip'
+  | 'ssn'
+  | 'phone'
+  | 'aws'
+  | 'github'
+  | 'base64';
+
+export interface RedactCustomPattern {
+  pattern: RegExp;
+  replacement: string;
+}
+
+export interface BrevwickRedactConfig {
+  /** Disable specific built-in patterns by name. */
+  disable?: RedactPatternName[];
+  /**
+   * Add custom regex patterns. A bare `RegExp` is replaced with `[redacted]`;
+   * pass an object to control the replacement string. Custom patterns run
+   * after every built-in so they can override (e.g. unmask after a built-in).
+   */
+  custom?: Array<RegExp | RedactCustomPattern>;
 }
 
 export interface BrevwickConfig {
@@ -27,6 +90,12 @@ export interface BrevwickConfig {
   user?: { id: string; [key: string]: unknown };
   /** Per-ring toggles. All default to true. */
   rings?: BrevwickRingsConfig;
+  /**
+   * Tune the on-device redactor — disable specific built-in patterns by name
+   * and/or extend with project-specific regexes. Built-ins always run first;
+   * custom patterns append after so they can override.
+   */
+  redact?: BrevwickRedactConfig;
   /** Send `X-Brevwick-Fingerprint-Optout: 1` to skip the salted fingerprint. */
   fingerprintOptOut?: boolean;
 }
@@ -123,12 +192,16 @@ export interface ConsoleEntry {
 }
 
 /**
- * Captured network request. Populated by the network ring for any request
- * that fails (status ≥ 400 or thrown). All text fields below are **already
- * redacted and capped at the ring boundary** — downstream code in the
- * submit pipeline must not re-redact or re-cap them. Field names follow
- * the TypeScript/camelCase convention; the submit pipeline translates to
- * wire-snake_case (`request_body`, etc.) at the network boundary.
+ * Captured network request. Populated by the network ring for every
+ * completed request — both successes (2xx/3xx) and failures (status ≥ 400
+ * or thrown). All text fields below are **already redacted and capped at
+ * the ring boundary** — downstream code in the submit pipeline must not
+ * re-redact or re-cap them. Field names follow the TypeScript/camelCase
+ * convention; the submit pipeline translates to wire-snake_case
+ * (`request_body`, etc.) at the network boundary.
+ *
+ * The `error` field is set only on thrown / aborted / timed-out requests;
+ * for successful captures it is omitted.
  */
 export interface NetworkEntry {
   kind: 'network';
@@ -136,6 +209,7 @@ export interface NetworkEntry {
   url: string;
   status?: number;
   durationMs?: number;
+  /** Set only when the request threw / aborted / timed out. Omitted for completed captures. */
   error?: string;
   timestamp: number;
   /** Request body, redacted, capped at 2 kB with `… [truncated N bytes]`. */

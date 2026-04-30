@@ -1,9 +1,11 @@
 /**
- * Network ring — captures failed requests (status ≥ 400 or thrown) by
+ * Network ring — captures every completed request (success + failure) by
  * wrapping `globalThis.fetch` and `XMLHttpRequest.prototype.open/send/setRequestHeader`.
+ * Pass `rings.network: { captureSuccess: false }` to reproduce the legacy
+ * failures-only mode.
  *
  * Redaction happens at the ring boundary: header allow-list, query-param
- * stripping, body caps, and `redact()` on any text body. Requests to the SDK's
+ * stripping, body caps, and `ctx.redact()` on any text body. Requests to the SDK's
  * own ingest endpoint (or carrying the `X-Brevwick-SDK` marker) are skipped to
  * avoid feedback loops when `submit()` itself posts a failing response.
  *
@@ -13,7 +15,7 @@
  */
 import type { NetworkEntry } from '../types';
 import type { RingContext, RingDefinition } from '../core/internal';
-import { redact } from '../core/internal/redact';
+import { createRedactor, type Redactor } from '../core/internal/redact';
 
 const REQUEST_BODY_CAP = 2048;
 const RESPONSE_BODY_CAP = 4096;
@@ -134,7 +136,11 @@ function stringifyBody(body: unknown): StringifiedBody {
   return { kind: 'empty' };
 }
 
-function capturedBody(body: unknown, cap: number): string | undefined {
+function capturedBody(
+  body: unknown,
+  cap: number,
+  redact: Redactor,
+): string | undefined {
   const stringified = stringifyBody(body);
   switch (stringified.kind) {
     case 'empty':
@@ -189,8 +195,10 @@ function extractUrl(input: RequestInfo | URL): string {
 async function resolveRequestBody(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
+  redact: Redactor,
 ): Promise<string | undefined> {
-  if (init?.body != null) return capturedBody(init.body, REQUEST_BODY_CAP);
+  if (init?.body != null)
+    return capturedBody(init.body, REQUEST_BODY_CAP, redact);
   if (typeof input === 'string' || input instanceof URL) return undefined;
   // Request object. Clone so the caller's downstream `.body` / `.text()` stays intact.
   try {
@@ -289,6 +297,11 @@ function installFetch(ctx: RingContext): () => void {
   const host = globalThis as typeof globalThis & { fetch: typeof fetch };
   const original = host.fetch;
   const isLoopUrl = makeLoopGuard(ctx.config.endpoint);
+  const redact = createRedactor(
+    ctx.config.redact.disable,
+    ctx.config.redact.custom,
+  );
+  const captureSuccess = ctx.config.rings.network.captureSuccess;
 
   const patched = async function patchedFetch(
     input: RequestInfo | URL,
@@ -304,7 +317,7 @@ function installFetch(ctx: RingContext): () => void {
     const method = extractMethod(input, init);
     const startWall = Date.now();
     const startPerf = nowPerf(startWall);
-    const reqBody = await resolveRequestBody(input, init);
+    const reqBody = await resolveRequestBody(input, init, redact);
     const reqHeaderRecord = sanitiseHeaders(reqHeaders.entries());
 
     let response: Response;
@@ -332,7 +345,7 @@ function installFetch(ctx: RingContext): () => void {
     // measures request time only — not request + captured-body decode.
     const durationMs = nowPerf(startWall) - startPerf;
 
-    if (response.status < 400) return response;
+    if (!captureSuccess && response.status < 400) return response;
 
     let responseBody: string | undefined;
     try {
@@ -403,6 +416,11 @@ function installXhr(ctx: RingContext): () => void {
   const origSend = proto.send;
   const origSetRequestHeader = proto.setRequestHeader;
   const isLoopUrl = makeLoopGuard(ctx.config.endpoint);
+  const redact = createRedactor(
+    ctx.config.redact.disable,
+    ctx.config.redact.custom,
+  );
+  const captureSuccess = ctx.config.rings.network.captureSuccess;
 
   function patchedOpen(
     this: XMLHttpRequest,
@@ -484,7 +502,7 @@ function installXhr(ctx: RingContext): () => void {
           startWall: state.startWall,
           durationMs,
           reqHeaders: sanitiseHeaders(state.headers),
-          reqBody: capturedBody(state.body, REQUEST_BODY_CAP),
+          reqBody: capturedBody(state.body, REQUEST_BODY_CAP, redact),
           respHeaders,
           respBody: responseBody,
           error,
@@ -497,7 +515,7 @@ function installXhr(ctx: RingContext): () => void {
     // per-state-transition noise out of the capture path and gives us
     // distinct labels for the three failure modes XHR surfaces.
     xhr.addEventListener('load', () => {
-      if (xhr.status >= 400) capture(xhr.status);
+      if (captureSuccess || xhr.status >= 400) capture(xhr.status);
     });
     xhr.addEventListener('error', () => capture(0, 'network error'));
     xhr.addEventListener('abort', () => capture(0, 'aborted'));

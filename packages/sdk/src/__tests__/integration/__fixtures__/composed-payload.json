@@ -19,7 +19,7 @@
     }
   },
   "console_errors": [],
-  "network_errors": [],
+  "network_calls": [],
   "route_trail": [],
   "attachments": [
     {

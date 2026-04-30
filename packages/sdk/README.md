@@ -128,8 +128,74 @@ createBrevwick(config: BrevwickConfig): Brevwick
 | `release`           | `string`                               | _unset_                    | Released app version, e.g. `1.4.2`.                                                                                                                                                     |
 | `userContext`       | `() => Record<string, unknown>`        | _unset_                    | Resolved at submit time and merged into `user_context`. Use a function so changing values (route, feature flags, auth state) are captured at the moment of submission, not at SDK init. |
 | `user`              | `{ id: string; [k: string]: unknown }` | _unset_                    | Opaque user identity attached to issues. `id` is required; any extra fields ride along.                                                                                                 |
-| `rings`             | `{ console?, network?, route? }`       | all `true`                 | Per-ring toggles. Each ring captures at most a small rolling buffer of recent events.                                                                                                   |
+| `rings`             | `{ console?, network?, route? }`       | all `true`                 | Per-ring toggles. Each accepts the legacy `boolean` shorthand or the object form below for finer-grained control.                                                                       |
+| `redact`            | `{ disable?, custom? }`                | _unset_                    | Tune the on-device redactor — selectively disable built-in patterns and/or extend with project-specific regexes.                                                                        |
 | `fingerprintOptOut` | `boolean`                              | `false`                    | Send `X-Brevwick-Fingerprint-Optout: 1` to skip the server-side salted fingerprint.                                                                                                     |
+
+### `rings.console`
+
+Pass `true` (or omit) for the default — capture **all five console levels** (`log` / `info` / `warn` / `error` / `debug`) into a 50-entry FIFO. Pass `false` to disable. Pass an object to narrow:
+
+```ts
+rings: {
+  console: {
+    levels: ['warn', 'error'], // default: all five
+    max: 100,                  // default: 50, hard ceiling 200
+  },
+}
+```
+
+To reproduce the legacy errors-only behaviour:
+
+```ts
+rings: {
+  console: {
+    levels: ['error'];
+  }
+}
+```
+
+### `rings.network`
+
+Pass `true` (or omit) for the default — capture **every completed fetch + XHR** (success and failure) into a 20-entry FIFO. Pass `false` to disable. Pass an object to narrow:
+
+```ts
+rings: {
+  network: {
+    captureSuccess: false, // default: true — opt out for failures-only mode
+    max: 50,               // default: 20, hard ceiling 100
+  },
+}
+```
+
+> **Wire contract — behaviour change.** The submitted issue payload renames the
+> network ring's wire field from `network_errors` → `network_calls`. The
+> companion server-side change in `brevwick-api` (sanitiser + ingest schema
+> shape-lock fixtures) ships in lockstep. Consumers that previously read
+> `network_errors` off captured payloads must follow the rename — this is a
+> breaking wire change in the pre-1.0 series.
+
+### `redact`
+
+The redactor runs on every string field that leaves the device. Built-in
+patterns scrub Authorization / Cookie headers, `Bearer …` tokens, JWTs,
+emails, credit-card numbers (Luhn-gated), IPv4 / IPv6 literals, US SSN /
+UK NI numbers, E.164 phone numbers, AWS access keys, GitHub tokens, and
+long base64 blobs.
+
+```ts
+redact: {
+  // Selectively turn off built-ins. Names accepted:
+  //   'auth', 'cookie', 'bearer', 'jwt', 'email',
+  //   'card', 'ip', 'ssn', 'phone', 'aws', 'github', 'base64'
+  disable: ['phone'], // common case: free-text fields with phone-like order numbers
+  // Add project-specific patterns. A bare RegExp is replaced with [redacted];
+  // pass an object to control the replacement string.
+  custom: [/secret-\w+/g, { pattern: /widget-\d+/g, replacement: '[w]' }],
+}
+```
+
+The phone-number matcher is the most false-positive-prone pattern (any 8–15 digit run with separators looks like a phone number). It is **on by default**; flip it off via `disable: ['phone']` if your free-text fields routinely carry order numbers, tracking IDs, or other long digit runs.
 
 ### Example with everything set
 
@@ -255,19 +321,19 @@ interface ProjectConfig {
 
 Every payload runs through the redactor before it leaves the browser:
 
-- **Console ring** — `log`/`info`/`warn`/`error`/`debug` messages, deduped across identical repeats within a window.
-- **Network ring** — failed requests (status ≥ 400 or thrown). Request body capped at 2 kB, response body at 4 kB, both redacted. Headers are allow-listed.
+- **Console ring** — `log` / `info` / `warn` / `error` / `debug` messages, deduped across identical repeats within a 500 ms window. All five levels by default; narrow via `rings.console.levels`.
+- **Network ring** — every completed fetch + XHR (success and failure) by default. Request body capped at 2 kB, response body at 4 kB, both redacted. Headers are allow-listed. Opt into failures-only mode with `rings.network: { captureSuccess: false }`.
 - **Route ring** — `pushState` / `popstate` / `hashchange` route transitions.
 
-Built-in patterns cover Bearer tokens, cookies, email addresses, credit-card-shaped numbers, and common API-key prefixes. Server-side sanitisation runs as defence-in-depth, but **the client redactor is the primary guarantee** — nothing leaves the device unredacted.
+Built-in redact patterns cover Authorization / Cookie / Bearer headers, JWTs, emails, credit-card numbers (Luhn-gated to skip false positives), IPv4 / IPv6 literals, US SSN + UK NI numbers, E.164 phone numbers, AWS access keys, GitHub tokens, and long base64 blobs. Tune via `BrevwickConfig.redact: { disable, custom }` (see the [`redact`](#redact) section above).
 
-You never need to wire redaction yourself — it's always on.
+Server-side sanitisation runs as defence-in-depth, but **the client redactor is the primary guarantee** — nothing leaves the device unredacted.
 
 ## Bundle size
 
 Enforced in CI via `size-limit` and asserted in tests:
 
-- **Initial chunk (`createBrevwick` + rings + `submit`):** ≤ 2.2 kB gzip.
+- **Initial chunk (`createBrevwick` + ring config validation):** ≤ 2.85 kB gzip.
 - **On first `captureScreenshot()` call:** `modern-screenshot` dynamic-imports and adds up to ≤ 25 kB gzip.
 
 Everything heavy is dynamic-imported on demand — importing this package does not pull in the screenshot encoder until a capture actually runs.
@@ -284,11 +350,18 @@ First-class TS — the package ships `.d.ts` for both ESM and CJS. Key types re-
 import type {
   Brevwick,
   BrevwickConfig,
+  BrevwickRedactConfig,
+  BrevwickRingsConfig,
   CaptureScreenshotOpts,
+  ConsoleLevel,
+  ConsoleRingConfig,
   Environment,
   FeedbackAttachment,
   FeedbackInput,
+  NetworkRingConfig,
   ProjectConfig,
+  RedactCustomPattern,
+  RedactPatternName,
   SubmitError,
   SubmitErrorCode,
   SubmitResult,
