@@ -73,6 +73,21 @@ export default [
     '25 kB',
   ),
 
+  // ── Solid bundle (≤ 5 kB gzip) ───────────────────────────────────────────
+  // Solid runtime is small and the V1 FAB ships a strict subset of the
+  // React widget UI, so the eager artefact stays well under the React budget.
+  // 5 kB is the issue-66 SDD ceiling.
+  fileEntry(
+    '@tatlacas/brevwick-solid (ESM)',
+    'packages/solid/dist/index.js',
+    '5 kB',
+  ),
+  fileEntry(
+    '@tatlacas/brevwick-solid (CJS)',
+    'packages/solid/dist/index.cjs',
+    '5 kB',
+  ),
+
   // ── On-widget-open total weight (≤ 25 kB gzip) ───────────────────────────
   // Bundled-import mode: esbuild re-bundles the screenshot module + its
   // resolved `modern-screenshot` peer the way a consumer's bundler would for

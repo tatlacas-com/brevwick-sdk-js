@@ -37,7 +37,7 @@ cd ../brevwick-sdk-js-issue-<N>
 
 ## Project Overview
 
-pnpm workspace publishing two npm packages: `@tatlacas/brevwick-sdk` (core, framework-agnostic) and `@tatlacas/brevwick-react` (React bindings).
+pnpm workspace publishing three npm packages: `@tatlacas/brevwick-sdk` (core, framework-agnostic), `@tatlacas/brevwick-react` (React bindings), and `@tatlacas/brevwick-solid` (Solid bindings).
 
 **GitHub:** https://github.com/tatlacas-com/brevwick-sdk-js
 
@@ -63,6 +63,8 @@ pnpm --filter @tatlacas/brevwick-react test
 
 - Core `@tatlacas/brevwick-sdk` initial chunk: **< 2.2 kB gzip** (bumped from 2 kB in issue-9 with the loopback-http carve-out in `canonicaliseHttpsUrl`; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and mirrored in SDD § 12)
 - On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
+- React adapter `@tatlacas/brevwick-react`: **< 25 kB gzip**
+- Solid adapter `@tatlacas/brevwick-solid`: **< 5 kB gzip** (Solid runtime is small + the V1 FAB ships a strict subset of the React widget UI)
 
 Anything heavy must be dynamic-imported (`await import('modern-screenshot')`) so it doesn't ship until the user clicks the FAB.
 

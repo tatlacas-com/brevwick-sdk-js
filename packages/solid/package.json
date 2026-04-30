@@ -1,0 +1,64 @@
+{
+  "name": "@tatlacas/brevwick-solid",
+  "version": "1.0.0-beta.7",
+  "description": "Brevwick Solid bindings — provider, FAB, useFeedback hook. Drop-in for any Solid or SolidStart app.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "solid": "./src/index.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:cover": "vitest run --coverage",
+    "type-check": "tsc --noEmit"
+  },
+  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",
+    "directory": "packages/solid"
+  },
+  "keywords": [
+    "brevwick",
+    "solid",
+    "solid-js",
+    "solidstart",
+    "qa",
+    "feedback",
+    "bug-issue"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "peerDependencies": {
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "solid-js": ">=1.8"
+  },
+  "devDependencies": {
+    "@solidjs/testing-library": "^0.8.10",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "esbuild-plugin-solid": "^0.6.0",
+    "jsdom": "^25.0.1",
+    "solid-js": "^1.9.4",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}
