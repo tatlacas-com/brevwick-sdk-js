@@ -556,12 +556,35 @@ export async function runSubmit(
     }
 
     const payload = composePayload(internal, input, resolved);
-    return await postIssue(
+    // Phase signals for adapter UIs (see core/internal.ts PhaseEvent docs).
+    // composePayload reads the buffer snapshots AND runs redact() inline on
+    // the user-supplied text fields, so 'capturing-done' and
+    // 'sanitising-done' fire back-to-back: the first marks the moment the
+    // payload exists, the second marks "redaction has run, the next syscall
+    // is the wire POST". A consumer (the React adapter) animates a 200 ms
+    // stagger between rows on top of this — the SDK signals the boundary,
+    // the UI owns the cadence.
+    internal.bus.emit('phase', { phase: 'capturing-done' });
+    internal.bus.emit('phase', { phase: 'sanitising-done' });
+    const result = await postIssue(
       config.endpoint,
       config.projectKey,
       payload,
       controller.signal,
     );
+    if (result.ok) {
+      // Resolve `aiEnabled` from the cached project config so the adapter
+      // can decide whether to render a "Formatting with AI" affordance.
+      // `getConfig` never throws (resolves to `null` on failure) and is
+      // cached per session — by the time submit fires, the widget has
+      // typically already populated the cache during its first open.
+      const projectConfig = await internal.getConfig();
+      internal.bus.emit('phase', {
+        phase: 'sent',
+        aiEnabled: projectConfig?.ai_enabled === true,
+      });
+    }
+    return result;
   } finally {
     clearTimeout(timer);
   }

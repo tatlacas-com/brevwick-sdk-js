@@ -14,7 +14,11 @@ export { BrevwickProvider } from './provider';
 export type { BrevwickProviderProps } from './provider';
 
 export { useFeedback } from './use-feedback';
-export type { FeedbackStatus, UseFeedbackResult } from './use-feedback';
+export type {
+  FeedbackPhase,
+  FeedbackStatus,
+  UseFeedbackResult,
+} from './use-feedback';
 
 export { FeedbackButton } from './feedback-button';
 export type { BrevwickTheme, FeedbackButtonProps } from './feedback-button';
