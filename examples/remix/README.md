@@ -34,9 +34,9 @@ names match its `envPrefix` (default `VITE_`); anything else stays
 server-only and never lands in the client bundle. There is **no**
 `REMIX_PUBLIC_*` convention — that pattern is from a different framework.
 
-| Variable                     | Required | Purpose                                         |
-| ---------------------------- | -------- | ----------------------------------------------- |
-| `VITE_BREVWICK_PROJECT_KEY`  | yes      | Public ingest key (`pk_test_…` or `pk_live_…`). |
+| Variable                    | Required | Purpose                                         |
+| --------------------------- | -------- | ----------------------------------------------- |
+| `VITE_BREVWICK_PROJECT_KEY` | yes      | Public ingest key (`pk_test_…` or `pk_live_…`). |
 
 ## Endpoint
 
