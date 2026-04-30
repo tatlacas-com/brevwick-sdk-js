@@ -182,6 +182,56 @@ export default function App() {
 
 End-to-end runnable app: [`examples/remix`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/remix).
 
+### Astro (React island)
+
+Astro renders pages as static HTML by default — interactive UI is opted in per component via the [`client:*` directives](https://docs.astro.build/en/reference/directives-reference/#client-directives). To get the FAB on every page, wrap `<BrevwickProvider>` + `<FeedbackButton>` in a small React component (the "island") and mount it inside your base layout with `client:load` so it hydrates on the client.
+
+The FAB only renders on routes that include the layout's island — fully static routes that strip client JS won't show the button. That is by design.
+
+```bash
+pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot @astrojs/react
+```
+
+```tsx
+// src/components/BrevwickIsland.tsx
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+
+const projectKey = import.meta.env.PUBLIC_BREVWICK_PROJECT_KEY ?? '';
+const config = { projectKey };
+
+export function BrevwickIsland() {
+  if (!projectKey) return null;
+  return (
+    <BrevwickProvider config={config}>
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+```astro
+---
+// src/layouts/Layout.astro
+import { BrevwickIsland } from '../components/BrevwickIsland';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <slot name="head" />
+  </head>
+  <body>
+    <slot />
+    <BrevwickIsland client:load />
+  </body>
+</html>
+```
+
+**Env-var convention:** Astro exposes any env var prefixed with `PUBLIC_` to the client bundle. Read it with `import.meta.env.PUBLIC_BREVWICK_PROJECT_KEY` from inside the React island.
+
+End-to-end runnable app: [`examples/astro`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/astro).
+
 ## `BrevwickProvider`
 
 Top-level provider. Creates a single SDK instance, installs rings on mount, uninstalls on unmount.

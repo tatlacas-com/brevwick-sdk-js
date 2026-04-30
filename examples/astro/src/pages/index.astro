@@ -1,0 +1,47 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const projectKey = import.meta.env.PUBLIC_BREVWICK_PROJECT_KEY ?? '';
+---
+
+<Layout>
+  <main>
+    <section>
+      <h1>Brevwick — Astro example</h1>
+      <p>
+        The floating <strong>Feedback</strong> button is a React island
+        rendered by <code>&lt;BrevwickIsland client:load /&gt;</code> inside
+        the base layout. Static-only routes (no client-hydrated island) won't
+        show it.
+      </p>
+      {
+        !projectKey && (
+          <p class="error">
+            Missing <code>PUBLIC_BREVWICK_PROJECT_KEY</code>. Copy{' '}
+            <code>.env.example</code> to <code>.env</code>, set your{' '}
+            <code>pk_test_…</code> key, and reload.
+          </p>
+        )
+      }
+    </section>
+  </main>
+</Layout>
+
+<style>
+  main {
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+  section {
+    max-width: 32rem;
+    padding: 2rem;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 0.75rem;
+    text-align: center;
+  }
+  .error {
+    color: #b42318;
+  }
+</style>

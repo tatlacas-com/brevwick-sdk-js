@@ -14,6 +14,7 @@ export default tseslint.config(
       '**/*.config.*',
       '**/.next/**',
       '**/build/**',
+      '**/.astro/**',
     ],
   },
   {
