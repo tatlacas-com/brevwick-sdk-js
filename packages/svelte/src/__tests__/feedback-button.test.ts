@@ -364,7 +364,9 @@ describe('<FeedbackButton>', () => {
     });
 
     await act(async () => {
-      await fireEvent.change(fileInput!, { target: { files: [small, med, big] } });
+      await fireEvent.change(fileInput!, {
+        target: { files: [small, med, big] },
+      });
     });
 
     await waitFor(() => {
@@ -394,7 +396,9 @@ describe('<FeedbackButton>', () => {
       expect(screen.getByText(/^screenshot$/i)).toBeInTheDocument(),
     );
 
-    const removeBtn = screen.getByRole('button', { name: /remove screenshot 1/i });
+    const removeBtn = screen.getByRole('button', {
+      name: /remove screenshot 1/i,
+    });
     await act(async () => {
       await fireEvent.click(removeBtn);
     });
@@ -476,8 +480,9 @@ describe('<FeedbackButton>', () => {
       .getByRole('dialog')
       .querySelector<HTMLInputElement>('input[type="file"]');
     expect(fileInput).not.toBeNull();
-    const five = Array.from({ length: 5 }, (_, i) =>
-      new File(['x'], `f${i}.txt`, { type: 'text/plain' }),
+    const five = Array.from(
+      { length: 5 },
+      (_, i) => new File(['x'], `f${i}.txt`, { type: 'text/plain' }),
     );
     await act(async () => {
       await fireEvent.change(fileInput!, { target: { files: five } });
