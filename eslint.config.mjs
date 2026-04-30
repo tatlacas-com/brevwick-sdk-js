@@ -14,6 +14,7 @@ export default tseslint.config(
       '**/*.config.*',
       '**/.next/**',
       '**/.svelte-kit/**',
+      '**/.astro/**',
       '**/build/**',
       // Svelte SFCs are not parsed by eslint here. `svelte-check` /
       // svelte2tsx via the per-package `type-check` script covers the

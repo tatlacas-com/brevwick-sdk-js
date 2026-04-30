@@ -1,8 +1,11 @@
-# brevwick-example-vanilla
+# brevwick-example-vanilla (Vite)
 
 Plain HTML + Vite + TypeScript example that imports
-[`@tatlacas/brevwick-sdk`](../../packages/sdk) directly and submits a hard-coded
-issue when a button is clicked.
+[`@tatlacas/brevwick-sdk`](../../../packages/sdk) directly and submits a
+hard-coded issue when a button is clicked.
+
+> Looking for a no-build-tool version that runs straight from `index.html`?
+> See [`../static`](../static).
 
 ## Works locally
 

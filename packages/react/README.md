@@ -75,6 +75,184 @@ export default function RootLayout({
 
 > **Hoist `config` to module scope or memoise with `useMemo`.** The provider keys the underlying SDK instance on config identity — passing a new literal each render would cycle `install`/`uninstall` on every render.
 
+### Plain React (Vite + CRA)
+
+Both Vite and Create React App are SPAs — no SSR, no client/server boundary. Wrap your tree in `<BrevwickProvider>` once at the app root and drop `<FeedbackButton />` next to it. The only thing that differs between the two is how you read the project-key env var.
+
+```bash
+pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot
+```
+
+#### Vite
+
+```tsx
+// src/App.tsx
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+
+const config = {
+  projectKey: import.meta.env.VITE_BREVWICK_PROJECT_KEY,
+};
+
+export function App() {
+  return (
+    <BrevwickProvider config={config}>
+      <YourApp />
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+#### Create React App
+
+```tsx
+// src/App.tsx
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+
+const config = {
+  projectKey: process.env.REACT_APP_BREVWICK_PROJECT_KEY,
+};
+
+export function App() {
+  return (
+    <BrevwickProvider config={config}>
+      <YourApp />
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+**Env-var convention:**
+
+| Tool | Variable                         | Read in code                                 |
+| ---- | -------------------------------- | -------------------------------------------- |
+| Vite | `VITE_BREVWICK_PROJECT_KEY`      | `import.meta.env.VITE_BREVWICK_PROJECT_KEY`  |
+| CRA  | `REACT_APP_BREVWICK_PROJECT_KEY` | `process.env.REACT_APP_BREVWICK_PROJECT_KEY` |
+
+Both prefixes are required — Vite and CRA refuse to expose any env var that doesn't carry their prefix to the client bundle, by design. The two reads are not interchangeable: CRA can't parse `import.meta.env`, and Vite's `process.env` is shimmed but does not inline arbitrary references.
+
+> CRA is in maintenance mode. For new projects we recommend Vite; the wiring above works identically in both.
+
+SSR-safety doesn't apply here — Vite and CRA always render on the client. The provider's `'use client'` boundary is a no-op in an SPA.
+
+End-to-end runnable apps: [`examples/vite-react`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/vite-react), [`examples/cra`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/cra).
+
+### Remix
+
+Remix server-renders the document, but the provider is SSR-safe — `createBrevwick` runs in `useMemo` and the rings install in `useEffect`, so the SDK is a no-op on the server. Mount the provider inside `app/root.tsx`'s `<Layout>` so it wraps the `<Outlet />`: every route reached via the outlet is inside the provider, and `useFeedback()` works in any of them.
+
+> Do **not** name the wrapper `configured-widget.client.tsx`. Remix Vite strips `.client.tsx` modules from the server build (replaces them with an empty stub), which would break SSR for any route that calls `useFeedback()` and produce a hydration mismatch on the client. The provider is already SSR-safe, so the `.client` suffix is unnecessary and harmful here.
+
+```bash
+pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot
+```
+
+```tsx
+// app/configured-widget.tsx
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+import type { ReactNode } from 'react';
+
+const projectKey = import.meta.env.VITE_BREVWICK_PROJECT_KEY ?? '';
+const config = { projectKey };
+
+export function ConfiguredWidget({ children }: { children: ReactNode }) {
+  if (!projectKey) return <>{children}</>;
+  return (
+    <BrevwickProvider config={config}>
+      {children}
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+```tsx
+// app/root.tsx
+import {
+  Outlet,
+  Links,
+  Meta,
+  Scripts,
+  ScrollRestoration,
+} from '@remix-run/react';
+import { ConfiguredWidget } from './configured-widget';
+
+export function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        <ConfiguredWidget>{children}</ConfiguredWidget>
+        <ScrollRestoration />
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+export default function App() {
+  return <Outlet />;
+}
+```
+
+**Env-var convention:** Remix uses Vite under the hood, so client-inlined env vars follow Vite's `VITE_*` + `import.meta.env` convention. Vite only inlines references whose names match its `envPrefix` (default `VITE_`); everything else stays server-only and never lands in the client bundle. There is **no** `REMIX_PUBLIC_*` convention — that pattern is from a different framework. If you need to expose a non-`VITE_`-prefixed value, use a root loader + `useLoaderData()` (or set it on `window.ENV` from a root loader and read it on the client).
+
+End-to-end runnable app: [`examples/remix`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/remix).
+
+### Astro (React island)
+
+Astro renders pages as static HTML by default — interactive UI is opted in per component via the [`client:*` directives](https://docs.astro.build/en/reference/directives-reference/#client-directives). To get the FAB on every page, wrap `<BrevwickProvider>` + `<FeedbackButton>` in a small React component (the "island") and mount it inside your base layout with `client:load` so it hydrates on the client.
+
+The FAB only renders on routes that include the layout's island — fully static routes that strip client JS won't show the button. That is by design.
+
+```bash
+pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot @astrojs/react
+```
+
+```tsx
+// src/components/BrevwickIsland.tsx
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+
+const projectKey = import.meta.env.PUBLIC_BREVWICK_PROJECT_KEY ?? '';
+const config = { projectKey };
+
+export function BrevwickIsland() {
+  if (!projectKey) return null;
+  return (
+    <BrevwickProvider config={config}>
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+```astro
+---
+// src/layouts/Layout.astro
+import { BrevwickIsland } from '../components/BrevwickIsland';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <slot name="head" />
+  </head>
+  <body>
+    <slot />
+    <BrevwickIsland client:load />
+  </body>
+</html>
+```
+
+**Env-var convention:** Astro exposes any env var prefixed with `PUBLIC_` to the client bundle. Read it with `import.meta.env.PUBLIC_BREVWICK_PROJECT_KEY` from inside the React island.
+
+End-to-end runnable app: [`examples/astro`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/astro).
+
 ## `BrevwickProvider`
 
 Top-level provider. Creates a single SDK instance, installs rings on mount, uninstalls on unmount.

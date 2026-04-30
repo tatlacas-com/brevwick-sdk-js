@@ -2,6 +2,7 @@
 
 [![npm (sdk)](https://img.shields.io/npm/v/@tatlacas/brevwick-sdk/beta?label=@tatlacas/brevwick-sdk%40beta)](https://www.npmjs.com/package/@tatlacas/brevwick-sdk)
 [![npm (react)](https://img.shields.io/npm/v/@tatlacas/brevwick-react/beta?label=@tatlacas/brevwick-react%40beta)](https://www.npmjs.com/package/@tatlacas/brevwick-react)
+[![npm (vue)](https://img.shields.io/npm/v/@tatlacas/brevwick-vue/beta?label=@tatlacas/brevwick-vue%40beta)](https://www.npmjs.com/package/@tatlacas/brevwick-vue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Ship feedback from any browser app straight into clean, AI-formatted GitHub issues. Drop in a floating button, collect a description + screenshot + the console/network rings that preceded the bug, and Brevwick turns it all into a triage-ready issue on your repo.
@@ -10,11 +11,12 @@ Ship feedback from any browser app straight into clean, AI-formatted GitHub issu
 
 ## Packages
 
-| Package                                          | Description                                                             | API reference                                            |
-| ------------------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------- |
-| [`@tatlacas/brevwick-sdk`](./packages/sdk)       | Framework-agnostic core: submit, screenshot, rings.                     | [packages/sdk/README.md](./packages/sdk/README.md)       |
-| [`@tatlacas/brevwick-react`](./packages/react)   | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19. | [packages/react/README.md](./packages/react/README.md)   |
-| [`@tatlacas/brevwick-svelte`](./packages/svelte) | Context setter, FAB, and `getFeedback()` for Svelte 5 and SvelteKit.    | [packages/svelte/README.md](./packages/svelte/README.md) |
+| Package                                          | Description                                                                | API reference                                            |
+| ------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------- |
+| [`@tatlacas/brevwick-sdk`](./packages/sdk)       | Framework-agnostic core: submit, screenshot, rings.                        | [packages/sdk/README.md](./packages/sdk/README.md)       |
+| [`@tatlacas/brevwick-react`](./packages/react)   | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19.    | [packages/react/README.md](./packages/react/README.md)   |
+| [`@tatlacas/brevwick-vue`](./packages/vue)       | Plugin, floating FAB component, and `useFeedback` composable for Vue 3.4+. | [packages/vue/README.md](./packages/vue/README.md)       |
+| [`@tatlacas/brevwick-svelte`](./packages/svelte) | Context setter, FAB, and `getFeedback()` for Svelte 5 and SvelteKit.       | [packages/svelte/README.md](./packages/svelte/README.md) |
 
 ## Install
 
@@ -26,6 +28,9 @@ npm install @tatlacas/brevwick-sdk@beta
 
 # React / Next.js / Remix — pulls @tatlacas/brevwick-sdk in as a peer dep
 npm install @tatlacas/brevwick-react@beta @tatlacas/brevwick-sdk@beta
+
+# Vue 3 / Nuxt — pulls @tatlacas/brevwick-sdk in as a peer dep
+npm install @tatlacas/brevwick-vue@beta @tatlacas/brevwick-sdk@beta
 ```
 
 Works with `pnpm add`, `yarn add`, `bun add` — same package names.
@@ -50,6 +55,33 @@ export default function App() {
 That's it. A floating action button appears in the bottom-right; clicking it opens a feedback dialog with screenshot capture, file attachments, and your project's AI formatting (if enabled).
 
 Full API and theming → [packages/react/README.md](./packages/react/README.md).
+
+### Vue
+
+```ts
+// main.ts
+import { createApp } from 'vue';
+import { BrevwickPlugin } from '@tatlacas/brevwick-vue';
+import App from './App.vue';
+
+createApp(App).use(BrevwickPlugin, { projectKey: 'pk_live_...' }).mount('#app');
+```
+
+```vue
+<!-- App.vue -->
+<script setup lang="ts">
+import { FeedbackButton } from '@tatlacas/brevwick-vue';
+</script>
+
+<template>
+  <YourApp />
+  <FeedbackButton />
+</template>
+```
+
+Nuxt users: register the plugin in a `~/plugins/brevwick.client.ts` file so it only runs in the browser.
+
+Full API and theming → [packages/vue/README.md](./packages/vue/README.md).
 
 ### Vanilla / any framework
 
@@ -93,6 +125,7 @@ ES2020 targets — modern evergreen browsers (Chrome/Edge 90+, Firefox 90+, Safa
 - **Docs / dashboard:** [brevwick.dev](https://brevwick.dev)
 - **API reference (core):** [packages/sdk/README.md](./packages/sdk/README.md)
 - **API reference (React):** [packages/react/README.md](./packages/react/README.md)
+- **API reference (Vue):** [packages/vue/README.md](./packages/vue/README.md)
 - **Issues & feature requests:** [github.com/tatlacas-com/brevwick-sdk-js/issues](https://github.com/tatlacas-com/brevwick-sdk-js/issues)
 - **Contributing:** [CONTRIBUTING.md](./CONTRIBUTING.md)
 - **License:** [MIT](./LICENSE)
