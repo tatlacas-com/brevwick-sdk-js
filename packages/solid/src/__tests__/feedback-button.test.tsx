@@ -132,17 +132,81 @@ describe('FeedbackButton', () => {
     ).toBeNull();
   });
 
-  it('shows an error when submitted without a description', async () => {
+  it('keeps the send button disabled while the description is whitespace-only', async () => {
     mount();
     openPanel();
-    fireEvent.click(screen.getByRole('button', { name: /send/i }));
-    // Send is disabled on empty draft, so type a single space (still trims to empty).
     fireEvent.input(await screen.findByLabelText(/feedback message/i), {
       target: { value: '   ' },
     });
-    // Force-enable submit by typing real text first, then space-trimming via direct call:
-    // simpler — assert the send button stays disabled with whitespace-only.
     expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
     expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an error alert when submit() returns ok:false', async () => {
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'server said no' },
+    });
+    mount();
+    openPanel();
+    fireEvent.input(await screen.findByLabelText(/feedback message/i), {
+      target: { value: 'broken' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/server said no/i);
+  });
+
+  it('surfaces an error alert when capture rejects', async () => {
+    captureScreenshot.mockRejectedValueOnce(new Error('canvas blew up'));
+    mount();
+    openPanel();
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/canvas blew up/i);
+  });
+
+  it('surfaces a generic error when submit() rejects', async () => {
+    submit.mockRejectedValueOnce(new Error('chunk load failed'));
+    mount();
+    openPanel();
+    fireEvent.input(await screen.findByLabelText(/feedback message/i), {
+      target: { value: 'broken' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/chunk load failed/i);
+  });
+
+  it('closes the panel via the close button and resets state', async () => {
+    mount();
+    openPanel();
+    expect(
+      await screen.findByLabelText(/feedback message/i),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/feedback message/i)).toBeNull(),
+    );
+  });
+
+  it('renders nothing when open is closed (collapsed FAB)', () => {
+    mount();
+    // Before opening, the panel body is not in the DOM.
+    expect(screen.queryByLabelText(/feedback message/i)).toBeNull();
+  });
+
+  it('renders the bottom-left position class when configured', async () => {
+    render(() => (
+      <BrevwickProvider config={{ projectKey: 'pk_test_pos' }}>
+        <FeedbackButton position="bottom-left" />
+      </BrevwickProvider>
+    ));
+    const fab = await screen.findByRole('button', {
+      name: /open feedback form/i,
+    });
+    expect(fab).toHaveClass('brw-fab-bl');
   });
 });
