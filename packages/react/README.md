@@ -75,6 +75,50 @@ export default function RootLayout({
 
 > **Hoist `config` to module scope or memoise with `useMemo`.** The provider keys the underlying SDK instance on config identity — passing a new literal each render would cycle `install`/`uninstall` on every render.
 
+### Plain React (Vite + CRA)
+
+Both Vite and Create React App are SPAs — no SSR, no client/server boundary. Wrap your tree in `<BrevwickProvider>` once at the app root and drop `<FeedbackButton />` next to it. The only thing that differs between the two is the env-var prefix.
+
+```bash
+pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot
+```
+
+```tsx
+// src/App.tsx — works in both Vite and CRA.
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+
+const config = {
+  // Vite:
+  projectKey: import.meta.env.VITE_BREVWICK_PROJECT_KEY,
+  // CRA:
+  // projectKey: process.env.REACT_APP_BREVWICK_PROJECT_KEY,
+};
+
+export function App() {
+  return (
+    <BrevwickProvider config={config}>
+      <YourApp />
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+**Env-var convention:**
+
+| Tool | Variable                         | Read in code                                 |
+| ---- | -------------------------------- | -------------------------------------------- |
+| Vite | `VITE_BREVWICK_PROJECT_KEY`      | `import.meta.env.VITE_BREVWICK_PROJECT_KEY`  |
+| CRA  | `REACT_APP_BREVWICK_PROJECT_KEY` | `process.env.REACT_APP_BREVWICK_PROJECT_KEY` |
+
+Both prefixes are required — Vite and CRA refuse to expose any env var that doesn't carry their prefix to the client bundle, by design.
+
+> CRA is in maintenance mode. For new projects we recommend Vite; the wiring above works identically in both.
+
+SSR-safety doesn't apply here — Vite and CRA always render on the client. The provider's `'use client'` boundary is a no-op in an SPA.
+
+End-to-end runnable apps: [`examples/vite-react`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/vite-react), [`examples/cra`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/cra).
+
 ## `BrevwickProvider`
 
 Top-level provider. Creates a single SDK instance, installs rings on mount, uninstalls on unmount.
