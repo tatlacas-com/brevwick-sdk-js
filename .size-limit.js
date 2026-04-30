@@ -128,6 +128,20 @@ export default [
     '8 kB',
   ),
 
+  // ── Angular bundle (≤ 8 kB gzip) ─────────────────────────────────────────
+  // Angular adapter ships only one artefact per Angular Package Format: the
+  // FESM2022 flat-ESM bundle. ng-packagr does not emit a CJS counterpart for
+  // libraries (CJS apps consume Angular via @angular/upgrade or stay on the
+  // older legacy package format — neither is a target of this adapter).
+  // 8 kB gzip envelope is intentionally roomier than React/Vue/Svelte/Solid
+  // because Angular's @Injectable / standalone-component / Signals scaffolding
+  // costs 4-5 kB of irreducible runtime overhead before our own code lands.
+  fileEntry(
+    '@tatlacas/brevwick-angular (FESM2022)',
+    'packages/angular/dist/fesm2022/tatlacas-brevwick-angular.mjs',
+    '8 kB',
+  ),
+
   // ── On-widget-open total weight (≤ 25 kB gzip) ───────────────────────────
   // Bundled-import mode: esbuild re-bundles the screenshot module + its
   // resolved `modern-screenshot` peer the way a consumer's bundler would for

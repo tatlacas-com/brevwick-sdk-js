@@ -2,6 +2,21 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
+// Minimal Node globals for our build-time scripts. Avoids pulling in the
+// full `globals` npm package as a top-level devDependency just for the few
+// names we need.
+const nodeGlobals = {
+  console: 'readonly',
+  process: 'readonly',
+  Buffer: 'readonly',
+  __dirname: 'readonly',
+  __filename: 'readonly',
+  global: 'readonly',
+  module: 'readonly',
+  require: 'readonly',
+  exports: 'writable',
+};
+
 export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -34,6 +49,14 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+    },
+  },
+  // Build-time codegen scripts run under Node — no DOM globals, but they
+  // need `process`, `console`, etc.
+  {
+    files: ['**/scripts/**/*.mjs', '**/scripts/**/*.js'],
+    languageOptions: {
+      globals: nodeGlobals,
     },
   },
 );

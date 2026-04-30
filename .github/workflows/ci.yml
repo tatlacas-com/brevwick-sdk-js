@@ -56,13 +56,20 @@ jobs:
       # (packages/sdk/dist/index.d.ts etc.). Without this, a clean CI checkout
       # fails type-check with TS2307 on every `from '@tatlacas/brevwick-sdk'` import.
       - run: pnpm --filter @tatlacas/brevwick-sdk build
+      # Build @tatlacas/brevwick-angular before tests so its
+      # `published-artefact.spec.ts` can assert against the real FESM2022
+      # bundle (no silent skip when dist/ is missing). The Angular build is
+      # cheap (ng-packagr produces ~5 kB gzip output) and gives a real CI
+      # signal that ng-packagr's substitution pipeline produced a valid
+      # artefact — the kind of guard issue #67 rev-1 was missing.
+      - run: pnpm --filter @tatlacas/brevwick-angular build
       - run: pnpm type-check
       - run: pnpm test:cover
       - run: pnpm build
       - name: Upload sdk coverage
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
-          files: packages/sdk/coverage/lcov.info,packages/react/coverage/lcov.info,packages/solid/coverage/lcov.info,packages/vue/coverage/lcov.info,packages/svelte/coverage/lcov.info
+          files: packages/sdk/coverage/lcov.info,packages/react/coverage/lcov.info,packages/solid/coverage/lcov.info,packages/vue/coverage/lcov.info,packages/svelte/coverage/lcov.info,packages/angular/coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
       # Hand the built artefacts to the size-check job so it doesn't have to
@@ -77,6 +84,7 @@ jobs:
             packages/solid/dist
             packages/vue/dist
             packages/svelte/dist
+            packages/angular/dist
           retention-days: 1
           if-no-files-found: error
 
