@@ -1,0 +1,69 @@
+{
+  "name": "@tatlacas/brevwick-angular",
+  "version": "1.0.0-beta.7",
+  "description": "Brevwick Angular bindings — provideBrevwick, BrevwickService, bw-feedback-button standalone component. Angular 17+ standalone-only with Signals reactivity.",
+  "license": "MIT",
+  "type": "module",
+  "module": "./dist/fesm2022/tatlacas-brevwick-angular.mjs",
+  "typings": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": {
+      "default": "./package.json"
+    },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/fesm2022/tatlacas-brevwick-angular.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "prebuild": "node scripts/generate-version.mjs",
+    "build": "ng-packagr -p ng-package.json",
+    "pretest": "node scripts/generate-version.mjs",
+    "test": "vitest run",
+    "pretest:cover": "node scripts/generate-version.mjs",
+    "test:cover": "vitest run --coverage",
+    "type-check": "node scripts/generate-version.mjs && tsc --noEmit -p tsconfig.lib.json"
+  },
+  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",
+    "directory": "packages/angular"
+  },
+  "keywords": [
+    "brevwick",
+    "angular",
+    "qa",
+    "feedback",
+    "bug-issue"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "peerDependencies": {
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "@angular/common": ">=17.0.0",
+    "@angular/core": ">=17.0.0"
+  },
+  "devDependencies": {
+    "@angular/common": "^17.3.12",
+    "@angular/compiler": "^17.3.12",
+    "@angular/compiler-cli": "^17.3.12",
+    "@angular/core": "^17.3.12",
+    "@angular/platform-browser": "^17.3.12",
+    "@angular/platform-browser-dynamic": "^17.3.12",
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "ng-packagr": "^17.3.0",
+    "rxjs": "^7.8.1",
+    "tslib": "^2.6.3",
+    "typescript": "5.4.5",
+    "zone.js": "~0.14.10"
+  }
+}
