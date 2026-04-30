@@ -146,12 +146,12 @@ async function handleReport() {
 
 ### Return value
 
-| Field               | Type                                                  | Description                                                                |
-| ------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------- |
-| `submit`            | `(input: FeedbackInput) => Promise<SubmitResult>`     | Submit feedback. Returns the same tagged union the core SDK returns.       |
-| `captureScreenshot` | `() => Promise<Blob>`                                 | Capture a DOM screenshot. Never throws — returns a placeholder on failure. |
-| `status`            | `Ref<'idle' \| 'submitting' \| 'success' \| 'error'>` | Reactive submission lifecycle.                                             |
-| `reset`             | `() => void`                                          | Reset `status` back to `'idle'`. Does not cancel an in-flight submit.      |
+| Field               | Type                                                  | Description                                                                                                                                                                                                                                                      |
+| ------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `submit`            | `(input: FeedbackInput) => Promise<SubmitResult>`     | Submit feedback. Returns the same tagged union the core SDK returns.                                                                                                                                                                                             |
+| `captureScreenshot` | `() => Promise<Blob>`                                 | Capture a DOM screenshot via the core SDK (dynamic import). Rasterization errors are caught and a placeholder blob is returned, but the dynamic import itself can still reject if the chunk fails to load — wrap calls in `try/catch` if you render your own UI. |
+| `status`            | `Ref<'idle' \| 'submitting' \| 'success' \| 'error'>` | Reactive submission lifecycle.                                                                                                                                                                                                                                   |
+| `reset`             | `() => void`                                          | Reset `status` back to `'idle'`. Does not cancel an in-flight submit.                                                                                                                                                                                            |
 
 Throws synchronously when called outside `BrevwickPlugin` — including during SSR before client hydration.
 

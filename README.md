@@ -27,6 +27,9 @@ npm install @tatlacas/brevwick-sdk@beta
 
 # React / Next.js / Remix — pulls @tatlacas/brevwick-sdk in as a peer dep
 npm install @tatlacas/brevwick-react@beta @tatlacas/brevwick-sdk@beta
+
+# Vue 3 / Nuxt — pulls @tatlacas/brevwick-sdk in as a peer dep
+npm install @tatlacas/brevwick-vue@beta @tatlacas/brevwick-sdk@beta
 ```
 
 Works with `pnpm add`, `yarn add`, `bun add` — same package names.
@@ -51,6 +54,33 @@ export default function App() {
 That's it. A floating action button appears in the bottom-right; clicking it opens a feedback dialog with screenshot capture, file attachments, and your project's AI formatting (if enabled).
 
 Full API and theming → [packages/react/README.md](./packages/react/README.md).
+
+### Vue
+
+```ts
+// main.ts
+import { createApp } from 'vue';
+import { BrevwickPlugin } from '@tatlacas/brevwick-vue';
+import App from './App.vue';
+
+createApp(App).use(BrevwickPlugin, { projectKey: 'pk_live_...' }).mount('#app');
+```
+
+```vue
+<!-- App.vue -->
+<script setup lang="ts">
+import { FeedbackButton } from '@tatlacas/brevwick-vue';
+</script>
+
+<template>
+  <YourApp />
+  <FeedbackButton />
+</template>
+```
+
+Nuxt users: register the plugin in a `~/plugins/brevwick.client.ts` file so it only runs in the browser.
+
+Full API and theming → [packages/vue/README.md](./packages/vue/README.md).
 
 ### Vanilla / any framework
 
@@ -94,6 +124,7 @@ ES2020 targets — modern evergreen browsers (Chrome/Edge 90+, Firefox 90+, Safa
 - **Docs / dashboard:** [brevwick.dev](https://brevwick.dev)
 - **API reference (core):** [packages/sdk/README.md](./packages/sdk/README.md)
 - **API reference (React):** [packages/react/README.md](./packages/react/README.md)
+- **API reference (Vue):** [packages/vue/README.md](./packages/vue/README.md)
 - **Issues & feature requests:** [github.com/tatlacas-com/brevwick-sdk-js/issues](https://github.com/tatlacas-com/brevwick-sdk-js/issues)
 - **Contributing:** [CONTRIBUTING.md](./CONTRIBUTING.md)
 - **License:** [MIT](./LICENSE)

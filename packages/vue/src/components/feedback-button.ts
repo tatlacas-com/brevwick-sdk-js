@@ -124,7 +124,7 @@ export const FeedbackButton = defineComponent({
       }
       submitError.value = null;
       const input: FeedbackInput = {
-        title: text.split('\n', 1)[0]!.slice(0, 120),
+        title: (text.split('\n', 1)[0] ?? text).slice(0, 120),
         description: draft.value,
       };
       if (screenshotBlob.value) {
