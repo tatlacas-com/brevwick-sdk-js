@@ -73,6 +73,21 @@ export default [
     '25 kB',
   ),
 
+  // ── Solid bundle (≤ 5 kB gzip) ───────────────────────────────────────────
+  // Solid runtime is small and the V1 FAB ships a strict subset of the
+  // React widget UI, so the eager artefact stays well under the React budget.
+  // 5 kB is the issue-66 SDD ceiling.
+  fileEntry(
+    '@tatlacas/brevwick-solid (ESM)',
+    'packages/solid/dist/index.js',
+    '5 kB',
+  ),
+  fileEntry(
+    '@tatlacas/brevwick-solid (CJS)',
+    'packages/solid/dist/index.cjs',
+    '5 kB',
+  ),
+
   // ── Vue bundle (≤ 5 kB gzip eager) ───────────────────────────────────────
   // The Vue adapter is intentionally a thinner surface than React (no Radix
   // dialog, no AI toggle, no region overlay, no preview dialog). The 5 kB

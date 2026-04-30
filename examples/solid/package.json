@@ -1,0 +1,22 @@
+{
+  "name": "brevwick-example-solid",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vinxi dev --port 3001",
+    "build": "vinxi build",
+    "start": "vinxi start --port 3001"
+  },
+  "dependencies": {
+    "@solidjs/router": "^0.15.3",
+    "@solidjs/start": "^1.1.0",
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "@tatlacas/brevwick-solid": "workspace:*",
+    "solid-js": "^1.9.4",
+    "vinxi": "^0.5.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

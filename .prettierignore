@@ -6,4 +6,7 @@ coverage
 notes
 **/.next/**
 **/.astro/**
+**/.svelte-kit/**
+**/.vinxi/**
+**/.output/**
 **/next-env.d.ts

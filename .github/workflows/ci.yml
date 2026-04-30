@@ -62,7 +62,7 @@ jobs:
       - name: Upload sdk coverage
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
-          files: packages/sdk/coverage/lcov.info,packages/react/coverage/lcov.info,packages/vue/coverage/lcov.info,packages/svelte/coverage/lcov.info
+          files: packages/sdk/coverage/lcov.info,packages/react/coverage/lcov.info,packages/solid/coverage/lcov.info,packages/vue/coverage/lcov.info,packages/svelte/coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
       # Hand the built artefacts to the size-check job so it doesn't have to
@@ -74,6 +74,7 @@ jobs:
           path: |
             packages/sdk/dist
             packages/react/dist
+            packages/solid/dist
             packages/vue/dist
             packages/svelte/dist
           retention-days: 1
