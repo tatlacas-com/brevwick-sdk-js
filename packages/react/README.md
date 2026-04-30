@@ -77,21 +77,40 @@ export default function RootLayout({
 
 ### Plain React (Vite + CRA)
 
-Both Vite and Create React App are SPAs — no SSR, no client/server boundary. Wrap your tree in `<BrevwickProvider>` once at the app root and drop `<FeedbackButton />` next to it. The only thing that differs between the two is the env-var prefix.
+Both Vite and Create React App are SPAs — no SSR, no client/server boundary. Wrap your tree in `<BrevwickProvider>` once at the app root and drop `<FeedbackButton />` next to it. The only thing that differs between the two is how you read the project-key env var.
 
 ```bash
 pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot
 ```
 
+#### Vite
+
 ```tsx
-// src/App.tsx — works in both Vite and CRA.
+// src/App.tsx
 import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
 
 const config = {
-  // Vite:
   projectKey: import.meta.env.VITE_BREVWICK_PROJECT_KEY,
-  // CRA:
-  // projectKey: process.env.REACT_APP_BREVWICK_PROJECT_KEY,
+};
+
+export function App() {
+  return (
+    <BrevwickProvider config={config}>
+      <YourApp />
+      <FeedbackButton />
+    </BrevwickProvider>
+  );
+}
+```
+
+#### Create React App
+
+```tsx
+// src/App.tsx
+import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
+
+const config = {
+  projectKey: process.env.REACT_APP_BREVWICK_PROJECT_KEY,
 };
 
 export function App() {
@@ -111,7 +130,7 @@ export function App() {
 | Vite | `VITE_BREVWICK_PROJECT_KEY`      | `import.meta.env.VITE_BREVWICK_PROJECT_KEY`  |
 | CRA  | `REACT_APP_BREVWICK_PROJECT_KEY` | `process.env.REACT_APP_BREVWICK_PROJECT_KEY` |
 
-Both prefixes are required — Vite and CRA refuse to expose any env var that doesn't carry their prefix to the client bundle, by design.
+Both prefixes are required — Vite and CRA refuse to expose any env var that doesn't carry their prefix to the client bundle, by design. The two reads are not interchangeable: CRA can't parse `import.meta.env`, and Vite's `process.env` is shimmed but does not inline arbitrary references.
 
 > CRA is in maintenance mode. For new projects we recommend Vite; the wiring above works identically in both.
 
@@ -123,6 +142,8 @@ End-to-end runnable apps: [`examples/vite-react`](https://github.com/tatlacas-co
 
 Remix server-renders the document, but the provider is SSR-safe — `createBrevwick` runs in `useMemo` and the rings install in `useEffect`, so the SDK is a no-op on the server. Mount the provider inside `app/root.tsx`'s `<Layout>` so it wraps the `<Outlet />`: every route reached via the outlet is inside the provider, and `useFeedback()` works in any of them.
 
+> Do **not** name the wrapper `configured-widget.client.tsx`. Remix Vite strips `.client.tsx` modules from the server build (replaces them with an empty stub), which would break SSR for any route that calls `useFeedback()` and produce a hydration mismatch on the client. The provider is already SSR-safe, so the `.client` suffix is unnecessary and harmful here.
+
 ```bash
 pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot
 ```
@@ -132,7 +153,7 @@ pnpm add @tatlacas/brevwick-react @tatlacas/brevwick-sdk modern-screenshot
 import { BrevwickProvider, FeedbackButton } from '@tatlacas/brevwick-react';
 import type { ReactNode } from 'react';
 
-const projectKey = process.env.REMIX_PUBLIC_BREVWICK_PROJECT_KEY ?? '';
+const projectKey = import.meta.env.VITE_BREVWICK_PROJECT_KEY ?? '';
 const config = { projectKey };
 
 export function ConfiguredWidget({ children }: { children: ReactNode }) {
@@ -155,7 +176,7 @@ import {
   Scripts,
   ScrollRestoration,
 } from '@remix-run/react';
-import { ConfiguredWidget } from './configured-widget.client';
+import { ConfiguredWidget } from './configured-widget';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -178,7 +199,7 @@ export default function App() {
 }
 ```
 
-**Env-var convention:** Remix exposes anything you pass through `process.env` at build time. By convention, vars meant for the client tree carry a `REMIX_PUBLIC_` prefix; everything else stays server-only and never lands in the bundle.
+**Env-var convention:** Remix uses Vite under the hood, so client-inlined env vars follow Vite's `VITE_*` + `import.meta.env` convention. Vite only inlines references whose names match its `envPrefix` (default `VITE_`); everything else stays server-only and never lands in the client bundle. There is **no** `REMIX_PUBLIC_*` convention — that pattern is from a different framework. If you need to expose a non-`VITE_`-prefixed value, use a root loader + `useLoaderData()` (or set it on `window.ENV` from a root loader and read it on the client).
 
 End-to-end runnable app: [`examples/remix`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/remix).
 
