@@ -42,3 +42,11 @@ the value via `import.meta.env.PUBLIC_*` from inside the React island.
 | Variable                      | Required | Purpose                                         |
 | ----------------------------- | -------- | ----------------------------------------------- |
 | `PUBLIC_BREVWICK_PROJECT_KEY` | yes      | Public ingest key (`pk_test_…` or `pk_live_…`). |
+
+## Endpoint
+
+This example posts to the public Brevwick ingest at `https://api.brevwick.com`
+by default — supplying a real `pk_test_…` key will deliver issues to your
+project inbox. (`examples/next` and `examples/vanilla/vite` instead require
+a `*_API_BASE` env and fail-closed against a local stack; this example
+intentionally ships the simpler "drop in a key, press the button" path.)

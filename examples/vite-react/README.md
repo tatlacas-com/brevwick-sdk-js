@@ -24,10 +24,16 @@ Plain Vite + React 19 example wired up with
 
 ## Environment
 
-Vite exposes any `VITE_*` env var to client code via `import.meta.env`. The
-example points at the public Brevwick API by default (no `endpoint` override),
-so a real `pk_test_…` key is enough to send issues to your project inbox.
+Vite exposes any `VITE_*` env var to client code via `import.meta.env`.
 
 | Variable                    | Required | Purpose                                         |
 | --------------------------- | -------- | ----------------------------------------------- |
 | `VITE_BREVWICK_PROJECT_KEY` | yes      | Public ingest key (`pk_test_…` or `pk_live_…`). |
+
+## Endpoint
+
+This example posts to the public Brevwick ingest at `https://api.brevwick.com`
+by default — supplying a real `pk_test_…` key will deliver issues to your
+project inbox. (`examples/next` and `examples/vanilla/vite` instead require
+a `*_API_BASE` env and fail-closed against a local stack; this example
+intentionally ships the simpler "drop in a key, press the button" path.)
