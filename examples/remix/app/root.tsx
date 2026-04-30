@@ -7,7 +7,7 @@ import {
 } from '@remix-run/react';
 import type { LinksFunction } from '@remix-run/node';
 import type { ReactNode } from 'react';
-import { ConfiguredWidget } from './configured-widget.client';
+import { ConfiguredWidget } from './configured-widget';
 
 export const links: LinksFunction = () => [];
 

@@ -2,9 +2,10 @@
 
 Minimal Remix (Vite) example wired up with
 [`@tatlacas/brevwick-react`](../../packages/react). The provider mounts inside
-`app/root.tsx` and is gated behind `useEffect` so the FAB renders only after
-client hydration — Remix server-renders the document, but the SDK needs
-`window`.
+`app/root.tsx`'s `<Layout>` so it wraps the `<Outlet />` — every route reached
+through the outlet is inside the provider, and `useFeedback()` works in any of
+them. The provider itself is SSR-safe (`createBrevwick` runs in `useMemo`,
+rings install in `useEffect`), so no `.client.tsx` wrapper is required.
 
 ## Run locally
 
@@ -16,7 +17,7 @@ client hydration — Remix server-renders the document, but the SDK needs
 2. Copy `.env.example` to `.env`:
    ```bash
    cp .env.example .env
-   # edit REMIX_PUBLIC_BREVWICK_PROJECT_KEY=pk_test_…
+   # edit VITE_BREVWICK_PROJECT_KEY=pk_test_…
    ```
 3. Start the dev server:
    ```bash
@@ -27,10 +28,19 @@ client hydration — Remix server-renders the document, but the SDK needs
 
 ## Environment
 
-Remix reads env vars at build time via `process.env`. Any var prefixed with
-`REMIX_PUBLIC_` is safe to surface to the client tree (the convention this
-example uses). Server-only secrets stay unprefixed and never reach the bundle.
+Remix uses Vite under the hood, so client-inlined env vars follow Vite's
+`VITE_*` + `import.meta.env` convention. Vite only inlines variables whose
+names match its `envPrefix` (default `VITE_`); anything else stays
+server-only and never lands in the client bundle. There is **no**
+`REMIX_PUBLIC_*` convention — that pattern is from a different framework.
 
-| Variable                            | Required | Purpose                                         |
-| ----------------------------------- | -------- | ----------------------------------------------- |
-| `REMIX_PUBLIC_BREVWICK_PROJECT_KEY` | yes      | Public ingest key (`pk_test_…` or `pk_live_…`). |
+| Variable                     | Required | Purpose                                         |
+| ---------------------------- | -------- | ----------------------------------------------- |
+| `VITE_BREVWICK_PROJECT_KEY`  | yes      | Public ingest key (`pk_test_…` or `pk_live_…`). |
+
+## Endpoint
+
+This example posts to the public Brevwick ingest at `https://api.brevwick.com`
+by default — supplying a real `pk_test_…` key will deliver issues to your
+project inbox. Override via the `endpoint` field on the `BrevwickConfig` in
+`app/configured-widget.tsx` if you are running a local `brevwick-api`.
