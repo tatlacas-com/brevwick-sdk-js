@@ -1,6 +1,6 @@
 # brevwick-sdk-js landing-parity Worktrees
 
-4 issues across 2 worktrees in 1 tier. The brevwick-web landing page (PR #192) ships a marketing surface that promises capabilities the SDK does not currently match — console breadcrumbs across all levels, a network ring of *all* recent fetches (not just failures), broader PII redaction, and a staged-status feedback widget UX (`Captured ✓ / Sanitised ✓ / Formatting ⏳`). This file scopes the SDK-side work to bring reality in line with the messaging.
+4 issues across 2 worktrees in 1 tier. The brevwick-web landing page (PR #192) ships a marketing surface that promises capabilities the SDK does not currently match — console breadcrumbs across all levels, a network ring of _all_ recent fetches (not just failures), broader PII redaction, and a staged-status feedback widget UX (`Captured ✓ / Sanitised ✓ / Formatting ⏳`). This file scopes the SDK-side work to bring reality in line with the messaging.
 
 **Key references:**
 
@@ -35,7 +35,7 @@
   - #77 changes `core/internal/redact.ts` + `types.ts BrevwickConfig` + `config.ts` validation.
 - All three touch `BrevwickRingsConfig` / `BrevwickConfig` and `config.ts` — concurrent PRs would conflict on every commit.
 - All three update `golden-payload.test.ts` / `redaction-matrix.test.ts` — same fixtures.
-- A single PR delivers the message coherently: "the SDK matches every payload claim the landing makes." Splitting it would have three reviewers each saying "looks fine in isolation, but does the FAQ actually claim *this* set?" — bundling is the cure.
+- A single PR delivers the message coherently: "the SDK matches every payload claim the landing makes." Splitting it would have three reviewers each saying "looks fine in isolation, but does the FAQ actually claim _this_ set?" — bundling is the cure.
 
 **Split the React widget UX into its own worktree (WT-react-staged-status)** because:
 
