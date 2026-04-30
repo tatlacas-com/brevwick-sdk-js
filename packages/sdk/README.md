@@ -19,13 +19,15 @@ Or with pnpm / yarn / bun — same name. Pre-1.0 releases track the `beta` dist-
 
 ### Drop into any HTML page — no build step
 
-The fastest possible install. Paste this anywhere a `<script type="module">` tag works (static sites, Webflow, WordPress, classic templating layers):
+The fastest possible install. Paste this anywhere a `<script type="module">` tag works (static sites, Webflow, WordPress, classic templating layers).
+
+> The SDK core ships **no built-in floating-action button** — the FAB lives in [`@tatlacas/brevwick-react`](https://www.npmjs.com/package/@tatlacas/brevwick-react). For a no-build install, you wire any HTML button (or your own UI) to `bw.submit()` directly, as below. If you need the FAB UX without React, install the React package and ship a tiny wrapper.
 
 ```html
 <button id="feedback-btn" type="button">Report a bug</button>
 
 <script type="module">
-  import { createBrevwick } from 'https://esm.sh/@tatlacas/brevwick-sdk@beta';
+  import { createBrevwick } from 'https://esm.sh/@tatlacas/brevwick-sdk@1.0.0-beta.7';
 
   const bw = createBrevwick({ projectKey: 'pk_live_...' });
   bw.install();
@@ -48,12 +50,12 @@ The fastest possible install. Paste this anywhere a `<script type="module">` tag
 
 Either CDN works — pick whichever your CSP allows:
 
-| CDN      | URL                                                             |
-| -------- | --------------------------------------------------------------- |
-| esm.sh   | `https://esm.sh/@tatlacas/brevwick-sdk@beta`                    |
-| jsdelivr | `https://cdn.jsdelivr.net/npm/@tatlacas/brevwick-sdk@beta/+esm` |
+| CDN      | URL                                                                     |
+| -------- | ----------------------------------------------------------------------- |
+| esm.sh   | `https://esm.sh/@tatlacas/brevwick-sdk@1.0.0-beta.7`                    |
+| jsdelivr | `https://cdn.jsdelivr.net/npm/@tatlacas/brevwick-sdk@1.0.0-beta.7/+esm` |
 
-Pre-1.0 releases track the `@beta` dist-tag; pin a specific version (`@1.0.0-beta.7`) once you go to production.
+The CDN URLs pin a specific pre-1.0 version so no-build users never silently shift under you. Bump the pin when you upgrade — the latest published beta is the version published to npm under `@latest`.
 
 End-to-end runnable example (no build tool, serve over `python -m http.server`): [`examples/vanilla/static`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/vanilla/static).
 
