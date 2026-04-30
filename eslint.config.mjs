@@ -13,6 +13,8 @@ export default tseslint.config(
       '**/coverage/**',
       '**/*.config.*',
       '**/.next/**',
+      '**/build/**',
+      '**/.astro/**',
     ],
   },
   {
