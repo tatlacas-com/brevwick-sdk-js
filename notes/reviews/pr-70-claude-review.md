@@ -150,3 +150,45 @@ CI at handoff: `check`, `size-check`, `verify-signatures`, `codecov/patch`, `cod
 7. **Extend `chunk-split.test.ts`** with a `solid-js/web` external assertion.
 
 Optional (worth doing but not blocking): switch `let nextId = 0` to `createUniqueId()`; document per-instance `status` semantics on `UseFeedbackResult.status`; track the brevwick-web companion follow-up so the SDK guide flips after merge.
+
+## Validation — 2026-04-30
+
+**Verdict**: APPROVED
+
+Validated against HEAD `4d3f565` (`fix(solid): address PR #70 review findings`).
+
+### Items Confirmed Fixed
+
+- [x] **(1) Doc/behavior mismatch on transient-null tolerance** — `provider.tsx:16-30,32-38` now JSDoc-tagged `@internal`, explicitly says "throws synchronously if invoked before SDK has hydrated." `use-feedback.ts:39-49` matches: "Both paths surface the missing-SDK error asymmetry-free as a rejected promise." PR body rewrote the contradicting "tolerates transient null" line to "submit() and captureScreenshot() both reject with an Error if invoked before client hydration completes." Docs and behavior now aligned across all three sites.
+- [x] **(2) Object-URL leak** — `feedback-button.tsx:195-212` adds `revokeAllScreenshots()` invoked from both `handleClose` (line 217) and `onCleanup` (line 210-212). `handleSubmit` snapshots `screenshots()` once at line 155 (`const queued = screenshots();`) and threads it through attachment build, filename count, and post-success revoke (line 180), eliminating the chip-removal-mid-await desync. Two new tests at `feedback-button.test.tsx:213-248` and `:250-295` lock the contract via `vi.spyOn(URL, 'revokeObjectURL')` for both close-without-submit and `ok:false`-then-close paths.
+- [x] **(3) `packages/solid/package.json` `files`** — Lines 18-29 list explicit subpath whitelist (`dist`, `src/components`, `src/internal`, `src/index.ts`, `src/provider.tsx`, `src/styles.ts`, `src/use-feedback.ts`) plus `!src/**/__tests__/**` negation. `npm pack --dry-run` confirms zero `__tests__/**` paths in the tarball; only the six source files needed by the `"solid"` export condition ship. Tarball size 37 kB / unpacked 134 kB.
+- [x] **(4) `captureScreenshot` async/sync asymmetry** — `use-feedback.ts:107-113` wraps `requireSdk().captureScreenshot()` in try/catch and returns `Promise.reject(error)` on the missing-SDK path. `submit()` (line 79-85) does the same: catches the synchronous throw from `requireSdk()`, flips status to `'error'`, and rethrows from inside an `async` boundary so the caller observes a rejected promise. Both paths now uniformly async. Test at `use-feedback.test.tsx:103-128` asserts both reject pre-hydration.
+- [x] **(5) Title/description trim mismatch** — `feedback-button.tsx:144` derives `text = draft().trim()`; line 165 derives `derivedTitle = text.split('\n', 1)[0]!.slice(0, 120)`; line 172 ships `description: text` (the trimmed value). Title and description now both built from the same trimmed source. New test at `feedback-button.test.tsx:297-309` asserts `'   hi there   \n'` produces `title: 'hi there'`, `description: 'hi there'`.
+- [x] **(6) `BrevwickContext` + `BrevwickContextValue` removed from public surface** — `index.ts` re-export list (lines 5-25) does not include `BrevwickContext` or `BrevwickContextValue`. The interface is non-exported `@internal` (`provider.tsx:28-30`); the constant is exported from `provider.tsx:38` only so the `use-feedback.test.tsx:115` pre-hydration test can mount a fake provider. Public surface is clean — only `BrevwickProvider`, `BrevwickProviderProps`, `useFeedback`, `UseFeedbackResult`, `FeedbackStatus`, `FeedbackButton`, `FeedbackButtonProps`, `BrevwickTheme`, plus four re-exported core types.
+- [x] **(7) `chunk-split.test.ts` solid-js/web assertion** — Lines 48-58 add the second `it('base chunk does not bundle solid-js/web…')` test asserting `from "solid-js/web"` survives as a bare-module reference. Verified: dist/index.js contains 9 separate `from "solid-js/web"` imports for `template`, `delegateEvents`, `className`, `setAttribute`, `effect`, `insert`, `createComponent`, `memo` — all external, none inlined.
+
+### Optional Improvements Confirmed
+
+- [x] `nextId` replaced with `crypto.randomUUID()` + fallback at `feedback-button.tsx:119-122`.
+- [x] Per-call status independence test added at `use-feedback.test.tsx:138-177`.
+- [x] Pre-hydration rejection test added at `use-feedback.test.tsx:103-128`.
+- [x] ESLint config gained `**/.vinxi/**` and `**/.output/**` ignores (verified via `pnpm lint` clean).
+
+### Independent Findings
+
+- **Prettier ignore parity (non-blocker, dev-experience only)**: ESLint config now ignores `**/.vinxi/**` and `**/.output/**`, but `.prettierignore` does not. After running the SolidStart example locally, `pnpm format:check` fails on `examples/solid/.vinxi/**` build artefacts. CI is unaffected (those directories are gitignored and absent on a fresh checkout) and `gh pr checks 70` is green at HEAD. Not a regression introduced by this PR — the example shipped with this PR, and the asymmetry is identical to what would happen with `**/.next/**` if a developer ran the Next example. Worth a follow-up to extend `.prettierignore` symmetrically, but not a blocker for merge.
+- **No double-bundle of `modern-screenshot`**: `grep -c modern-screenshot packages/solid/dist/index.js` returns `0`. The package routes through the SDK's already-lazy `import('./screenshot')` path; the chunk-split test for `solid-js/web` covers the explicit Solid externalisation invariant.
+- **Redaction-delegation invariant preserved** across both new `submit()` rejection paths: `use-feedback.ts:79-85` (missing-SDK pre-hydration path) and `:91-98` (sdk.submit rejection path) both rethrow original errors without modifying the input. The adapter never touches the payload; `redact()` remains the single source of truth in `@tatlacas/brevwick-sdk`.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass (lockfile up to date).
+- `pnpm lint`: pass (eslint clean across all packages).
+- `pnpm type-check`: pass (sdk + react + solid all green).
+- `pnpm test`: pass — sdk 204/204, react 123/123, solid 29/29.
+- `pnpm --filter @tatlacas/brevwick-solid test:cover`: pass — 91.58% statements, 76.25% branches, 90.56% functions, 95.06% lines (all over the 70%/75% thresholds set in `eecc425`).
+- `pnpm build`: pass (sdk + react + solid + Next + SolidStart all build).
+- `pnpm size`: pass — solid ESM 3.9 kB / CJS 4.16 kB (under 5 kB cap); core 2.11/2.13 kB (under 2.2 kB cap); on-widget-open 10.91 kB (under 25 kB cap).
+- `npm pack --dry-run` for `@tatlacas/brevwick-solid`: pass — 14 files, no `__tests__/**`, no test fixtures, no `vitest.config.ts`/`vitest.setup.ts`/`tsup.config.ts`.
+- `gh pr checks 70`: pass — `check`, `size-check`, `verify-signatures` all green at HEAD `4d3f565`.
+- `pnpm format:check`: fails locally on contaminated worktree (`.vinxi/.output` artefacts) — see Independent Findings. Not a regression; CI is green.
