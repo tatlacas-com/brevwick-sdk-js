@@ -43,7 +43,22 @@ describe('redact (default)', () => {
 
   it('redacts IPv4 and IPv6 literals', () => {
     expect(redact('peer at 10.0.42.55 today')).toBe('peer at [ip] today');
-    expect(redact('peer at 2001:db8:0:1::abcd today')).toContain('[ip]');
+    // Full + compressed forms must mask the entire address — a regex that
+    // greedily matches the prefix only and leaves `::abcd` exposed is the
+    // bug fixed in PR #79's review-fix patch.
+    expect(redact('peer at 2001:db8:0:1::abcd today')).toBe(
+      'peer at [ip] today',
+    );
+    // Compressed link-local + scoped-id forms commonly appear in Node net
+    // logs and DHCPv6 traces — must mask the whole address, not just `::1`.
+    expect(redact('peer fe80::1 hello')).toBe('peer [ip] hello');
+    expect(redact('peer fe80::1%eth0 hello')).toBe('peer [ip] hello');
+    expect(redact('peer fc00::1 hello')).toBe('peer [ip] hello');
+    // IPv4-mapped (::ffff:v4) must mask the entire address as one unit so
+    // the `::ffff:` prefix is not left exposed when the v4 tail is masked
+    // by the IPv4 matcher in isolation.
+    expect(redact('peer ::ffff:1.2.3.4 hello')).toBe('peer [ip] hello');
+    expect(redact('::1 loop')).toBe('[ip] loop');
   });
 
   it('redacts US SSN and UK NI numbers', () => {

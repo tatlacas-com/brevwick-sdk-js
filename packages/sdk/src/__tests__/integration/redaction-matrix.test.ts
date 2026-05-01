@@ -97,9 +97,35 @@ const CASES: readonly MatrixCase[] = [
     marker: '[ip]',
   },
   {
+    // Link-local + scoped-id forms commonly appear in Node net traces and
+    // were previously only partially masked (`::1` of `fe80::1` matched,
+    // leaving `fe80` exposed). Pinning the full-form mask here protects
+    // the regex from regressing back to prefix-only behaviour.
+    label: 'IPv6 link-local with zone',
+    raw: 'fe80::1%eth0',
+    marker: '[ip]',
+  },
+  {
     label: 'US SSN',
     raw: '987-65-4321',
     marker: '[ssn]',
+  },
+  {
+    // UK National Insurance is a distinct BUILTIN entry from US SSN, with a
+    // separate non-trivial regex (excludes letter classes, allows spaces).
+    // Pinning it here keeps the matrix in lockstep with `redact.test.ts`.
+    label: 'UK National Insurance number',
+    raw: 'AB 12 34 56 C',
+    marker: '[ssn]',
+  },
+  {
+    // Phone is the highest-FP-risk pattern in the new BUILTIN set — length
+    // gate, separator handling, and ordering vs IP/SSN. Documented trade-off:
+    // ISO timestamps, all-digit SHA prefixes, and 8-15-digit IDs may also be
+    // masked; consumers tighten via `redact.disable: ['phone']` (see README).
+    label: 'E.164 phone number',
+    raw: '+1 415 555 0199',
+    marker: '[phone]',
   },
   {
     label: 'AWS access key',

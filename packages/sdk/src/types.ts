@@ -8,7 +8,7 @@ export interface ConsoleRingConfig {
    * — all five console methods. Pass a narrower list (e.g. `['error']`) to
    * reproduce the legacy "errors only" behaviour.
    */
-  levels?: ConsoleLevel[];
+  levels?: readonly ConsoleLevel[];
   /** FIFO ring cap. Default 50. Hard ceiling 200 (rejected at validation). */
   max?: number;
 }
@@ -67,7 +67,10 @@ export interface BrevwickRedactConfig {
   /**
    * Add custom regex patterns. A bare `RegExp` is replaced with `[redacted]`;
    * pass an object to control the replacement string. Custom patterns run
-   * after every built-in so they can override (e.g. unmask after a built-in).
+   * after every built-in, so they can mask substrings the built-ins left
+   * alone — but they cannot "unmask" a built-in match: once a built-in
+   * replaces matched text with its marker (e.g. `[email]`, `[card]`), the
+   * original token is gone and a custom pattern has nothing to recover.
    */
   custom?: Array<RegExp | RedactCustomPattern>;
 }
@@ -93,7 +96,8 @@ export interface BrevwickConfig {
   /**
    * Tune the on-device redactor — disable specific built-in patterns by name
    * and/or extend with project-specific regexes. Built-ins always run first;
-   * custom patterns append after so they can override.
+   * custom patterns append after so they can mask anything the built-ins
+   * left alone (they cannot recover text a built-in already replaced).
    */
   redact?: BrevwickRedactConfig;
   /** Send `X-Brevwick-Fingerprint-Optout: 1` to skip the salted fingerprint. */

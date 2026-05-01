@@ -150,8 +150,8 @@ To reproduce the legacy errors-only behaviour:
 ```ts
 rings: {
   console: {
-    levels: ['error'];
-  }
+    levels: ['error'],
+  },
 }
 ```
 
@@ -195,7 +195,13 @@ redact: {
 }
 ```
 
-The phone-number matcher is the most false-positive-prone pattern (any 8–15 digit run with separators looks like a phone number). It is **on by default**; flip it off via `disable: ['phone']` if your free-text fields routinely carry order numbers, tracking IDs, or other long digit runs.
+The phone-number matcher is the most false-positive-prone pattern (any 8–15 digit run with separators looks like a phone number). Concretely, the following inputs **will be masked** by the phone matcher today — flip it off via `disable: ['phone']` if any of these hurt you:
+
+- ISO-8601 timestamps: `2026-05-01T10:30:45` → `[phone]T10:30:45`
+- SHA hashes whose leading 8+ characters happen to be all digits
+- Order numbers, tracking IDs, or national IDs of 8–15 digits (e.g. SA-ID `9001015800087` → `[phone]`)
+
+It is **on by default** because real phone leaks in free-text fields are higher-impact than the false positives above; the trade-off is exposed via `disable` rather than tightened in the regex so consumers stay in control.
 
 ### Example with everything set
 

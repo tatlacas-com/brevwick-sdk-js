@@ -36,11 +36,17 @@ interface RuntimePattern {
 }
 
 const IPV4 = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
-// Strict IPv6 — at least one `:` chain that is not also a SemVer range. We
-// require either a `::` or at least two `:` separators with hex blocks so
-// `localhost:3000` (port form) doesn't get clobbered.
+// IPv6 — order alternatives most-specific-first so the regex engine does not
+// match a prefix-only fragment when a longer form is available. Branches:
+//   1. `::ffff:<ipv4>` — IPv4-mapped (must come before generic compressed)
+//   2. `<group>(::|:){…}<group>(%zone)?` with at least one `::` — covers full
+//      forms (`2001:db8:0:1::abcd`), compressed link-local (`fe80::1`,
+//      `fe80::1%eth0`), ULA (`fc00::1`), and `::1` loopback.
+//   3. Eight-group uncompressed full form (`2001:db8:0:1:0:0:0:abcd`).
+// The lower bound of 2 colons (or one `::`) keeps `localhost:3000`,
+// `12:30` time-of-day, and SemVer-range shapes from being clobbered.
 const IPV6 =
-  /\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b|::1\b|\b::ffff:[0-9.]+\b/g;
+  /(?<![A-Za-z0-9])::ffff:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|(?:\b[0-9a-fA-F]{1,4})?(?::[0-9a-fA-F]{0,4}){2,7}(?:%[0-9a-zA-Z]+)?\b|\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){7}\b/g;
 
 const BUILTIN: readonly NamedPattern[] = [
   {
@@ -76,8 +82,11 @@ const BUILTIN: readonly NamedPattern[] = [
     pattern: /\b(?:\d[ -]*?){13,19}\b/g,
     replacement: '[card]',
   },
-  { name: 'ip', pattern: IPV4, replacement: '[ip]' },
+  // IPv6 must run before IPv4 so the `::ffff:1.2.3.4` mapped form is masked
+  // as a single `[ip]` token. Otherwise IPv4 strips the `1.2.3.4` tail first
+  // and the generic IPv6 branch is left masking the orphan `::ffff` prefix.
   { name: 'ip', pattern: IPV6, replacement: '[ip]' },
+  { name: 'ip', pattern: IPV4, replacement: '[ip]' },
   // US SSN: `\d{3}-\d{2}-\d{4}` and UK NI: two letters + 6 digits + final A-D.
   {
     name: 'ssn',

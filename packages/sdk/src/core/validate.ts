@@ -275,7 +275,14 @@ function parseConsoleRing(value: unknown): ValidatedConsoleRing {
           );
         }
       }
-      return { ...base, levels: raw.levels as readonly ConsoleLevel[] };
+      // Defensive copy: the public type marks `levels` as `readonly`, but
+      // `readonly` is erased at runtime — without a snapshot a consumer who
+      // later mutates the array they passed in would silently change the
+      // ring's filter set. Cheap (≤ 5 entries) and one-shot at validation.
+      return {
+        ...base,
+        levels: [...(raw.levels as ConsoleLevel[])] as readonly ConsoleLevel[],
+      };
     },
   );
 }
