@@ -23,11 +23,7 @@ import type {
   SubmitResult,
 } from '@tatlacas/brevwick-sdk';
 import { useBrevwickInternal } from './context';
-import {
-  useFeedback,
-  type FeedbackPhase,
-  type FeedbackStatus,
-} from './use-feedback';
+import { useFeedback, type FeedbackPhase } from './use-feedback';
 import {
   BREVWICK_CSS,
   BREVWICK_STYLE_ID,
@@ -815,7 +811,6 @@ export function FeedbackButton({
             actual={actual}
             confirmClose={confirmClose}
             submitError={submitError}
-            status={status}
             phase={phase}
             submitErrorTagged={submitErrorTagged}
             aiEnabled={projectConfig.config?.ai_enabled === true}
@@ -941,7 +936,6 @@ interface ThreadProps {
   actual: string;
   confirmClose: boolean;
   submitError: string | null;
-  status: FeedbackStatus;
   phase: FeedbackPhase;
   submitErrorTagged: SubmitError | null;
   aiEnabled: boolean;
@@ -991,7 +985,6 @@ function Thread({
   actual,
   confirmClose,
   submitError,
-  status,
   phase,
   submitErrorTagged,
   aiEnabled,
@@ -1006,7 +999,6 @@ function Thread({
   onConfirmDiscard,
   onCancelClose,
 }: ThreadProps): ReactElement {
-  void status;
   const phaseRank = PHASE_RANK[phase];
   const showCaptured = phaseRank >= PHASE_RANK.sanitising;
   const showSanitised = phaseRank >= PHASE_RANK.formatting;
@@ -1087,7 +1079,8 @@ function Thread({
       {showCaptured && (
         <StatusRow
           variant="check"
-          delayMs={reducedMotion ? 0 : 0}
+          // Row 1 anchors the cascade at 0 ms; rows 2 and 3 stagger off it.
+          delayMs={0}
           dataRow="captured"
         >
           Captured route, console, network, device
