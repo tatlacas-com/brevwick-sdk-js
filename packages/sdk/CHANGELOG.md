@@ -4,7 +4,7 @@
 
 ### Minor Changes
 
-- [#71](https://github.com/tatlacas-com/brevwick-sdk-js/pull/71) [`c2060af`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/c2060af1c7d3cdbdd106f2cdfe350d48c16e5b6c) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(angular): @tatlacas/brevwick-angular adapter package
+- [#71](https://github.com/tatlacas-com/brevwick-sdk-js/pull/71) [`c2060af`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/c2060af1c7d3cdbdd106f2cdfe350d48c16e5b6c) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(angular): @tatlacas/brevwick-angular adapter package.
 
   Ships the Angular 17+ standalone bindings:
   - `provideBrevwick(config)` — returns `EnvironmentProviders` for
