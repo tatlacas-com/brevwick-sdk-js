@@ -236,6 +236,22 @@ describe('integration — redaction matrix', () => {
     expect(body).toContain('[redacted]');
   });
 
+  it('does not redact HH:MM:SS time-of-day as IPv6 (negative guard)', async () => {
+    // Regression guard for the over-broad IPv6 alternation that landed in
+    // commit 4ae04c9. A future tightening of the IP regex must not silently
+    // re-introduce the bug — the matcher must reject pure-decimal
+    // colon-separated runs (HH:MM:SS, port lists, version triples) since
+    // real IPv6 addresses always contain `::` or a hex letter.
+    const captured = installIngestHandlers(server, () => 'issue_ip_negative');
+    const instance = createBrevwick({ projectKey: KEY, endpoint: ENDPOINT });
+    const raw = 'meeting started at 10:30:45 today';
+    const result = await instance.submit({ description: raw });
+    expect(result.ok).toBe(true);
+    const body = captured.body() ?? '';
+    expect(body).toContain('10:30:45');
+    expect(body).not.toContain('[ip]');
+  });
+
   it('does not over-redact short triplets that lack the eyJ JWT prefix', async () => {
     // Defensive complement to the JWT case above: `a.b.c` is a very common
     // shape (hostnames, IPs, version specifiers) that must NOT be scrubbed.

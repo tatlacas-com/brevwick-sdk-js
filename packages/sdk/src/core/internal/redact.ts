@@ -37,16 +37,26 @@ interface RuntimePattern {
 
 const IPV4 = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
 // IPv6 — order alternatives most-specific-first so the regex engine does not
-// match a prefix-only fragment when a longer form is available. Branches:
-//   1. `::ffff:<ipv4>` — IPv4-mapped (must come before generic compressed)
-//   2. `<group>(::|:){…}<group>(%zone)?` with at least one `::` — covers full
-//      forms (`2001:db8:0:1::abcd`), compressed link-local (`fe80::1`,
-//      `fe80::1%eth0`), ULA (`fc00::1`), and `::1` loopback.
-//   3. Eight-group uncompressed full form (`2001:db8:0:1:0:0:0:abcd`).
-// The lower bound of 2 colons (or one `::`) keeps `localhost:3000`,
-// `12:30` time-of-day, and SemVer-range shapes from being clobbered.
+// match a prefix-only fragment when a longer form is available. The shape
+// rule that disambiguates "real IPv6 literal" from "incidental colon-
+// separated text" (HH:MM:SS times, `host:port:variant` traces, version
+// triples like `a:b:c`): a real address must contain EITHER a literal `::`
+// (compressed form) OR at least one hex letter `a-fA-F` (full form). Pure
+// decimal full-form IPv6 like `1:2:3:4:5:6:7:8` is technically valid but
+// vanishingly rare in real telemetry — the false-positive cost of
+// shredding HH:MM:SS / port lists / abc:def:ghi traces dominates, so the
+// regex deliberately does not match it. Branches:
+//   1. `::ffff:<ipv4>` — IPv4-mapped (must come before the generic `::`
+//      branch so the ipv4 tail is masked atomically with the prefix).
+//   2. Compressed form with literal `::` — covers `2001:db8:0:1::abcd`,
+//      `fe80::1`, `fe80::1%eth0`, `fc00::1`, and `::1` loopback. Boundary
+//      is `(?<![A-Za-z0-9:])` / `(?![0-9a-fA-F])` so the match cannot
+//      bleed across an adjacent hex run.
+//   3. Full uncompressed 8-group form gated on a hex-letter lookahead so
+//      `1:2:3:4:5:6:7:8` (no `::`, no hex letter) does NOT match — only
+//      shapes like `2001:db8:0:1:abcd:ef01:2345:6789` get redacted.
 const IPV6 =
-  /(?<![A-Za-z0-9])::ffff:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|(?:\b[0-9a-fA-F]{1,4})?(?::[0-9a-fA-F]{0,4}){2,7}(?:%[0-9a-zA-Z]+)?\b|\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){7}\b/g;
+  /(?<![A-Za-z0-9])::ffff:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|(?<![A-Za-z0-9:])(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4})*)?::(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4})*)?(?:%[0-9a-zA-Z]+)?(?![0-9a-fA-F])|(?<![A-Za-z0-9:])(?=[0-9a-fA-F:]{1,40}[a-fA-F])[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){7}(?![0-9a-fA-F])/g;
 
 const BUILTIN: readonly NamedPattern[] = [
   {
