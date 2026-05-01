@@ -1,5 +1,116 @@
 # brevwick-sdk
 
+## 1.0.0-beta.8
+
+### Minor Changes
+
+- [#71](https://github.com/tatlacas-com/brevwick-sdk-js/pull/71) [`c2060af`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/c2060af1c7d3cdbdd106f2cdfe350d48c16e5b6c) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(angular): @tatlacas/brevwick-angular adapter package
+
+  Ships the Angular 17+ standalone bindings:
+  - `provideBrevwick(config)` — returns `EnvironmentProviders` for
+    `bootstrapApplication`-style DI bootstrap.
+  - `BrevwickService` (`providedIn: 'root'`) — Signals-first wrapper around
+    `Brevwick`, SSR-safe via `PLATFORM_ID` + `isPlatformBrowser`. Exposes
+    `submit()`, `captureScreenshot()`, `reset()`, and a `status` Signal that
+    walks `'idle' | 'submitting' | 'success' | 'error'`.
+  - `<bw-feedback-button>` (`BwFeedbackButtonComponent`) — drop-in standalone
+    FAB with a minimal text-only panel. Wraps `BrevwickService`, emits the
+    SDK's `SubmitResult`, and short-circuits on non-browser platforms.
+  - `BREVWICK_ANGULAR_VERSION` — diagnostics literal, written into source by
+    a `prebuild` codegen step (ng-packagr does not honour `define`).
+
+  Build pipeline uses ng-packagr (Angular Package Format) — divergent from the
+  rest of the monorepo's tsup adapters. Eager FESM2022 bundle measures 4.58 kB
+  gzip vs the 8 kB envelope; `modern-screenshot` stays lazy via the SDK.
+
+  The `@tatlacas/brevwick-sdk` and `@tatlacas/brevwick-react` bumps are the
+  lockstep pre-1.0 version (no code change in either package for this PR).
+
+- [#68](https://github.com/tatlacas-com/brevwick-sdk-js/pull/68) [`e88eabe`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/e88eabefb03f4984fa5e48219e12c4f4d125092f) Thanks [@tatlacas](https://github.com/tatlacas)! - Add `@tatlacas/brevwick-vue` adapter package: Vue 3 plugin (`app.use(BrevwickPlugin, config)`), `<FeedbackButton>` component, and `useFeedback()` composable. Mirrors the React adapter's mental model on Vue 3 composition API + provide/inject. SSR-safe (window-guarded plugin install + onMounted DOM access in the FAB). Eager bundle ≤ 5 kB gzip; the screenshot encoder stays dynamic-imported via the core SDK. Closes [#64](https://github.com/tatlacas-com/brevwick-sdk-js/issues/64).
+
+- [#79](https://github.com/tatlacas-com/brevwick-sdk-js/pull/79) [`15138b9`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/15138b9c8882697599bd5056424390756830e53d) Thanks [@tatlacas](https://github.com/tatlacas)! - Landing-parity bundle for the SDK payload — closes [#75](https://github.com/tatlacas-com/brevwick-sdk-js/issues/75), [#76](https://github.com/tatlacas-com/brevwick-sdk-js/issues/76), [#77](https://github.com/tatlacas-com/brevwick-sdk-js/issues/77).
+  - **Console ring ([#75](https://github.com/tatlacas-com/brevwick-sdk-js/issues/75)):** patches all five console levels (`log` / `info` / `warn` / `error` / `debug`) by default into a 50-entry FIFO. New `BrevwickRingsConfig.console` accepts the legacy `boolean` shorthand or the object form `{ levels?, max? }` (hard ceiling 200) for finer-grained control. Existing `error` + unhandled-rejection paths stay regardless of the levels filter.
+  - **Network ring ([#76](https://github.com/tatlacas-com/brevwick-sdk-js/issues/76)):** captures every completed fetch + XHR (success + failure) by default into a 20-entry FIFO. New `BrevwickRingsConfig.network` accepts `boolean` or `{ captureSuccess?, max? }` (hard ceiling 100). `NetworkEntry.error` is now optional. **Wire-contract change:** the ingest payload renames `network_errors` → `network_calls`; the companion `brevwick-api` change ships in lockstep.
+  - **Redact expansion ([#77](https://github.com/tatlacas-com/brevwick-sdk-js/issues/77)):** the on-device redactor gains card numbers (Luhn-gated to skip false positives), IPv4 / IPv6 literals, US SSN + UK NI numbers, E.164 phone numbers (digit-count sanity check), AWS access keys, and GitHub tokens. New `BrevwickConfig.redact: { disable?, custom? }` lets projects turn off built-ins by name (`'auth' | 'cookie' | 'bearer' | 'jwt' | 'email' | 'card' | 'ip' | 'ssn' | 'phone' | 'aws' | 'github' | 'base64'`) or extend with project-specific patterns.
+
+  **Bundle budget bump:** the eager `core` chunk's gzip ceiling moved from 2.2 kB → 2.85 kB to absorb the new ring-config + redact-config validators in `core/validate.ts`. The expanded redact patterns + Luhn helper themselves stay in the dynamic-imported ring + submit chunks. Mirrored in `CLAUDE.md`, `.size-limit.js`, and `chunk-split.test.ts`.
+
+- [#70](https://github.com/tatlacas-com/brevwick-sdk-js/pull/70) [`f9fb472`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/f9fb4729e5f9ba7adf714cb1aeb025f421a7377f) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(solid): @tatlacas/brevwick-solid adapter — BrevwickProvider + useFeedback + FeedbackButton
+
+  Ships the Solid bindings per the issue-66 SDD update:
+  - `<BrevwickProvider config>` — creates the SDK inside `onMount` so SSR
+    emits no Brevwick state and the install hook only fires after client
+    hydration.
+  - `useFeedback()` → `{ submit, captureScreenshot, status, reset }` where
+    `status` is a Solid `Accessor<'idle' | 'submitting' | 'success' | 'error'>`.
+    Throws synchronously when called outside the provider.
+  - `<FeedbackButton>` — drop-in FAB + popover with textarea + screenshot
+    capture + send. SSR-safe via the provider's hydration boundary; injects
+    its stylesheet on first mount; reuses the React widget's `--brw-*`
+    custom-property contract so cross-adapter theming stays consistent.
+  - `"solid"` export condition pointing at the unbuilt `.tsx` source so
+    Vite + `vite-plugin-solid` and SolidStart pick up the JSX-source for
+    compile-time reactivity tracking. Pre-built `dist/index.js` /
+    `dist/index.cjs` cover non-Solid-aware bundlers.
+  - Bundle budget: < 5 kB gzip eager (enforced by `chunk-split.test.ts` +
+    `.size-limit.js`).
+
+  The `@tatlacas/brevwick-sdk` and `@tatlacas/brevwick-react` bumps are the
+  lockstep pre-1.0 versions (no code change in either for this PR).
+
+- [#80](https://github.com/tatlacas-com/brevwick-sdk-js/pull/80) [`47e47b8`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/47e47b8db9656272ce09d553aa267dd4b0daf972) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(react): staged-status feedback widget UX ([#74](https://github.com/tatlacas-com/brevwick-sdk-js/issues/74))
+
+  Pressing **Send** in the React feedback widget now clears the input and
+  moves the typed value into the conversation thread synchronously, then
+  animates a sequence of staged status rows through to the assistant
+  receipt: **Captured route, console, network, device** → **PII-sanitised,
+  packaged** → **Formatting with AI…**.
+
+  The submit pipeline drives the rows via a new internal `phase` event on
+  `@tatlacas/brevwick-sdk`'s ring bus (`'capturing-done' | 'sanitising-done'
+| 'sent'`) — emitted at the `composePayload` / `redact()` / ingest-2xx
+  boundaries. The event is **internal-only**: not exposed on the public
+  SDK surface; framework adapters reach it through the existing
+  `_internal` backdoor.
+
+  `useFeedback()` gains:
+  - `phase`: `'idle' | 'capturing' | 'sanitising' | 'formatting' | 'sent'
+| 'error'` — backwards-compatible alongside the existing `status`.
+  - `error`: tagged `SubmitError | null` from the most recent failed
+    submit.
+  - `retry()`: re-runs the most recent `submit()` with the same input.
+
+  The "Formatting with AI…" row is gated on `getConfig().ai_enabled === true`
+  so non-AI projects don't claim work the SDK isn't doing. Reduced motion
+  (`prefers-reduced-motion: reduce`) collapses the cascade to a flat fade.
+  On failure, the in-progress rows collapse to a red retry row carrying
+  the `SubmitError.message` verbatim plus a one-click **Retry** CTA, for
+  every `SubmitErrorCode` the submit pipeline can produce.
+
+  Bundle: React adapter ESM 11.92 kB / CJS 12.3 kB (limit 25 kB). SDK core
+  eager 2.13 kB / 2.14 kB (limit 2.2 kB).
+
+- [#72](https://github.com/tatlacas-com/brevwick-sdk-js/pull/72) [`2337a8d`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/2337a8d09f037f81e7d2ce77319e2f3987760de1) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(svelte): @tatlacas/brevwick-svelte adapter — context + FeedbackButton + getFeedback
+
+  Ships the Svelte bindings per SDD § 12:
+  - `setBrevwickContext(config)` — root-layout setter that creates the SDK
+    instance, calls `install()`, and stores it on Svelte's context.
+  - `getFeedback()` — composable-style getter returning `{ submit,
+captureScreenshot, status, reset }` with a Svelte `Readable` `status`
+    store.
+  - `<FeedbackButton>` — drop-in floating action button + chat-style
+    composer with screenshot capture, file attachments, theming via
+    `--brw-*` CSS custom properties, and SSR-safe `onMount` guard.
+
+  Build pipeline: `svelte-package` (Svelte's official packager). Eager
+  gzip < 1 kB; on-widget-open weight is shared with the core SDK's
+  `modern-screenshot` dynamic chunk. Redaction tests cover the full
+  submit pipeline; chunk-split test asserts `modern-screenshot` never
+  leaks into emitted artefacts.
+
+  Includes a SvelteKit example app at `examples/svelte/` and a complete
+  README mirroring the React adapter's structure.
+
 ## 1.0.0-beta.7
 
 ### Patch Changes

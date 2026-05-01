@@ -9,10 +9,20 @@
     "brevwick-example-next": "0.0.0",
     "brevwick-example-svelte": "0.0.0",
     "brevwick-example-vanilla": "0.0.0",
-    "brevwick-example-vue": "0.0.0"
+    "brevwick-example-vue": "0.0.0",
+    "brevwick-example-angular": "0.0.0",
+    "brevwick-example-astro": "0.0.0",
+    "brevwick-example-cra": "0.0.0",
+    "brevwick-example-remix": "0.0.0",
+    "brevwick-example-solid": "0.0.0",
+    "brevwick-example-vite-react": "0.0.0",
+    "@tatlacas/brevwick-angular": "1.0.0-beta.7",
+    "@tatlacas/brevwick-solid": "1.0.0-beta.7"
   },
   "changesets": [
     "ai-toggle-switch-redesign",
+    "angular-bindings",
+    "brevwick-vue-adapter",
     "busy-insects-rule",
     "chat-panel-redesign",
     "console-error-ring",
@@ -22,6 +32,8 @@
     "feedback-thread-continuation",
     "hide-panel-during-region-overlay",
     "integration-msw-coverage",
+    "landing-parity-rings",
+    "launch-readiness-bundle",
     "loopback-http-endpoint",
     "network-ring",
     "react-bindings",
@@ -34,7 +46,10 @@
     "screenshot",
     "sha256-checksum-on-presign",
     "size-limit-budgets",
+    "solid-bindings",
+    "staged-status-feedback-ux",
     "submit-pipeline",
+    "svelte-bindings",
     "theming-composer-shell",
     "use-ai-toggle"
   ]
