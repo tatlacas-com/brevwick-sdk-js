@@ -53,6 +53,26 @@ function build(
   // safely exercise patched globals; production callers never touch it.
   let ready: Promise<void> = Promise.resolve();
 
+  // Per-instance cache of the GET /v1/ingest/config round-trip. Hoisted
+  // above `internal` so both `internal.getConfig` (used by the submit
+  // pipeline to derive the `phase: 'sent'` event's `aiEnabled` flag) and
+  // the public `Brevwick.getConfig()` accessor below funnel through the
+  // same cached promise. Storing the promise rather than the resolved
+  // value also collapses concurrent callers into a single network request.
+  let configPromise: Promise<ProjectConfig | null> | undefined;
+  const loadConfig = (): Promise<ProjectConfig | null> => {
+    if (configPromise) return configPromise;
+    // `.catch(() => null)` covers the dynamic-import failure path
+    // (offline / CDN / deploy mismatch) so the public "never throws,
+    // resolves to null on failure" contract in types.ts holds. Without
+    // this, a one-time chunk-load failure would be cached as a rejected
+    // promise and every subsequent call would keep rejecting.
+    configPromise = import('../config')
+      .then((m) => m.fetchConfig(config.endpoint, config.projectKey))
+      .catch(() => null);
+    return configPromise;
+  };
+
   const internal: BrevwickInternal = {
     buffers,
     bus,
@@ -76,6 +96,7 @@ function build(
     },
     state: () => state,
     ready: () => ready,
+    getConfig: loadConfig,
   };
 
   function install(): void {
@@ -159,13 +180,6 @@ function build(
     onUninstall();
   }
 
-  // Per-instance cache of the GET /v1/ingest/config round-trip. The SDD
-  // contract is "per session" — once the first fetch resolves (success or
-  // null), every subsequent call returns the same promise. Storing the
-  // promise rather than the resolved value also collapses concurrent
-  // callers into a single network request.
-  let configPromise: Promise<ProjectConfig | null> | undefined;
-
   const instance: Brevwick = {
     install,
     uninstall,
@@ -183,18 +197,7 @@ function build(
       import('../screenshot').then((m) =>
         m.captureScreenshotForInstance(internal),
       ),
-    getConfig: (): Promise<ProjectConfig | null> => {
-      if (configPromise) return configPromise;
-      // `.catch(() => null)` covers the dynamic-import failure path
-      // (offline / CDN / deploy mismatch) so the public "never throws,
-      // resolves to null on failure" contract in types.ts holds. Without
-      // this, a one-time chunk-load failure would be cached as a rejected
-      // promise and every subsequent call would keep rejecting.
-      configPromise = import('../config')
-        .then((m) => m.fetchConfig(config.endpoint, config.projectKey))
-        .catch(() => null);
-      return configPromise;
-    },
+    getConfig: loadConfig,
   };
 
   Object.defineProperty(instance, INTERNAL_KEY, {

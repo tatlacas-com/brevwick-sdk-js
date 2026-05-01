@@ -26,6 +26,33 @@ const getConfig = vi.fn<() => Promise<ProjectConfig | null>>();
 const install = vi.fn();
 const uninstall = vi.fn();
 
+/**
+ * In-memory mirror of the SDK's internal phase bus. The React adapter
+ * subscribes to this via the `_internal` backdoor (see
+ * `src/internal-bridge.ts`), so the test mock stamps a structurally
+ * compatible bus on the `Brevwick` instance and the suite drives phase
+ * events through `phaseBus.emit(...)`.
+ */
+type PhaseEventPayload =
+  | { phase: 'capturing-done' }
+  | { phase: 'sanitising-done' }
+  | { phase: 'sent'; aiEnabled: boolean };
+const phaseListeners = new Set<(p: PhaseEventPayload) => void>();
+const phaseBus = {
+  on: (event: 'phase', listener: (p: PhaseEventPayload) => void) => {
+    void event;
+    phaseListeners.add(listener);
+  },
+  off: (event: 'phase', listener: (p: PhaseEventPayload) => void) => {
+    void event;
+    phaseListeners.delete(listener);
+  },
+  emit: (event: 'phase', payload: PhaseEventPayload) => {
+    void event;
+    for (const listener of [...phaseListeners]) listener(payload);
+  },
+};
+
 vi.mock('@tatlacas/brevwick-sdk', async () => {
   const actual = await vi.importActual<typeof import('@tatlacas/brevwick-sdk')>(
     '@tatlacas/brevwick-sdk',
@@ -39,6 +66,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
         submit,
         captureScreenshot,
         getConfig,
+        _internal: { bus: phaseBus },
       }) as unknown as Brevwick,
   };
 });
@@ -69,6 +97,7 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  phaseListeners.clear();
 });
 
 const mount = (props: FeedbackButtonProps = {}) =>
@@ -771,7 +800,12 @@ describe('<FeedbackButton>', () => {
     });
   });
 
-  it('submit rejects → × shows the discard confirm with the draft still populated', async () => {
+  it('submit rejects → composer is empty (draft consumed) and the retry CTA is wired to re-submit (#74)', async () => {
+    // The pre-#74 contract was "preserve the draft on failure so the user
+    // can edit + retry". The #74 contract clears the input synchronously
+    // on Send and routes recovery through the retry row instead — the
+    // user's text lives in the conversation thread, the failed-submit
+    // state offers a one-click Retry rather than a discard confirm.
     submit.mockRejectedValueOnce(new Error('ingest down'));
     mount();
     openPanel();
@@ -779,19 +813,31 @@ describe('<FeedbackButton>', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
-    // Status is back to 'error', close should no longer be disabled.
+
+    // The retry row carries the SubmitError message verbatim (the chunk-
+    // load failure is mapped to INGEST_RETRY_EXHAUSTED inside the hook).
     expect(
       screen.getByText(/ingest down/i, { selector: '[role="alert"]' }),
     ).toBeInTheDocument();
+    // Composer was cleared on click — recovery is via Retry, not by
+    // re-typing the draft.
+    expect(getComposer().value).toBe('');
 
-    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
-    const confirm = screen.getByRole('alert', {
-      name: /discard draft/i,
+    // Retry CTA re-runs `submit()` with the same input. The second call
+    // is mocked to succeed so the assistant receipt lands.
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_retry' });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^retry$/i }));
     });
-    expect(confirm).toBeInTheDocument();
-    // Keep → the draft is still in the composer.
-    fireEvent.click(within(confirm).getByRole('button', { name: /keep/i }));
-    expect(getComposer().value).toBe('will fail');
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(
+      (submit.mock.calls[1]![0] as { description: string }).description,
+    ).toBe('will fail');
+    await waitFor(() =>
+      expect(
+        screen.getByText(/thanks — your issue is on its way/i),
+      ).toBeInTheDocument(),
+    );
   });
 
   it('Enter+Ctrl/Meta/Alt does not submit (reserved for platform shortcuts)', async () => {
@@ -2685,6 +2731,180 @@ describe('<FeedbackButton> — region capture overlay', () => {
     expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(beforeUnmount);
     clearTimeoutSpy.mockRestore();
   });
+});
+
+/**
+ * Staged-status UX (issue #74). Pressing Send moves the typed value into
+ * a user bubble + clears the input synchronously, then the SDK's
+ * pipeline phase events drive a sequence of staged status rows
+ * (Captured → Sanitised → Formatting with AI). Failure collapses the
+ * in-progress row to a red retry row covering every SubmitErrorCode.
+ */
+describe('<FeedbackButton> staged-status UX (#74)', () => {
+  /**
+   * Park `submit()` on a never-resolving promise so the assertions below
+   * the click run while phase = 'capturing' (nothing else has fired yet)
+   * and we can drive phase events explicitly per test.
+   */
+  function parkSubmit(): void {
+    submit.mockReturnValueOnce(new Promise<SubmitResult>(() => undefined));
+  }
+
+  function getStatusRow(
+    name: 'captured' | 'sanitised' | 'formatting' | 'error',
+  ): HTMLElement | null {
+    return document.querySelector<HTMLElement>(`[data-brw-row="${name}"]`);
+  }
+
+  it('Pressing Send clears the input + renders user bubble immediately (before any await)', () => {
+    parkSubmit();
+    mount();
+    openPanel();
+    typeDraft('synchronous-send-test');
+    // No `act` wrapper: the per-test contract is that the visible state
+    // BEFORE the async submit microtask resolves is already correct.
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    expect(getComposer().value).toBe('');
+    const log = screen.getByRole('log', { name: /conversation/i });
+    expect(within(log).getByText('synchronous-send-test')).toBeInTheDocument();
+  });
+
+  it('Three staged rows render in order as phase events arrive', async () => {
+    parkSubmit();
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
+    mount();
+    openPanel();
+    typeDraft('staged-rows-test');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    // Phase = 'capturing' — none of the three rows are visible yet.
+    expect(getStatusRow('captured')).toBeNull();
+    expect(getStatusRow('sanitised')).toBeNull();
+    expect(getStatusRow('formatting')).toBeNull();
+
+    // capturing-done → row 1 mounts; row 2 + row 3 still hidden.
+    await act(async () => {
+      phaseBus.emit('phase', { phase: 'capturing-done' });
+    });
+    expect(getStatusRow('captured')).not.toBeNull();
+    expect(getStatusRow('sanitised')).toBeNull();
+    expect(getStatusRow('formatting')).toBeNull();
+
+    // sanitising-done → row 2 mounts; row 3 still hidden.
+    await act(async () => {
+      phaseBus.emit('phase', { phase: 'sanitising-done' });
+    });
+    expect(getStatusRow('captured')).not.toBeNull();
+    expect(getStatusRow('sanitised')).not.toBeNull();
+    expect(getStatusRow('formatting')).not.toBeNull();
+  });
+
+  it('AI row is suppressed when getConfig().ai_enabled === false', async () => {
+    parkSubmit();
+    getConfig.mockResolvedValue({
+      ai_enabled: false,
+      ai_submitter_choice_allowed: false,
+    });
+    mount();
+    openPanel();
+    // Wait for getConfig() to resolve before driving phases — the AI-row
+    // gate reads `projectConfig.config?.ai_enabled` and would default to
+    // false until the panel-open fetch lands. This guards against a
+    // false positive where the row would have been suppressed simply
+    // because the config hadn't loaded yet.
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+
+    typeDraft('non-ai-project');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await act(async () => {
+      phaseBus.emit('phase', { phase: 'capturing-done' });
+      phaseBus.emit('phase', { phase: 'sanitising-done' });
+    });
+
+    expect(getStatusRow('captured')).not.toBeNull();
+    expect(getStatusRow('sanitised')).not.toBeNull();
+    // The pipeline reached the 'formatting' phase but the AI row is
+    // gated on `ai_enabled === true`, so it must not render.
+    expect(getStatusRow('formatting')).toBeNull();
+  });
+
+  it('Reduced motion renders all rows with a 0 ms transition delay (no stagger)', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    parkSubmit();
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
+    mount();
+    openPanel();
+    typeDraft('reduced-motion-test');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await act(async () => {
+      phaseBus.emit('phase', { phase: 'capturing-done' });
+      phaseBus.emit('phase', { phase: 'sanitising-done' });
+    });
+
+    // Every visible status row must carry transitionDelay: 0ms — the
+    // adapter folds the 200 ms cascade flat under prefers-reduced-motion.
+    const rows = document.querySelectorAll<HTMLElement>('[data-brw-row]');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.style.transitionDelay).toBe('0ms');
+    }
+  });
+
+  it.each([
+    'ATTACHMENT_UPLOAD_FAILED',
+    'INGEST_REJECTED',
+    'INGEST_RETRY_EXHAUSTED',
+    'INGEST_TIMEOUT',
+    'INGEST_INVALID_RESPONSE',
+  ] as const)(
+    'renders a red retry row with the verbatim message + working Retry CTA on %s',
+    async (code) => {
+      const message = `synthetic-${code}-message`;
+      submit.mockResolvedValueOnce({
+        ok: false,
+        error: { code, message },
+      });
+      mount();
+      openPanel();
+      typeDraft(`failure-${code}`);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+      });
+
+      const row = getStatusRow('error');
+      expect(row).not.toBeNull();
+      expect(row).toHaveAttribute('role', 'alert');
+      expect(row).toHaveAttribute('data-brw-error-code', code);
+      expect(row?.textContent).toContain(message);
+
+      // Retry click re-runs `submit()` with the same FeedbackInput. The
+      // second call is mocked to succeed so the assistant receipt lands.
+      submit.mockResolvedValueOnce({ ok: true, issue_id: `rep_retry_${code}` });
+      await act(async () => {
+        fireEvent.click(within(row!).getByRole('button', { name: /^retry$/i }));
+      });
+      expect(submit).toHaveBeenCalledTimes(2);
+      expect(
+        (submit.mock.calls[1]![0] as { description: string }).description,
+      ).toBe(`failure-${code}`);
+    },
+  );
 });
 
 /**
