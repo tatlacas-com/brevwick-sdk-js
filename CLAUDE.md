@@ -61,7 +61,7 @@ pnpm --filter @tatlacas/brevwick-react test
 
 ## Bundle Budget — DO NOT EXCEED
 
-- Core `@tatlacas/brevwick-sdk` initial chunk: **< 2.2 kB gzip** (bumped from 2 kB in issue-9 with the loopback-http carve-out in `canonicaliseHttpsUrl`; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and mirrored in SDD § 12)
+- Core `@tatlacas/brevwick-sdk` initial chunk: **< 2.85 kB gzip** (bumped from 2.2 kB in the landing-parity bundle — #75/#76/#77 — to absorb the ring-config + redact validation expansion in `core/validate.ts`; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and mirrored in SDD § 12)
 - On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
 - React adapter `@tatlacas/brevwick-react`: **< 25 kB gzip**
 - Solid adapter `@tatlacas/brevwick-solid`: **< 5 kB gzip** (Solid runtime is small + the V1 FAB ships a strict subset of the React widget UI)

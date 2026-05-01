@@ -74,13 +74,13 @@ describe('integration — install → ring capture → submit', () => {
 
     // Failing fetch against a user origin (NOT the SDK ingest origin, which
     // the network ring's loop guard would skip). The 500 response must land
-    // in `network_errors` on the captured payload.
+    // in `network_calls` on the captured payload.
     const userRes = await fetch(USER_API);
     expect(userRes.status).toBe(500);
 
     // Pre-submit ring-install assertion. If a future regression breaks the
     // network ring's installation order, the captured POST below will show
-    // `network_errors: []` and the existing `toHaveLength(1)` assertion
+    // `network_calls: []` and the existing `toHaveLength(1)` assertion
     // will report against `submit()` rather than the real failure site.
     // Asserting the snapshot length here points the next failure message
     // squarely at the ring-install boundary.
@@ -110,11 +110,13 @@ describe('integration — install → ring capture → submit', () => {
       /integration: synthetic console error fired/,
     );
 
-    const networkErrors = body?.network_errors as Array<
-      Record<string, unknown>
-    >;
-    expect(networkErrors).toHaveLength(1);
-    expect(networkErrors[0]).toMatchObject({
+    const networkCalls = body?.network_calls as Array<Record<string, unknown>>;
+    // Ring now captures success + failure by default, so the in-flight
+    // attachment PUT (which cannot carry the X-Brevwick-SDK loop-guard
+    // marker — signed R2 URLs reject unsigned headers) lands here too.
+    // Find the user-API failure explicitly rather than indexing blindly.
+    const failure = networkCalls.find((e) => e.url === USER_API);
+    expect(failure).toMatchObject({
       kind: 'network',
       method: 'GET',
       url: USER_API,

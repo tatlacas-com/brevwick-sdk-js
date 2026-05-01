@@ -25,10 +25,11 @@
  *   coverage of the submit golden, not a strict subset of it.
  * - The `9001015800087`-style SA-ID string in the submit test name is
  *   *not* a separate redaction class — there is no SA-ID regex in
- *   `core/internal/redact.ts`. The submit test happens to include the
- *   string in its combined input but never asserts it is masked; the
- *   string survives unscrubbed today. This matrix does not invent a
- *   SA-ID assertion the production code does not back up.
+ *   `core/internal/redact.ts`. After the landing-parity expansion the
+ *   13-digit run is masked by the phone matcher (`[phone]`) — the submit
+ *   test's combined-input only checks the other secret classes, so it
+ *   stays green either way. This matrix asserts the phone class directly
+ *   below.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createBrevwick } from '../../core/client';
@@ -81,6 +82,62 @@ const CASES: readonly MatrixCase[] = [
     marker: '[email]',
   },
   {
+    label: 'Luhn-pass card number with spaces',
+    raw: '4242 4242 4242 4242',
+    marker: '[card]',
+  },
+  {
+    label: 'IPv4 literal',
+    raw: '10.0.42.55',
+    marker: '[ip]',
+  },
+  {
+    label: 'IPv6 literal',
+    raw: '2001:db8:0:1::abcd',
+    marker: '[ip]',
+  },
+  {
+    // Link-local + scoped-id forms commonly appear in Node net traces and
+    // were previously only partially masked (`::1` of `fe80::1` matched,
+    // leaving `fe80` exposed). Pinning the full-form mask here protects
+    // the regex from regressing back to prefix-only behaviour.
+    label: 'IPv6 link-local with zone',
+    raw: 'fe80::1%eth0',
+    marker: '[ip]',
+  },
+  {
+    label: 'US SSN',
+    raw: '987-65-4321',
+    marker: '[ssn]',
+  },
+  {
+    // UK National Insurance is a distinct BUILTIN entry from US SSN, with a
+    // separate non-trivial regex (excludes letter classes, allows spaces).
+    // Pinning it here keeps the matrix in lockstep with `redact.test.ts`.
+    label: 'UK National Insurance number',
+    raw: 'AB 12 34 56 C',
+    marker: '[ssn]',
+  },
+  {
+    // Phone is the highest-FP-risk pattern in the new BUILTIN set — length
+    // gate, separator handling, and ordering vs IP/SSN. Documented trade-off:
+    // ISO timestamps, all-digit SHA prefixes, and 8-15-digit IDs may also be
+    // masked; consumers tighten via `redact.disable: ['phone']` (see README).
+    label: 'E.164 phone number',
+    raw: '+1 415 555 0199',
+    marker: '[phone]',
+  },
+  {
+    label: 'AWS access key',
+    raw: 'AKIAIOSFODNN7EXAMPLE',
+    marker: '[aws-key]',
+  },
+  {
+    label: 'GitHub personal token',
+    raw: 'ghp_01234567890123456789012345678901abcd',
+    marker: '[gh-token]',
+  },
+  {
     label: 'long base64 blob (>= 200 chars)',
     raw: 'A'.repeat(250),
     marker: '[blob]',
@@ -130,6 +187,69 @@ describe('integration — redaction matrix', () => {
     // Sanity-check the raw never leaked into any other field.
     const raw = captured.body() ?? '';
     expect(raw).not.toContain('alice@example.com');
+  });
+
+  it('does not redact a Luhn-fail 16-digit run (false-positive guard)', async () => {
+    // 1234 5678 9012 3456 fails the Luhn checksum, so the card pattern's
+    // post-match guard must let it pass through unredacted. This is the
+    // sole reason the card matcher is gated on Luhn rather than length.
+    const captured = installIngestHandlers(server, () => 'issue_card_neg');
+    const luhnFail = '1234 5678 9012 3456';
+    const instance = createBrevwick({ projectKey: KEY, endpoint: ENDPOINT });
+    const result = await instance.submit({
+      description: `not a card: ${luhnFail}`,
+    });
+    expect(result.ok).toBe(true);
+    const body = captured.body() ?? '';
+    expect(body).toContain(luhnFail);
+    expect(body).not.toContain('[card]');
+  });
+
+  it('honours redact.disable: phone numbers survive when "phone" is disabled', async () => {
+    const captured = installIngestHandlers(server, () => 'issue_phone_disable');
+    const instance = createBrevwick({
+      projectKey: KEY,
+      endpoint: ENDPOINT,
+      redact: { disable: ['phone'] },
+    });
+    const result = await instance.submit({
+      description: 'call me on +1 415 555 0199 anytime',
+    });
+    expect(result.ok).toBe(true);
+    const body = captured.body() ?? '';
+    expect(body).toContain('+1 415 555 0199');
+    expect(body).not.toContain('[phone]');
+  });
+
+  it('honours redact.custom: project-specific patterns are applied', async () => {
+    const captured = installIngestHandlers(server, () => 'issue_redact_custom');
+    const instance = createBrevwick({
+      projectKey: KEY,
+      endpoint: ENDPOINT,
+      redact: { custom: [/secret-\w+/g] },
+    });
+    const raw = 'leak: secret-internal_token_42 here';
+    const result = await instance.submit({ description: raw });
+    expect(result.ok).toBe(true);
+    const body = captured.body() ?? '';
+    expect(body).not.toContain('secret-internal_token_42');
+    expect(body).toContain('[redacted]');
+  });
+
+  it('does not redact HH:MM:SS time-of-day as IPv6 (negative guard)', async () => {
+    // Regression guard for the over-broad IPv6 alternation that landed in
+    // commit 4ae04c9. A future tightening of the IP regex must not silently
+    // re-introduce the bug — the matcher must reject pure-decimal
+    // colon-separated runs (HH:MM:SS, port lists, version triples) since
+    // real IPv6 addresses always contain `::` or a hex letter.
+    const captured = installIngestHandlers(server, () => 'issue_ip_negative');
+    const instance = createBrevwick({ projectKey: KEY, endpoint: ENDPOINT });
+    const raw = 'meeting started at 10:30:45 today';
+    const result = await instance.submit({ description: raw });
+    expect(result.ok).toBe(true);
+    const body = captured.body() ?? '';
+    expect(body).toContain('10:30:45');
+    expect(body).not.toContain('[ip]');
   });
 
   it('does not over-redact short triplets that lack the eyJ JWT prefix', async () => {

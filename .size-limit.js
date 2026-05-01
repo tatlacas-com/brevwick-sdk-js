@@ -33,16 +33,24 @@ const FILE_MODE = {
 const fileEntry = (name, path, limit) => ({ name, path, limit, ...FILE_MODE });
 
 export default [
-  // ── Core eager chunk (≤ 2.2 kB gzip) ─────────────────────────────────────
+  // ── Core eager chunk (≤ 2.85 kB gzip) ────────────────────────────────────
+  // Bumped from 2.2 kB → 2.85 kB in the landing-parity bundle (issues
+  // #75 / #76 / #77). The new ring-config parsers (console levels + max
+  // bounds, network captureSuccess + max bounds) and the redact disable/
+  // custom validator all live in `core/validate.ts`, which is eagerly
+  // imported by `createBrevwick`. The accumulated cost (~+570 B gzip) is
+  // well within the +650 B target documented in the parent PR; the
+  // expanded redact patterns + Luhn helper themselves stay in the
+  // dynamic-imported chunks (rings + submit) and do NOT show up here.
   fileEntry(
     '@tatlacas/brevwick-sdk core eager (ESM)',
     'packages/sdk/dist/index.js',
-    '2.2 kB',
+    '2.85 kB',
   ),
   fileEntry(
     '@tatlacas/brevwick-sdk core eager (CJS)',
     'packages/sdk/dist/index.cjs',
-    '2.2 kB',
+    '2.85 kB',
   ),
 
   // ── Screenshot wrapper chunk (≤ 1.5 kB gzip) ─────────────────────────────

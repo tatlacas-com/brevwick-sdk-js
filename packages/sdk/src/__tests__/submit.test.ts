@@ -197,7 +197,7 @@ describe('submit — happy path', () => {
     expect(userCtx.plan).toBe('pro');
     // Ring snapshots flow through (empty arrays here, but present as keys).
     expect(Array.isArray(issueBody?.console_errors)).toBe(true);
-    expect(Array.isArray(issueBody?.network_errors)).toBe(true);
+    expect(Array.isArray(issueBody?.network_calls)).toBe(true);
     expect(Array.isArray(issueBody?.route_trail)).toBe(true);
   });
 
@@ -563,7 +563,7 @@ describe('submit — headers + redaction', () => {
     });
     const result = await instance.submit({ description: 'd' });
     expect(result.ok).toBe(true);
-    const networkErrors = issueBody?.network_errors as Array<
+    const networkErrors = issueBody?.network_calls as Array<
       Record<string, unknown>
     >;
     expect(networkErrors).toHaveLength(1);

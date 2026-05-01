@@ -13,9 +13,12 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { http, HttpResponse } from 'msw';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createBrevwick } from '../../core/client';
+import { INTERNAL_KEY, type BrevwickInternal } from '../../core/internal';
 import { __resetBrevwickRegistry, __setRingsForTesting } from '../../testing';
+import type { ConsoleLevel } from '../../types';
 import {
   createIntegrationServer,
   ENDPOINT,
@@ -125,6 +128,88 @@ function freezeShape(body: Record<string, unknown>): Record<string, unknown> {
     attachments,
   };
 }
+
+describe('integration — landing-parity ring interleave', () => {
+  it('captures all five console levels in order with redaction applied', async () => {
+    const captured = installIngestHandlers(
+      server,
+      () => 'issue_console_levels',
+    );
+    const instance = createBrevwick({ projectKey: KEY, endpoint: ENDPOINT });
+    instance.install();
+    const internal = (
+      instance as unknown as Record<typeof INTERNAL_KEY, BrevwickInternal>
+    )[INTERNAL_KEY];
+    await internal.ready();
+
+    // Different per-level messages so cross-level dedupe (keyed on
+    // message+frame, not level) does not collapse them.
+    console.log('lo: token Bearer eyJabc.def.ghi');
+    console.info('in: hi');
+    console.warn('wa: ip 10.0.0.1');
+    console.error('er: oops');
+    console.debug('de: phone 415-555-0101');
+
+    const result = await instance.submit({ description: 'console interleave' });
+    expect(result.ok).toBe(true);
+
+    const body = captured.json();
+    const consoleEntries = body?.console_errors as Array<
+      Record<string, unknown>
+    >;
+    expect(consoleEntries.map((e) => e.level as ConsoleLevel)).toEqual([
+      'log',
+      'info',
+      'warn',
+      'error',
+      'debug',
+    ]);
+    // Per-level redaction is uniform.
+    expect(consoleEntries[0]?.message).toContain('Bearer [redacted]');
+    expect(consoleEntries[0]?.message).not.toContain('eyJabc.def.ghi');
+    expect(consoleEntries[2]?.message).toContain('[ip]');
+    expect(consoleEntries[4]?.message).toContain('[phone]');
+
+    instance.uninstall();
+  });
+
+  it('captures interleaved 200 + 500 fetches under the new "network_calls" wire field', async () => {
+    const SUCCESS_API = 'https://api.example.com/ok';
+    const FAILURE_API = 'https://api.example.com/down';
+    server.use(
+      http.get(SUCCESS_API, () => HttpResponse.text('ok', { status: 200 })),
+      http.get(FAILURE_API, () =>
+        HttpResponse.json({ error: 'down' }, { status: 500 }),
+      ),
+    );
+    const captured = installIngestHandlers(server, () => 'issue_network_mix');
+    const instance = createBrevwick({ projectKey: KEY, endpoint: ENDPOINT });
+    instance.install();
+    const internal = (
+      instance as unknown as Record<typeof INTERNAL_KEY, BrevwickInternal>
+    )[INTERNAL_KEY];
+    await internal.ready();
+
+    await fetch(SUCCESS_API);
+    await fetch(FAILURE_API);
+
+    const result = await instance.submit({ description: 'network interleave' });
+    expect(result.ok).toBe(true);
+
+    const body = captured.json();
+    expect(body).toBeDefined();
+    // Wire rename: legacy `network_errors` is gone.
+    expect(body && 'network_errors' in body).toBe(false);
+    const calls = body?.network_calls as Array<Record<string, unknown>>;
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.status).toBe(200);
+    expect(calls[0]?.url).toBe(SUCCESS_API);
+    expect(calls[1]?.status).toBe(500);
+    expect(calls[1]?.url).toBe(FAILURE_API);
+
+    instance.uninstall();
+  });
+});
 
 describe('integration — golden payload shape', () => {
   it('matches the pinned wire shape after stripping volatile fields', async () => {

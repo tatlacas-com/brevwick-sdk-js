@@ -23,14 +23,20 @@ import {
   type BrevwickWithInternal,
 } from './registry';
 import { validateConfig, type ValidatedConfig } from './validate';
+import type { RingName } from './internal';
+
+function ringEnabled(config: ValidatedConfig, name: RingName): boolean {
+  if (name === 'route') return config.rings.route;
+  return config.rings[name].enabled;
+}
 
 function build(
   config: ValidatedConfig,
   onUninstall: () => void,
 ): BrevwickWithInternal {
   const buffers = {
-    console: createRingBuffer<ConsoleEntry>(50),
-    network: createRingBuffer<NetworkEntry>(50),
+    console: createRingBuffer<ConsoleEntry>(config.rings.console.max),
+    network: createRingBuffer<NetworkEntry>(config.rings.network.max),
     route: createRingBuffer<RouteEntry>(20),
   } as const;
   const bus = createBus<BusEventMap>();
@@ -128,7 +134,7 @@ function build(
             (ring) => {
               if (generation !== thisGeneration) return;
               if (state !== 'installed') return;
-              if (!config.rings[ring.name]) return;
+              if (!ringEnabled(config, ring.name)) return;
               teardowns.push(ring.install(ctx));
             },
             (err: unknown) => {
@@ -139,7 +145,7 @@ function build(
           ),
         );
       } else {
-        if (!config.rings[loader.name]) continue;
+        if (!ringEnabled(config, loader.name)) continue;
         teardowns.push(loader.install(ctx));
       }
     }
