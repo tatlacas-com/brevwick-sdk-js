@@ -520,6 +520,60 @@ export const BREVWICK_CSS = `
   border-color: var(--brw-accent, var(--brw-accent-base));
 }
 .brw-error { color: var(--brw-error-base); font-size: 12px; align-self: stretch; }
+/* Staged-status rows (issue #74). Visually mirrors the assistant bubble
+   surface (background, padding, radius) but lives outside the
+   .brw-bubble class family so it does not count as a conversation
+   bubble for queries that count messages — the rows are progress
+   indicators, not messages. The transition-delay is set inline per row
+   so the three rows fade in sequentially even when the underlying SDK
+   phase events fire microseconds apart. The reduced-motion media query
+   collapses the entrance to an instant fade, pairing with the inline
+   0ms delay the adapter passes when the user has
+   prefers-reduced-motion: reduce. */
+.brw-status-row {
+  align-self: flex-start;
+  max-width: 85%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border-bottom-left-radius: 4px;
+  background: var(--brw-bubble-assistant-bg, var(--brw-bubble-assistant-bg-base));
+  color: var(--brw-fg, var(--brw-fg-base));
+  font-size: 13px;
+  line-height: 1.45;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: brw-status-row-in 220ms ease-out both;
+}
+.brw-status-row-check {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--brw-accent, var(--brw-accent-base));
+}
+.brw-status-row-check svg {
+  width: 14px;
+  height: 14px;
+}
+.brw-status-row-label { flex: 1; }
+.brw-status-row--error {
+  color: var(--brw-error-base);
+  border: 1px solid var(--brw-error-base);
+}
+.brw-status-row-retry {
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+@keyframes brw-status-row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brw-status-row { animation: none; }
+}
 .brw-panel-footer {
   flex-shrink: 0;
   padding: 6px 10px 8px;

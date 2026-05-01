@@ -383,14 +383,36 @@ function MyCustomReporter() {
 
 ### Return value
 
-| Field               | Type                                              | Description                                                                      |
-| ------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `submit`            | `(input: FeedbackInput) => Promise<SubmitResult>` | Submit feedback. Returns the same tagged union `@tatlacas/brevwick-sdk` returns. |
-| `captureScreenshot` | `() => Promise<Blob>`                             | Capture a DOM screenshot. Never throws — returns a placeholder on failure.       |
-| `status`            | `'idle' \| 'submitting' \| 'success' \| 'error'`  | Current submission lifecycle.                                                    |
-| `reset`             | `() => void`                                      | Reset `status` back to `'idle'`. Does not cancel an in-flight submit.            |
+| Field               | Type                                              | Description                                                                                              |
+| ------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `submit`            | `(input: FeedbackInput) => Promise<SubmitResult>` | Submit feedback. Returns the same tagged union `@tatlacas/brevwick-sdk` returns.                         |
+| `captureScreenshot` | `() => Promise<Blob>`                             | Capture a DOM screenshot. Never throws — returns a placeholder on failure.                               |
+| `status`            | `FeedbackStatus`                                  | `'idle' \| 'submitting' \| 'success' \| 'error'`. Backwards-compatible lifecycle.                        |
+| `phase`             | `FeedbackPhase`                                   | Submit-pipeline phase driven by the SDK's internal phase event — see "Submit-pipeline state machine".    |
+| `error`             | `SubmitError \| null`                             | Tagged error from the most recent failed submit. Cleared on the next `submit()` / `retry()` / `reset()`. |
+| `retry`             | `() => Promise<SubmitResult \| undefined>`        | Re-run the most recent `submit()` with the same input. No-op when no submit has been attempted.          |
+| `reset`             | `() => void`                                      | Reset `status` + `phase` back to `'idle'`, clear `error`, and forget the last submitted input.           |
 
 Throws synchronously on mount when rendered outside a `BrevwickProvider`.
+
+### Submit-pipeline state machine
+
+The built-in `<FeedbackButton />` (and any UI you build on top of `useFeedback`) animates a staged-status flow against the submit pipeline. Pressing **Send** clears the input and pushes the typed value into a user bubble immediately — the wait is filled with three assistant rows that tick through as the SDK reaches each pipeline boundary.
+
+| Phase          | Trigger                                                                              | Visible row                                                                               |
+| -------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `'idle'`       | Initial state and after `reset()`.                                                   | —                                                                                         |
+| `'capturing'`  | `submit()` was called; no SDK phase event has fired yet.                             | —                                                                                         |
+| `'sanitising'` | SDK emitted `phase: 'capturing-done'` (payload composed, buffer snapshots landed).   | ✓ "Captured route, console, network, device"                                              |
+| `'formatting'` | SDK emitted `phase: 'sanitising-done'` (`redact()` complete, ingest POST in flight). | ✓ "PII-sanitised, packaged"; "Formatting with AI…" with spinner if the project has AI on. |
+| `'sent'`       | SDK emitted `phase: 'sent'` after a 2xx ingest response.                             | ✓ "Captured…" + ✓ "PII-sanitised…" (the AI row hides on `'sent'`).                        |
+| `'error'`      | `submit()` resolved with `{ ok: false, error }` or rejected (chunk-load failure).    | Red retry row carrying the `SubmitError.message` verbatim + a one-click **Retry** CTA.    |
+
+**AI-row gate.** The "Formatting with AI…" spinner row is gated on `getConfig().ai_enabled === true`. On non-AI projects the row is suppressed entirely so the widget never claims work it isn't doing.
+
+**Reduced motion.** When the user has `prefers-reduced-motion: reduce` set, the widget reads `window.matchMedia('(prefers-reduced-motion: reduce)').matches` at render time and renders every row with `transitionDelay: 0ms`, collapsing the cascade flat.
+
+**Retry contract.** A submit failure surfaces as a red retry row inside the conversation thread (`role="alert"`). Clicking **Retry** re-submits the original `FeedbackInput` (including any captured screenshots) — the user does not need to re-type the draft.
 
 ## `BREVWICK_REACT_VERSION`
 
@@ -416,6 +438,7 @@ import type {
   BrevwickProviderProps,
   FeedbackButtonProps,
   BrevwickTheme,
+  FeedbackPhase,
   FeedbackStatus,
   UseFeedbackResult,
   // from @tatlacas/brevwick-sdk, re-exported for convenience:

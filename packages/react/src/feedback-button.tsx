@@ -19,10 +19,11 @@ import type {
   FeedbackAttachment,
   FeedbackInput,
   ProjectConfig,
+  SubmitError,
   SubmitResult,
 } from '@tatlacas/brevwick-sdk';
 import { useBrevwickInternal } from './context';
-import { useFeedback, type FeedbackStatus } from './use-feedback';
+import { useFeedback, type FeedbackPhase } from './use-feedback';
 import {
   BREVWICK_CSS,
   BREVWICK_STYLE_ID,
@@ -129,6 +130,25 @@ const useIsomorphicLayoutEffect =
  * robust under Fast Refresh / HMR (which would otherwise read a stale
  * module-level flag against a teardown'd style node).
  */
+/**
+ * Read `prefers-reduced-motion: reduce` once at mount. The widget keys row
+ * stagger off this so a user with the OS-level reduced-motion setting sees
+ * all status rows mount at once instead of cascading in.
+ *
+ * Read at mount only — the spec is an at-render snapshot, and a user that
+ * toggles the OS setting mid-submit will pick up the new value on the
+ * next interaction (or panel open). SSR-safe: returns `false` when
+ * `window.matchMedia` is unavailable.
+ */
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    setReduced(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }, []);
+  return reduced;
+}
+
 function useBrevwickStyles(): void {
   useIsomorphicLayoutEffect(() => {
     if (typeof document === 'undefined') return;
@@ -290,7 +310,15 @@ export function FeedbackButton({
   theme = 'system',
   onSubmit,
 }: FeedbackButtonProps): ReactElement | null {
-  const { submit, captureScreenshot, status, reset } = useFeedback();
+  const {
+    submit,
+    captureScreenshot,
+    status,
+    phase,
+    error: submitErrorTagged,
+    reset,
+  } = useFeedback();
+  const reducedMotion = usePrefersReducedMotion();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [expected, setExpected] = useState('');
@@ -330,6 +358,11 @@ export function FeedbackButton({
   const screenshotIdRef = useRef(0);
   const fileIdRef = useRef(0);
   const messageIdRef = useRef(0);
+  // Snapshot of the last `FeedbackInput` passed to `submit()` so the
+  // retry CTA on a failed submit can re-run with the exact same payload
+  // (including any captured screenshots) without forcing the user to
+  // re-type the draft we cleared synchronously on Send.
+  const lastSubmittedInputRef = useRef<FeedbackInput | null>(null);
 
   useBrevwickStyles();
 
@@ -388,6 +421,7 @@ export function FeedbackButton({
     setSubmitError(null);
     setMessages(initialMessages());
     setUseAi(true);
+    lastSubmittedInputRef.current = null;
     reset();
   }, [reset]);
 
@@ -600,44 +634,58 @@ export function FeedbackButton({
       ...(showAiToggle ? { use_ai: useAi } : {}),
     };
 
-    // Snapshot the current composer state so the success branch can quote
-    // it back into the user bubble even if the user minimized mid-submit
-    // (in which case React's setState below races with whatever they typed
-    // after — the snapshot pins the version of the draft we're submitting).
+    // Push the user's draft into the conversation immediately and clear
+    // the composer BEFORE awaiting submit(). The visual progression is
+    // what makes the wait feel fast — a synchronous bubble + cleared
+    // input lets the staged-status rows below carry the rest of the
+    // animation while the network round-trip is in flight (issue #74).
     const submittedDraft = draft;
-    const submittedScreenshots = screenshots;
-    const submittedFiles = files;
+    const screenshotsSnapshot: readonly MessageAttachment[] | undefined =
+      screenshots.length > 0
+        ? screenshots.map((s) => ({ blob: s.blob }))
+        : undefined;
+    const filesSnapshot: readonly MessageAttachment[] | undefined =
+      files.length > 0
+        ? files.map(({ file }) => ({
+            blob: file,
+            filename: file.name,
+          }))
+        : undefined;
+    const userMessage: Message = {
+      id: `msg-${++messageIdRef.current}`,
+      role: 'user',
+      text: submittedDraft,
+      attachments:
+        screenshotsSnapshot || filesSnapshot
+          ? {
+              ...(screenshotsSnapshot
+                ? { screenshots: screenshotsSnapshot }
+                : {}),
+              ...(filesSnapshot ? { files: filesSnapshot } : {}),
+            }
+          : undefined,
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setDraft('');
+    setExpected('');
+    setActual('');
+    setShowExtras(false);
+    // The success path keeps the screenshot blobs already captured in
+    // userMessage.attachments so the bubble keeps a stable reference even
+    // after we drop the live attachment URLs from the composer.
+    setScreenshots((prev) => {
+      for (const s of prev) URL.revokeObjectURL(s.url);
+      return [];
+    });
+    setFiles([]);
+    setPreviewId(null);
+    lastSubmittedInputRef.current = input;
 
     try {
       const result = await submit(input);
       if (!mountedRef.current) return;
       onSubmit?.(result);
       if (result.ok) {
-        const screenshotsSnapshot: readonly MessageAttachment[] | undefined =
-          submittedScreenshots.length > 0
-            ? submittedScreenshots.map((s) => ({ blob: s.blob }))
-            : undefined;
-        const filesSnapshot: readonly MessageAttachment[] | undefined =
-          submittedFiles.length > 0
-            ? submittedFiles.map(({ file }) => ({
-                blob: file,
-                filename: file.name,
-              }))
-            : undefined;
-        const userMessage: Message = {
-          id: `msg-${++messageIdRef.current}`,
-          role: 'user',
-          text: submittedDraft,
-          attachments:
-            screenshotsSnapshot || filesSnapshot
-              ? {
-                  ...(screenshotsSnapshot
-                    ? { screenshots: screenshotsSnapshot }
-                    : {}),
-                  ...(filesSnapshot ? { files: filesSnapshot } : {}),
-                }
-              : undefined,
-        };
         const assistantMessage: Message = {
           id: `msg-${++messageIdRef.current}`,
           role: 'assistant',
@@ -645,38 +693,24 @@ export function FeedbackButton({
           issueSent: true,
           sentAt: Date.now(),
         };
-        setMessages((prev) => [...prev, userMessage, assistantMessage]);
-        // Clear the composer in place — composer stays mounted and focus
-        // stays put, so a chained submit reads naturally as the same chat
-        // session continuing.
-        setDraft('');
-        setExpected('');
-        setActual('');
-        setShowExtras(false);
-        setScreenshots((prev) => {
-          for (const s of prev) URL.revokeObjectURL(s.url);
-          return [];
-        });
-        setFiles([]);
-        setPreviewId(null);
-        setSubmitError(null);
+        setMessages((prev) => [...prev, assistantMessage]);
         // If the user minimized mid-submit, pop the panel back open so the
         // success confirmation is actually seen. A silent success while
         // hidden leaves the user unsure whether their issue landed.
         setOpen(true);
       } else {
-        setSubmitError(result.error.message);
-        // Same reasoning for a failed submit: the error alert belongs in
-        // front of the user, not buried behind a minimized panel.
+        // Failure: the user bubble is already in the thread; the staged
+        // rows collapse into a red retry row driven by `phase === 'error'`
+        // (see `Thread` below). Pop the panel back open so the user
+        // actually sees the retry CTA.
         setOpen(true);
       }
     } catch (err) {
       if (!mountedRef.current) return;
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : 'We could not submit your feedback. Please try again.';
-      setSubmitError(message);
+      // Chunk-load failure path — the hook has already flipped phase to
+      // `'error'` and stored a synthetic SubmitError. Just pop the panel
+      // back open so the retry row is visible.
+      void err;
       setOpen(true);
     }
   }, [
@@ -692,6 +726,40 @@ export function FeedbackButton({
     submit,
     useAi,
   ]);
+
+  /**
+   * Re-run the most recent submit with the original `FeedbackInput`. The
+   * user bubble is already in the thread (pushed on the first Send),
+   * so the retry path only needs to re-fire `submit()` and append the
+   * assistant receipt on success — no duplicate bubble for the retry.
+   */
+  const doRetry = useCallback(async () => {
+    const last = lastSubmittedInputRef.current;
+    if (!last) return;
+    if (status === 'submitting') return;
+    try {
+      const result = await submit(last);
+      if (!mountedRef.current) return;
+      onSubmit?.(result);
+      if (result.ok) {
+        const assistantMessage: Message = {
+          id: `msg-${++messageIdRef.current}`,
+          role: 'assistant',
+          text: ASSISTANT_RECEIPT_TEXT,
+          issueSent: true,
+          sentAt: Date.now(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+        setOpen(true);
+      } else {
+        setOpen(true);
+      }
+    } catch (err) {
+      if (!mountedRef.current) return;
+      void err;
+      setOpen(true);
+    }
+  }, [onSubmit, status, submit]);
 
   if (hidden) return null;
 
@@ -743,7 +811,13 @@ export function FeedbackButton({
             actual={actual}
             confirmClose={confirmClose}
             submitError={submitError}
-            status={status}
+            phase={phase}
+            submitErrorTagged={submitErrorTagged}
+            aiEnabled={projectConfig.config?.ai_enabled === true}
+            reducedMotion={reducedMotion}
+            onRetry={() => {
+              void doRetry();
+            }}
             onToggleExtras={() => setShowExtras((v) => !v)}
             onExpectedChange={setExpected}
             onActualChange={setActual}
@@ -862,7 +936,11 @@ interface ThreadProps {
   actual: string;
   confirmClose: boolean;
   submitError: string | null;
-  status: FeedbackStatus;
+  phase: FeedbackPhase;
+  submitErrorTagged: SubmitError | null;
+  aiEnabled: boolean;
+  reducedMotion: boolean;
+  onRetry: () => void;
   onToggleExtras: () => void;
   onExpectedChange: (v: string) => void;
   onActualChange: (v: string) => void;
@@ -872,6 +950,30 @@ interface ThreadProps {
   onConfirmDiscard: () => void;
   onCancelClose: () => void;
 }
+
+/**
+ * Phase ordinal used by the staged-status rows to decide visibility. Row
+ * 1 ("Captured") shows from `'sanitising'` onwards, row 2 ("Sanitised")
+ * from `'formatting'` onwards. Row 3 ("Formatting with AI") has its own
+ * exact-match rule and does not consult this table.
+ */
+const PHASE_RANK: Record<FeedbackPhase, number> = {
+  idle: 0,
+  capturing: 1,
+  sanitising: 2,
+  formatting: 3,
+  sent: 4,
+  error: -1,
+};
+
+/**
+ * Stagger between staged-status rows in milliseconds. Applied as
+ * `transition-delay` per row so the rows fade in sequentially even when
+ * the underlying SDK phase events fire microseconds apart on a healthy
+ * happy path. Honoured only when the user has not requested reduced
+ * motion — see {@link usePrefersReducedMotion}.
+ */
+const STATUS_ROW_STAGGER_MS = 200;
 
 function Thread({
   messages,
@@ -883,7 +985,11 @@ function Thread({
   actual,
   confirmClose,
   submitError,
-  status,
+  phase,
+  submitErrorTagged,
+  aiEnabled,
+  reducedMotion,
+  onRetry,
   onToggleExtras,
   onExpectedChange,
   onActualChange,
@@ -893,6 +999,15 @@ function Thread({
   onConfirmDiscard,
   onCancelClose,
 }: ThreadProps): ReactElement {
+  const phaseRank = PHASE_RANK[phase];
+  const showCaptured = phaseRank >= PHASE_RANK.sanitising;
+  const showSanitised = phaseRank >= PHASE_RANK.formatting;
+  // Row 3 is gated on the project's AI configuration AND the exact
+  // 'formatting' phase — it disappears the moment the pipeline reports
+  // 'sent' so the user is not left with a perpetually spinning row.
+  const showFormatting = phase === 'formatting' && aiEnabled;
+  const showRetryRow = phase === 'error' && submitErrorTagged !== null;
+
   return (
     <div
       className="brw-thread"
@@ -953,19 +1068,132 @@ function Thread({
         onExpectedChange={onExpectedChange}
         onActualChange={onActualChange}
       />
+      {/* Validation / capture errors set by feedback-button itself stay on
+          the existing inline alert. Submit-pipeline failures are rendered
+          by the retry row below so the user gets the proper retry CTA. */}
       {submitError && (
         <div className="brw-error" role="alert">
           {submitError}
         </div>
       )}
-      {status === 'submitting' && (
-        <AssistantBubble>
-          <span className="brw-spinner" aria-hidden="true" /> Sending…
-        </AssistantBubble>
+      {showCaptured && (
+        <StatusRow
+          variant="check"
+          // Row 1 anchors the cascade at 0 ms; rows 2 and 3 stagger off it.
+          delayMs={0}
+          dataRow="captured"
+        >
+          Captured route, console, network, device
+        </StatusRow>
+      )}
+      {showSanitised && (
+        <StatusRow
+          variant="check"
+          delayMs={reducedMotion ? 0 : STATUS_ROW_STAGGER_MS}
+          dataRow="sanitised"
+        >
+          PII-sanitised, packaged
+        </StatusRow>
+      )}
+      {showFormatting && (
+        <StatusRow
+          variant="spinner"
+          delayMs={reducedMotion ? 0 : STATUS_ROW_STAGGER_MS * 2}
+          dataRow="formatting"
+        >
+          Formatting with AI…
+        </StatusRow>
+      )}
+      {showRetryRow && submitErrorTagged && (
+        <RetryRow error={submitErrorTagged} onRetry={onRetry} />
       )}
       {confirmClose && (
         <DiscardConfirm onCancel={onCancelClose} onConfirm={onConfirmDiscard} />
       )}
+    </div>
+  );
+}
+
+interface StatusRowProps {
+  variant: 'check' | 'spinner';
+  delayMs: number;
+  dataRow: string;
+  children: ReactNode;
+}
+
+/**
+ * One staged-status row in the conversation thread. Visual variants:
+ *
+ * - `'check'` — green checkmark + label. Used for the "Captured" /
+ *   "Sanitised" milestones.
+ * - `'spinner'` — spinner + label. Used for the "Formatting with AI…"
+ *   row that sits next to the pending AI work.
+ *
+ * The `data-brw-row` attribute exists for the test suite to query rows by
+ * their role-in-the-pipeline without coupling to the visible label.
+ * Stagger is applied as a `transition-delay` so the rows fade in
+ * sequentially under the shared bubble-entrance keyframe.
+ */
+function StatusRow({
+  variant,
+  delayMs,
+  dataRow,
+  children,
+}: StatusRowProps): ReactElement {
+  return (
+    <div
+      className="brw-status-row"
+      style={{ transitionDelay: `${delayMs}ms` }}
+      data-brw-row={dataRow}
+    >
+      {variant === 'check' ? (
+        <span className="brw-status-row-check" aria-hidden="true">
+          <CheckIcon />
+        </span>
+      ) : (
+        <span className="brw-spinner" aria-hidden="true" />
+      )}
+      <span className="brw-status-row-label">{children}</span>
+    </div>
+  );
+}
+
+interface RetryRowProps {
+  error: SubmitError;
+  onRetry: () => void;
+}
+
+/**
+ * Red retry row shown when the submit pipeline fails. Renders the
+ * `SubmitError.message` verbatim — server-echoed bodies have already
+ * been redacted upstream — and a single "Retry" CTA wired to
+ * {@link UseFeedbackResult.retry}.
+ *
+ * `role="alert"` so screen readers pick up the failure inside the
+ * panel's `aria-live="polite"` thread; `data-brw-error-code` keeps the
+ * code accessible to the test suite without coupling on the rendered
+ * copy.
+ */
+function RetryRow({ error, onRetry }: RetryRowProps): ReactElement {
+  // The error message is a direct text child of the role="alert" element
+  // so testing-library `getByText(..., { selector: '[role="alert"]' })`
+  // matches it without recursing through wrapper spans. The Retry button
+  // sits beside the message.
+  return (
+    <div
+      className="brw-status-row brw-status-row--error"
+      role="alert"
+      data-brw-error-code={error.code}
+      data-brw-row="error"
+    >
+      {error.message}
+      <button
+        type="button"
+        className="brw-btn brw-status-row-retry"
+        onClick={onRetry}
+      >
+        Retry
+      </button>
     </div>
   );
 }

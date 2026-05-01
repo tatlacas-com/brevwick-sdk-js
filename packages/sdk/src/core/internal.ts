@@ -7,6 +7,7 @@
 import type {
   ConsoleEntry,
   NetworkEntry,
+  ProjectConfig,
   RingEntry,
   RouteEntry,
 } from '../types';
@@ -18,8 +19,32 @@ export type LifecycleState = 'idle' | 'installed' | 'uninstalled';
 
 export type RingName = 'console' | 'network' | 'route';
 
+/**
+ * Submit-pipeline progress signal. Fired by the submit chunk at three
+ * boundaries the React adapter (and any other binding) animates against.
+ *
+ * - `'capturing-done'` — the buffers snapshot has landed in the in-memory
+ *   payload (`composePayload` complete).
+ * - `'sanitising-done'` — `redact()` has run over the payload; the next
+ *   action is the ingest POST.
+ * - `'sent'` — ingest returned 2xx. `aiEnabled` is the resolved
+ *   `ProjectConfig.ai_enabled` so the adapter can decide whether to render
+ *   a "Formatting with AI" affordance after the issue lands.
+ *
+ * **Internal surface** — emitted on the same `internal.bus` the rings use
+ * (event key `'phase'`) and intentionally **not** re-exported from the
+ * package root. Adapters in this monorepo reach the bus via the
+ * `INTERNAL_KEY` backdoor; external consumers should not depend on this
+ * channel — it is not part of the public SDK contract.
+ */
+export type PhaseEvent =
+  | { phase: 'capturing-done' }
+  | { phase: 'sanitising-done' }
+  | { phase: 'sent'; aiEnabled: boolean };
+
 export type BusEventMap = {
   entry: RingEntry;
+  phase: PhaseEvent;
 };
 
 export interface RingContext {
@@ -51,6 +76,14 @@ export interface BrevwickInternal {
    * consumers should not depend on this handle.
    */
   ready(): Promise<void>;
+  /**
+   * Cached `ProjectConfig` lookup mirroring `Brevwick.getConfig()`. Exposed
+   * on the internal surface so the submit pipeline can derive the
+   * `phase: 'sent'` event's `aiEnabled` flag without spinning up a parallel
+   * cache. Resolves to `null` on any failure (offline, malformed JSON, 4xx
+   * / 5xx) — never throws.
+   */
+  getConfig(): Promise<ProjectConfig | null>;
 }
 
 /** Key used by rings + tests to reach the internal API without polluting the public surface. */
