@@ -64,10 +64,13 @@
   },
   "devDependencies": {
     "@tatlacas/brevwick-sdk": "workspace:*",
+    "@testing-library/react": "^16.3.2",
     "@testing-library/react-native": "^13.0.0",
     "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/react-test-renderer": "^19.1.0",
     "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "react-native": "^0.76.0",
     "react-native-view-shot": "^4.0.0",
     "react-test-renderer": "^19.2.5"
