@@ -154,16 +154,31 @@ describe('locale fallback chain', () => {
     expect(collectDeviceContext().locale).toBe('de_DE');
   });
 
-  it('falls back to en-US when both SettingsManager and I18nManager are unavailable', () => {
+  it('returns undefined when both SettingsManager and I18nManager are unavailable', () => {
+    // Strict Flutter parity: a missing locale is omitted from the wire
+    // (`JSON.stringify` drops `undefined` keys), matching Flutter's
+    // `if (locale != null) 'locale': locale` builder. A constant `'en-US'`
+    // fallback would be a second deliberate divergence beyond the
+    // documented `platform` string.
     settingsManager.settings = undefined;
     i18n.localeIdentifier = undefined;
-    expect(collectDeviceContext().locale).toBe('en-US');
+    expect(collectDeviceContext().locale).toBeUndefined();
   });
 
-  it('falls back to en-US when SettingsManager.settings.AppleLocale is empty', () => {
+  it('returns undefined when every locale source is empty', () => {
     settingsManager.settings = { AppleLocale: '' };
     i18n.localeIdentifier = '';
-    expect(collectDeviceContext().locale).toBe('en-US');
+    expect(collectDeviceContext().locale).toBeUndefined();
+  });
+
+  it('drops `locale` from JSON.stringify when undefined (wire-omission proof)', () => {
+    settingsManager.settings = undefined;
+    i18n.localeIdentifier = undefined;
+    const wire = JSON.parse(JSON.stringify(collectDeviceContext())) as Record<
+      string,
+      unknown
+    >;
+    expect('locale' in wire).toBe(false);
   });
 
   it('skips an empty-string AppleLanguages[0] and falls through to the next link', () => {

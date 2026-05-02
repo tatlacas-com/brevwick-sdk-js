@@ -153,3 +153,37 @@ One subtle improvement worth noting in case any sibling worktree needs it: `Nati
 3. ~~Add one `Platform.OS = 'macos'` test row to pin the broader-platform matrix and prove the implementation degrades gracefully on RN-macOS / Windows / Web.~~ **Done** — RN-macOS test row added; pins `device_context.platform === 'react-native-macos'`, `sdk.platform === 'macos'`, and the `ua` string.
 4. **Carries forward to WT-rn-provider-hook PR (#83+#84) — out of scope for #85 by reviewer's own framing.** Wire `collectDeviceContext()` into the submit payload via a `BrevwickConfig.deviceContext` slot or an override hook on the core. Inline forward-look note already present in `device.ts:37-41` JSDoc on `DeviceContext`. The example app (#89/#90) must exercise this on staging before WT-rn-release.
 5. **Carries forward to WT-rn-provider-hook PR (#83+#84) — design call for the wiring author and core owner.** `composePayload()` (`packages/sdk/src/submit.ts:481-530`) currently hard-codes `device_context`. The wiring PR will introduce either (a) `config.deviceContext?: () => DeviceContext` (flexible for future adapters) or (b) RN provider replaces the `submit()` path wholesale. Recorded here so the WT-rn-provider-hook author has a clear pickup point; not actionable inside this PR's scope (acceptance criterion of #85 explicitly only ships the collector).
+
+---
+
+## Validation — 2026-05-02
+
+**Verdict**: APPROVED
+
+### Items Confirmed Fixed
+
+- [x] **HARD BLOCKER — changeset** — confirmed at `.changeset/react-native-device-context.md:1-13`. Frontmatter declares `'@tatlacas/brevwick-react-native': minor`, body documents the wire shape, the Flutter parity choice, the deliberate `device_context.platform` divergence, the cache semantics, and the deferred wiring. The `linked` group in `.changeset/config.json:9-19` includes `@tatlacas/brevwick-react-native`, so the lockstep bump propagates as claimed. `gh pr checks 96`: `check (Changeset check)` is GREEN.
+- [x] **Locale fallback nit (`appleLanguages[0]!` non-null assertion)** — confirmed at `packages/react-native/src/device.ts:119-125`. Bind-then-narrow idiom (`const first = appleLanguages[0]; if (typeof first === 'string' && first.length > 0) return first;`) is now consistent with the AppleLocale branch (line 115-118) and the androidLocale branch (line 131-134). Empty-string `AppleLanguages[0]` falls through to I18nManager.localeIdentifier as designed. Pinned by `device.test.ts:169-176` ("skips an empty-string AppleLanguages[0] and falls through to the next link").
+- [x] **Coverage gap nit (Platform.OS = 'macos' test row)** — confirmed at `packages/react-native/src/__tests__/device.test.ts:95-112`. Asserts `device_context.platform === 'react-native-macos'`, `sdk.platform === 'macos'`, `ua === 'react-native macos 14.0'`. Pins the wider-platform contract.
+
+### Items Returned to Fixer
+
+None.
+
+### Independent Findings
+
+- **Wire-shape parity vs Flutter** — confirmed byte-for-byte (`~/repos/brevwick/brevwick-sdk-flutter/lib/src/device.dart:138-147`): `{ if (ua != null) 'ua', if (locale != null) 'locale', if (viewport != null) 'viewport', 'platform', 'sdk: { name, version, platform } }`. RN `device.ts:163-172` returns the identical shape; optional fields drop via `JSON.stringify` when `undefined`. Only `device_context.platform` (`'react-native-ios' | 'react-native-android' | 'react-native-macos'` ...) deliberately differs from Flutter's `'ios' | 'android' | 'macos' | ...` — documented at `device.ts:10-14`, the worktree.md, and the changeset body.
+- **Wire-shape parity vs core JS SDK** — confirmed at `packages/sdk/src/submit.ts:436-453, 515-521`: same `{ ua, locale, viewport: {w, h}, routePath }` + `device_context.{ ua, locale, viewport, platform, sdk }` shape. No `os_version`, no `scale`/`fontScale` — same triage contract.
+- **Scope** — `git diff origin/main...HEAD --stat` confirms only the documented paths changed: `.changeset/react-native-device-context.md`, `notes/reviews/pr-96-claude-review.md`, `packages/react-native/src/{device.ts, __tests__/device.test.ts, index.ts}`, `packages/react-native/test/__mocks__/react-native.ts`. No core (`packages/sdk/`) edits, no scope creep into other adapters. (An unstaged `packages/angular/src/lib/internal/version.ts` bump exists in the worktree but is not part of any PR commit and is unrelated to #96.)
+- **CLAUDE.md compliance** — no Co-Authored-By, no Claude attribution, no `🤖` glyph in any new file, in the fixer commit message, or in the PR title/body. Conventional-commit subjects on both PR commits (`feat(react-native): device context collector (#85)`, `fix(react-native): address PR #96 review (changeset + nits)`). Branch name matches `feat/issue-85-rn-device`. Squash-only base configured at `main`.
+- **Banned-phrase audit** — none in strikethroughs. The strike-outs (lines 148, 152, 153) are: "changeset added", "bind-then-narrow + length>0 guard now applied", "RN-macOS test row added" — all real. Phrases such as "out of scope" / "deferred" / "follow-up" appear in earlier `[x]` items and the unstruck items 4-5, but they reflect the reviewer's original framing of the wiring carry-over to WT-rn-provider-hook (#83+#84) and the worktree.md scope split — not fixer scapegoating.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile`: pass (lockfile up to date)
+- `pnpm format:check`: pass (all matched files use Prettier code style)
+- `pnpm lint`: pass (eslint clean across all packages)
+- `pnpm type-check`: pass (all 7 packages clean)
+- `pnpm test:cover`: pass (16/16 in `@tatlacas/brevwick-react-native`; `device.ts` 100%/100%/100%/100%; mock file's residual `Platform.select` branches account for the package-level dip to 90%/92%/85.71%/89.74% — not `device.ts` regressions)
+- `pnpm build`: pass (RN ESM 969 B, CJS 1.47 KB, DTS 1.43 KB; `dist/index.d.ts` exports `BREVWICK_REACT_NATIVE_VERSION`, `type DeviceContext`, `collectDeviceContext`)
+- `gh pr checks 96`: all 6 required checks GREEN — `check (Changeset)`, `check (CI)`, `verify-signatures`, `size-check`, `codecov/patch`, `codecov/project`.

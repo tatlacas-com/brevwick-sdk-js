@@ -5,17 +5,27 @@
  * `readDeviceContext()` + `composePayload()` — and through it, the Flutter
  * SDK's `lib/src/device.dart` `DeviceContext.toJson()`. The fields are:
  *
- *   { ua?, locale?, viewport?: {w, h}, platform, sdk: {name, version, platform} }
+ *   { ua, locale?, viewport?: {w, h}, platform, sdk: {name, version, platform} }
  *
  * Only `device_context.platform` deliberately diverges from Flutter — the RN
  * adapter emits `'react-native-ios'` / `'react-native-android'` so triage
  * dashboards can split the cohort without branching on `sdk.name`. Every
- * other field is byte-for-byte identical so the backend treats every SDK
- * the same.
+ * other field shape is identical, modulo two implementation details that
+ * fall out of the host runtime rather than a contract divergence:
+ *   - `ua` is always populated (`'react-native ${OS} ${Version}'`) because
+ *     `Platform.OS` / `Platform.Version` are always defined under RN.
+ *     Flutter's `ua` is `String?` because `device_info_plus` may return
+ *     nothing on some platforms — same wire key, different population odds.
+ *   - `locale` is omitted (`undefined`) when neither
+ *     `NativeModules.SettingsManager.settings.AppleLocale` nor
+ *     `NativeModules.I18nManager.localeIdentifier` surfaces a non-empty
+ *     string. `JSON.stringify` drops `undefined` keys, matching Flutter's
+ *     `if (locale != null) 'locale': locale` builder.
  *
- * Optional fields (`ua`, `locale`, `viewport`) are returned as `undefined`
- * when unavailable; `JSON.stringify` omits the keys, matching Flutter's
- * `if (ua != null)` JSON-builder semantics.
+ * `viewport` is similarly omitted when `Dimensions.get('window')` throws or
+ * returns a non-numeric shape (Hermes / JSC test harnesses without an
+ * attached UIManager). Real RN apps always have a window, so this only
+ * fires in unit tests.
  */
 import { Dimensions, NativeModules, Platform } from 'react-native';
 
@@ -99,14 +109,14 @@ function readStatic(): Pick<DeviceContext, 'platform' | 'sdk' | 'ua'> {
 /**
  * iOS surfaces locale via `NativeModules.SettingsManager.settings.AppleLocale`
  * (e.g. `'en_US'`). Android surfaces it via `NativeModules.I18nManager
- * .localeIdentifier` (same `en_US` / `de_DE` shape). The order below mirrors
- * what the Apple-first chain returns on each platform — iOS exposes
- * `SettingsManager`, Android exposes `I18nManager`, and absent both we fall
- * back to `'en-US'` so the field is always populated rather than dropped
- * (a missing locale on the wire is harder to triage than a constant
- * fallback).
+ * .localeIdentifier` (same `en_US` / `de_DE` shape). Returns `undefined` when
+ * neither path produces a non-empty string — the caller drops the key from
+ * the wire payload (`JSON.stringify` omits `undefined`). Strict parity with
+ * Flutter's `if (locale != null) 'locale': locale` semantics: the wire is a
+ * lower bound; a constant `'en-US'` fallback would be a second deliberate
+ * divergence beyond the documented `platform` string.
  */
-function readLocale(): string {
+function readLocale(): string | undefined {
   const settingsManager = (
     NativeModules as unknown as {
       SettingsManager?: SettingsManagerLike;
@@ -132,7 +142,7 @@ function readLocale(): string {
   if (typeof androidLocale === 'string' && androidLocale.length > 0) {
     return androidLocale;
   }
-  return 'en-US';
+  return undefined;
 }
 
 function readViewport(): Viewport | undefined {
