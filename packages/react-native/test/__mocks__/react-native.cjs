@@ -1,9 +1,10 @@
-// Minimal `react-native` stub for unit tests running under jsdom. Feature
-// worktrees extend this surface as new RN APIs are touched; the goal here is
-// only to keep import-time evaluation safe when modules pull in
-// `react-native` for `Platform.OS`, dimensions, locale lookups, or
+// Minimal `react-native` stub for unit tests running under happy-dom.
+// Feature worktrees extend this surface as new RN APIs are touched; the goal
+// here is only to keep import-time evaluation safe when modules pull in
+// `react-native` for `Platform.OS`, dimensions, locale lookups,
 // `StyleSheet.flatten` (the latter reached via
-// `@testing-library/react-native`'s `helpers/map-props`).
+// `@testing-library/react-native`'s `helpers/map-props`), or `View` (used by
+// the screenshot path's hide / restore via `setNativeProps`).
 //
 // This stub intentionally lives outside `src/` so it does not ship in the
 // published npm tarball (the package's `files` array globs `src/`, which is
@@ -17,6 +18,8 @@
 // loader does not strip TypeScript syntax, so a `.ts` stub fed to `require`
 // crashes the process before any test loads. Type information is not
 // load-bearing for the stub's purpose, so dropping it is the cleanest fix.
+
+const { Component } = require('react');
 
 const Platform = {
   OS: 'ios',
@@ -49,9 +52,9 @@ const Dimensions = {
 // `I18nManager` is exported BOTH as a top-level `react-native` symbol AND as
 // `NativeModules.I18nManager` — real React Native does the same, with both
 // references pointing at the same underlying native-module table. The shared
-// reference matters: tests that mutate one path (e.g. `I18nManager
-// .localeIdentifier = 'de_DE'`) should see the change reflected on the other,
-// and `device.ts` reads from the `NativeModules` path per issue #85.
+// reference matters: tests that mutate one path (e.g.
+// `I18nManager.localeIdentifier = 'de_DE'`) should see the change reflected
+// on the other, and `device.ts` reads from the `NativeModules` path per #85.
 const I18nManager = {
   localeIdentifier: 'en_US',
   isRTL: false,
@@ -67,9 +70,8 @@ const NativeModules = {
   I18nManager,
 };
 
-// Minimal `<View>` shim for unit tests. Real RN `View` is a host component
-// backed by a native module; under happy-dom we only need a class identifier
-// that:
+// Minimal `<View>` shim. Real RN `View` is a host component backed by a
+// native module; under happy-dom we only need a class identifier that:
 //   1. is callable as a React component (so `<View>{children}</View>` does
 //      not crash at render time — most tests in this package do not render
 //      it; `skip-render.test.tsx` is the exception, via react-test-renderer),
@@ -77,26 +79,14 @@ const NativeModules = {
 //      hide / restore can dispatch via the ref.
 // Tests that need to assert `setNativeProps` calls construct fake `View`
 // instances directly rather than going through React rendering.
-import { Component, type ReactNode } from 'react';
-
-export interface ViewProps {
-  children?: ReactNode;
-  style?: unknown;
-  testID?: string;
-  onLayout?: (event: unknown) => void;
-  accessibilityLabel?: string;
-  accessibilityRole?: string;
-  pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
-}
-
-export class View extends Component<ViewProps> {
-  setNativeProps(_props: { opacity?: number; [key: string]: unknown }): void {
+class View extends Component {
+  setNativeProps(_props) {
     // Default no-op; individual tests override on the instance to capture
     // calls. Production code reaches the real RN setNativeProps via the
     // host bridge — this stub exists only for vitest/happy-dom.
   }
 
-  render(): ReactNode {
+  render() {
     return this.props.children ?? null;
   }
 }
@@ -123,5 +113,6 @@ module.exports = {
   Dimensions,
   I18nManager,
   NativeModules,
+  View,
   StyleSheet,
 };
