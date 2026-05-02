@@ -16,7 +16,7 @@ export default defineConfig({
       // ships a CJS bundle whose deep `require('react-native')` calls are
       // resolved by Node directly and bypass Vite's alias.
       'react-native': fileURLToPath(
-        new URL('./test/__mocks__/react-native.ts', import.meta.url),
+        new URL('./test/__mocks__/react-native.cjs', import.meta.url),
       ),
     },
   },

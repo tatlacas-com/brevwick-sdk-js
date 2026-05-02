@@ -59,4 +59,14 @@ export default tseslint.config(
       globals: nodeGlobals,
     },
   },
+  // CommonJS test fixtures (e.g. the React Native mock loaded by Node's
+  // CJS loader from `test/setup.ts`) — they use `module.exports` and run
+  // under Node, not the bundle.
+  {
+    files: ['**/*.cjs'],
+    languageOptions: {
+      globals: nodeGlobals,
+      sourceType: 'commonjs',
+    },
+  },
 );

@@ -19,7 +19,12 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Module: any = require('node:module');
-const reactNativeStub = require('./__mocks__/react-native.ts');
+// The stub is plain CommonJS (`.cjs`) so Node's CJS loader can `require()`
+// it directly under Node 20 (the repo's declared engine + CI runtime). A
+// `.ts` stub here would crash the loader on Node 20 because Node 20 does
+// not strip TypeScript syntax in CJS — only Node 24's experimental
+// type-stripping handled it transparently, masking the regression locally.
+const reactNativeStub = require('./__mocks__/react-native.cjs');
 const originalResolve = Module._resolveFilename;
 Module._resolveFilename = function patchedResolve(
   this: unknown,
@@ -51,7 +56,7 @@ Module._load = function patchedLoad(
 
 // Belt-and-braces: also register a vi.mock for code paths that go through
 // vite-node's module loader (e.g. our own `src/` files imported via the
-// alias). The factory mirrors `__mocks__/react-native.ts`.
+// alias). The factory mirrors `__mocks__/react-native.cjs`.
 vi.mock('react-native', () => reactNativeStub);
 
 // `react-test-renderer@19` logs a deprecation warning on every render

@@ -10,38 +10,23 @@
 // shipped uncompiled to satisfy Metro's `react-native` source-preference
 // field). Vitest aliases `react-native` to this path via
 // `vitest.config.ts`'s `resolve.alias`.
+//
+// The file is plain JS (CommonJS) — not TypeScript — so that
+// `test/setup.ts`'s `Module._load` patch can synchronously `require()` it
+// under Node 20 (the engine the repo declares and CI runs). Node 20's CJS
+// loader does not strip TypeScript syntax, so a `.ts` stub fed to `require`
+// crashes the process before any test loads. Type information is not
+// load-bearing for the stub's purpose, so dropping it is the cleanest fix.
 
-type PlatformOS = 'ios' | 'android' | 'web' | 'windows' | 'macos';
-
-export const Platform: {
-  OS: PlatformOS;
-  Version: string | number;
-  select: <T>(spec: {
-    ios?: T;
-    android?: T;
-    web?: T;
-    windows?: T;
-    macos?: T;
-    native?: T;
-    default?: T;
-  }) => T | undefined;
-} = {
+const Platform = {
   OS: 'ios',
   Version: '17.0',
   // Honour the live `Platform.OS` value at call time so tests that flip
   // `Platform.OS = 'android'` see the matching branch — real `react-native`
   // does the same. Falls back to `default` when no platform-specific entry
   // exists, matching the upstream type signature.
-  select<T>(spec: {
-    ios?: T;
-    android?: T;
-    web?: T;
-    windows?: T;
-    macos?: T;
-    native?: T;
-    default?: T;
-  }): T | undefined {
-    const key = this.OS as keyof typeof spec;
+  select(spec) {
+    const key = this.OS;
     if (key in spec) {
       return spec[key];
     }
@@ -52,8 +37,8 @@ export const Platform: {
 // `screen` and `window` return the same fixture for the scaffold; feature
 // worktrees that need to assert different status-bar / safe-area math
 // should branch on the argument here.
-export const Dimensions = {
-  get: (_dim: 'window' | 'screen') => ({
+const Dimensions = {
+  get: (_dim) => ({
     width: 390,
     height: 844,
     scale: 3,
@@ -67,19 +52,12 @@ export const Dimensions = {
 // reference matters: tests that mutate one path (e.g. `I18nManager
 // .localeIdentifier = 'de_DE'`) should see the change reflected on the other,
 // and `device.ts` reads from the `NativeModules` path per issue #85.
-export const I18nManager: { localeIdentifier?: string; isRTL: boolean } = {
+const I18nManager = {
   localeIdentifier: 'en_US',
   isRTL: false,
 };
 
-export const NativeModules: {
-  SettingsManager: {
-    settings:
-      | { AppleLocale?: string; AppleLanguages?: readonly string[] }
-      | undefined;
-  };
-  I18nManager: { localeIdentifier?: string; isRTL: boolean };
-} = {
+const NativeModules = {
   SettingsManager: {
     settings: {
       AppleLocale: 'en_US',
@@ -129,14 +107,21 @@ export class View extends Component<ViewProps> {
 // styled host components, so the simplest faithful behaviour is: collapse
 // an array of style objects into a single object (mirroring upstream's
 // shallow-merge semantics) and pass non-array values through unchanged.
-type Style = Record<string, unknown>;
-export const StyleSheet = {
-  flatten(style?: Style | ReadonlyArray<Style | undefined> | null): Style {
+const StyleSheet = {
+  flatten(style) {
     if (style == null) return {};
-    if (!Array.isArray(style)) return style as Style;
-    return (style as ReadonlyArray<Style | undefined>).reduce<Style>(
+    if (!Array.isArray(style)) return style;
+    return style.reduce(
       (acc, entry) => (entry ? { ...acc, ...entry } : acc),
       {},
     );
   },
+};
+
+module.exports = {
+  Platform,
+  Dimensions,
+  I18nManager,
+  NativeModules,
+  StyleSheet,
 };

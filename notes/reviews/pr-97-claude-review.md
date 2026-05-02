@@ -127,3 +127,86 @@ type re-exports, and the threshold values is correct.
 | `packages/react-native/src/__tests__/internal-bridge.test.ts` | ok     | All four defensive branches covered.                                                                             |
 | `pnpm-lock.yaml`                                              | fixed  | Reflects the devDep churn (`react-dom` / `@testing-library/react` / `@types/react-dom` removed; `react-test-renderer` added). |
 | `.changeset/rn-provider-hook.md`                              | new    | `@tatlacas/brevwick-react-native: minor` bump documenting the new public API and the lockstep policy.            |
+
+---
+
+## Validation — 2026-05-02
+
+**Verdict**: RETURNED TO FIXER
+
+### Items Confirmed Fixed (code-correct, but blocked by the regression below)
+
+- [x] `navigationRef` plumbing — `packages/react-native/src/navigation-ref-context.ts:1-50` defines `BrevwickNavigationRef`, the context, and the hook. Provider destructures and forwards it (`packages/react-native/src/provider.tsx:54-74`). `index.ts:14-18` exports them. Shape (`current: { addListener: (event, cb) => () => void; getCurrentRoute?: () => any } | null`) matches what `react-native-worktree.md:471-477` expects from #87 (`navigationRef.current?.addListener('state', …)` + `navigationRef.current?.getCurrentRoute?.()`). No churn for #87.
+- [x] `isLiveRuntime()` removed. Provider at `packages/react-native/src/provider.tsx` mirrors `packages/react/src/provider.tsx` line-for-line modulo (a) no `'use client'`, (b) `navigationRef` prop + `BrevwickNavigationRefContext` wrapper, (c) RN context stores `Brevwick | null` directly so the wrapping `useMemo<BrevwickContextValue>` is omitted (justified divergence pre-greenlit by the review). No leftover helper functions, no extra useMemos, no nullable provider value.
+- [x] Hook mirror — `packages/react-native/src/use-feedback.ts` is 1:1 with `packages/react/src/use-feedback.ts` except `useBrevwick()` (returns the instance) replaces `useBrevwickInternal()` (destructures `{ brevwick }`), JSDoc says "React Native"/"DOM" appropriately, and the `'use client'` directive is omitted. State, refs, effect deps, callback identities, error-coercion logic — all identical.
+- [x] `internal-bridge.ts` — 1:1 with web React; only the JSDoc word "React" → "React Native" differs.
+- [x] Changeset — `.changeset/rn-provider-hook.md` is well-formed, scoped to `@tatlacas/brevwick-react-native: minor`, has a meaningful summary; `.changeset/config.json` `linked` group at line 9-19 will fan the bump correctly.
+- [x] Bundle size — `dist/index.js` 1.98 KB (1012 B gzip), `dist/index.cjs` 2.68 KB (1261 B gzip). Well under the 8 kB core RN budget. The new `navigation-ref-context.ts` adds <500 B.
+- [x] Devdep cleanup — `react-dom`, `@types/react-dom`, `@testing-library/react` are absent from `packages/react-native/package.json`; `react-test-renderer` added at line 72.
+- [x] Unmount-during-pending-submit test — `packages/react-native/src/__tests__/use-feedback.test.tsx:271-305` exercises the `aliveRef.current` flip on the success path with a deferred submit + post-unmount resolve + `console.error` spy.
+- [x] `test/__mocks__/react-native.ts` — `StyleSheet.flatten` added at lines 85-94; `Platform.select` correctly reads `this.OS` at call time so platform flips are honoured.
+
+### Items Returned to Fixer
+
+- [x] **`pnpm test:cover` is broken on Node 20 (the engine the repo declares and CI uses).** Reproduced locally by switching to `nvm use 20`:
+  ```
+  SyntaxError: Unexpected identifier 'PlatformOS'
+   ❯ test/setup.ts:22:25
+       22| const reactNativeStub = require('./__mocks__/react-native.ts');
+  ```
+  Root cause: `packages/react-native/test/setup.ts:22` calls Node's CJS `require('./__mocks__/react-native.ts')`. Under Node 24 (the fixer's local) experimental TS-strip silently parses the file; under Node 20 (CI + the repo's declared `engines.node: ">=20.0.0"`) Node's CJS loader cannot parse `export const Platform: { OS: PlatformOS; ... } = { ... }` and crashes before any test loads. CI confirms: run https://github.com/tatlacas-com/brevwick-sdk-js/actions/runs/25248336284/job/74036280669 on commit `17a58e7` failed in `Run pnpm test:cover` with the identical error (3 test files report "0 test"). The fixer's claimed "Final coverage 100/100/97.46/90" reflects only Node-24 local runs and does not represent CI reality.
+
+  Fix directions (any one is acceptable; the fixer picks):
+  1. Convert `test/setup.ts` to defer the stub via dynamic import / `Module._load` interception that points at a path the loader can resolve (e.g. compile the stub to `.cjs` ahead of time, or expose it through Vite's resolver chain only).
+  2. Replace `require('./__mocks__/react-native.ts')` with a build-time inline of the stub (move the stub's runtime into `setup.ts` itself).
+  3. Drop the Module._load patch entirely and find a different RNTL bypass — e.g. import the RNTL submodules that don't go through the deep CJS `require('react-native')`, or stub `react-native` via `vi.mock` only and add a hoisted shim that RNTL's CJS resolver reaches via Vite's alias.
+
+  Whatever the fix, it MUST run green on Node 20 and the fixer MUST verify with `nvm use 20 && pnpm test:cover` (or equivalent) before claiming green.
+
+### Independent Findings
+
+- None additional — once the Node 20 test-load failure is resolved, the rest of the diff is clean. No banned-phrase strikethroughs in the review file.
+
+### Tooling (local, Node 24)
+
+- `pnpm install --frozen-lockfile`: pass
+- `pnpm format:check`: pass
+- `pnpm lint`: pass
+- `pnpm -r type-check`: pass
+- `pnpm test:cover`: pass on Node 24 (24.12.0); **FAILS on Node 20** (the engine the repo declares and CI uses)
+- `pnpm build`: pass
+- `pnpm size`: pass (RN package not yet wired into size-limit budgets per #91)
+- `gh pr checks 97`: **FAILING** — CI workflow `check` red on commit `17a58e7` (the fixer's fix commit) due to the Node 20 test-load regression above.
+
+---
+
+## Re-fix — 2026-05-02
+
+**Option chosen:** A — convert the test stub to plain JS (CommonJS). Smallest diff, no extra moving parts in the loader patch, and the stub's TypeScript-ness was never load-bearing (it is test-only scaffolding excluded from `files[]`, not part of the published surface).
+
+**Concrete change:**
+
+- `packages/react-native/test/__mocks__/react-native.ts` → `packages/react-native/test/__mocks__/react-native.cjs`. Type aliases dropped, runtime exports identical (`Platform`, `Dimensions`, `NativeModules`, `I18nManager`, `StyleSheet`). `module.exports = { ... }` for the CJS loader. `.cjs` extension chosen over `.js` because `packages/react-native/package.json` is `"type": "module"`, so a bare `.js` would be parsed as ESM and `require()` would fail under Node 20 the same way the `.ts` did. `.cjs` is unambiguous to Node's loader.
+- `packages/react-native/test/setup.ts:22` updated to `require('./__mocks__/react-native.cjs')` with a comment documenting why the stub must be plain CJS (Node 20 CJS loader cannot strip TS).
+- `packages/react-native/vitest.config.ts:19` alias path updated to `./test/__mocks__/react-native.cjs` so Vite's transformer also resolves to the new file.
+- `eslint.config.mjs` — added a `**/*.cjs` files override granting `nodeGlobals` + `sourceType: 'commonjs'` (required for `module.exports`). Mirrors the existing build-script override; no new lint rules.
+
+**Node 20 verification (the proof that matters):**
+
+```
+$ . "$NVM_DIR/nvm.sh" && nvm use 20
+Now using node v20.20.2 (npm v10.8.2)
+$ node --version
+v20.20.2
+$ pnpm install --frozen-lockfile   # pass (lockfile up to date)
+$ pnpm format:check                # pass (after prettier --write on the new .cjs)
+$ pnpm lint                         # pass (after .cjs eslint override)
+$ pnpm -r type-check                # pass
+$ pnpm test:cover                   # pass — RN package: 3 files, 23 tests; coverage 97.46/90/100/100
+$ pnpm build                        # pass — all 7 adapter packages + 8 example apps
+$ pnpm size                         # pass — RN not yet budgeted (#91)
+```
+
+RN coverage on Node 20: Statements 97.46% (77/79), Branches 90% (27/30), Functions 100% (16/16), Lines 100% (72/72). Matches the prior Node 24 run line-for-line, confirming behavioural parity of the JS stub.
+
+**No churn to the rest of the fix-pass.** `navigation-ref-context.ts`, the provider/hook mirrors, the changeset, the `react-test-renderer` devDep, and the unmount-during-pending-submit test are untouched.
