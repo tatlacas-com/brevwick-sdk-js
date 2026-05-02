@@ -58,6 +58,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
 });
 
 import { BrevwickProvider } from '../provider';
+import { BrevwickContext } from '../context';
 import { useFeedback } from '../use-feedback';
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -298,6 +299,57 @@ describe('useFeedback', () => {
       resolveSubmit({ ok: true, issue_id: 'rep_late' });
       // Awaiting the original promise from outside `act` is the realistic
       // caller shape — an event handler that survives unmount.
+      await pending;
+    });
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('also flips aliveRef on unmount when no phase bus is available', async () => {
+    // The phase-bus useEffect early-returned without registering a cleanup
+    // when `getPhaseBus(brevwick)` returned null, meaning a hand-rolled
+    // `Brevwick`-shaped consumer mock (no `_internal.bus`) would let an
+    // in-flight submit setState after unmount. PR #97 review (Copilot)
+    // flagged this; this test pins the cleanup branch by injecting an
+    // instance directly via `BrevwickContext` (skipping `BrevwickProvider`'s
+    // install / uninstall side effects, which the mocked `createBrevwick`
+    // factory at the top of the file already supplies a *with-bus* shape
+    // for).
+    const noBusInstance: Brevwick = {
+      install,
+      uninstall,
+      submit,
+      captureScreenshot,
+      // Intentionally no `_internal` — `getPhaseBus` returns null.
+    } as unknown as Brevwick;
+    const noBusWrapper = ({ children }: { children: ReactNode }) => (
+      <BrevwickContext.Provider value={noBusInstance}>
+        {children}
+      </BrevwickContext.Provider>
+    );
+
+    let resolveSubmit!: (value: SubmitResult) => void;
+    submit.mockImplementationOnce(
+      () =>
+        new Promise<SubmitResult>((resolve) => {
+          resolveSubmit = resolve;
+        }),
+    );
+
+    const { result, unmount } = renderHook(() => useFeedback(), {
+      wrapper: noBusWrapper,
+    });
+    let pending!: Promise<SubmitResult>;
+    act(() => {
+      pending = result.current.submit({ description: 'no-bus late' });
+    });
+    expect(result.current.status).toBe('submitting');
+
+    unmount();
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await act(async () => {
+      resolveSubmit({ ok: true, issue_id: 'rep_no_bus' });
       await pending;
     });
     expect(errorSpy).not.toHaveBeenCalled();

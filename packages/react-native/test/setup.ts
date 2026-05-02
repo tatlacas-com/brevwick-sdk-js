@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { afterAll, vi } from 'vitest';
 import { createRequire } from 'node:module';
 
 // Vite's `resolve.alias` swaps `react-native` for the local stub when the
@@ -76,3 +76,14 @@ console.error = function patchedConsoleError(
   }
   originalConsoleError.apply(console, args as unknown[]);
 };
+
+// Restore every patched global at the end of the test file so the patches
+// are scoped to this file's run rather than leaking into whatever else
+// shares the worker. Vitest re-runs `setupFiles` for every test file, so
+// the next file gets a fresh patch — no behavioural change, just the
+// hygiene Copilot review on PR #97 asked for.
+afterAll(() => {
+  Module._resolveFilename = originalResolve;
+  Module._load = originalLoad;
+  console.error = originalConsoleError;
+});

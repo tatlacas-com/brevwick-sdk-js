@@ -105,7 +105,15 @@ export function useFeedback(): UseFeedbackResult {
   useEffect(() => {
     aliveRef.current = true;
     const bus = getPhaseBus(brevwick);
-    if (!bus) return;
+    if (!bus) {
+      // No phase bus available (e.g. consumer handed a `Brevwick`-shaped
+      // mock without `_internal.bus`). Still register a cleanup that
+      // flips `aliveRef` so an in-flight `submit()` resolving after
+      // unmount can't setState on a torn-down tree.
+      return () => {
+        aliveRef.current = false;
+      };
+    }
     const onPhase = (event: PhaseEvent): void => {
       if (!aliveRef.current) return;
       setPhase(PHASE_EVENT_TO_NEXT_PHASE[event.phase]);
