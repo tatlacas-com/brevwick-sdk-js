@@ -18,7 +18,7 @@
  * "outermost wins" semantics on every exit path.
  */
 import { useEffect, useRef, type ReactElement, type ReactNode } from 'react';
-import { View, type ViewProps } from 'react-native';
+import { View } from 'react-native';
 
 interface SkipRef {
   readonly current: View | null;
@@ -35,18 +35,27 @@ const skipOriginals = new WeakMap<View, number>();
 const DEFAULT_OPACITY = 1;
 
 /**
- * Props for {@link BrevwickSkip}. Accepts every prop a `<View>` accepts so
- * consumers can place it anywhere a `<View>` would live (style, onLayout,
- * accessibility props, etc.).
+ * Props for {@link BrevwickSkip}. Intentionally minimal — only `children` is
+ * accepted, mirroring Flutter's `BrevwickSkip({required this.child})`. The
+ * wrapper's `<View>` does NOT forward arbitrary props so a caller-supplied
+ * `style.opacity` (or any other prop our hide / restore would clobber)
+ * cannot land on the same View whose opacity the screenshot path mutates.
+ * Consumers who need to apply layout / styling around a skip subtree wrap
+ * the children, not BrevwickSkip itself:
+ *
+ * ```tsx
+ * <BrevwickSkip>
+ *   <View style={{ padding: 16 }}>
+ *     <Password />
+ *   </View>
+ * </BrevwickSkip>
+ * ```
  */
-export interface BrevwickSkipProps extends ViewProps {
+export interface BrevwickSkipProps {
   children?: ReactNode;
 }
 
-export function BrevwickSkip({
-  children,
-  ...rest
-}: BrevwickSkipProps): ReactElement {
+export function BrevwickSkip({ children }: BrevwickSkipProps): ReactElement {
   const ref = useRef<View>(null);
 
   useEffect(() => {
@@ -56,11 +65,7 @@ export function BrevwickSkip({
     };
   }, []);
 
-  return (
-    <View ref={ref} {...rest}>
-      {children}
-    </View>
-  );
+  return <View ref={ref}>{children}</View>;
 }
 
 /**
@@ -80,11 +85,11 @@ export function hideRegisteredSkipViews(): SkipSnapshot {
     if (!view) continue;
     const count = skipCounts.get(view) ?? 0;
     if (count === 0) {
-      // No public getter for the live opacity on a native View, so we always
-      // restore back to the wrapper's default of 1.0. BrevwickSkip does not
-      // forward an `opacity` style prop into the underlying View, so this is
-      // a closed system — consumers cannot have set a non-1 opacity that we
-      // would accidentally clobber.
+      // BrevwickSkip's wrapper does NOT forward arbitrary props (see the
+      // BrevwickSkipProps doc), so the underlying View's opacity is always
+      // the framework default of 1.0 going into hide. This is the closed
+      // system that lets us restore to a hard-coded constant on the way
+      // out without needing a getter on the native View.
       skipOriginals.set(view, DEFAULT_OPACITY);
       (view as unknown as NativePropSetter).setNativeProps?.({ opacity: 0 });
     }
@@ -122,8 +127,8 @@ export function __resetSkipRegistryForTest(): void {
 /**
  * Test-only seam — registers a synthetic ref into the skip registry so unit
  * tests can drive `hideRegisteredSkipViews` / `restoreSkippedViews` against
- * fake View instances without spinning up a real RN renderer (jsdom plus a
- * stubbed `<View>` cannot dispatch `setNativeProps` through React).
+ * fake View instances without spinning up a real RN renderer (happy-dom plus
+ * a stubbed `<View>` cannot dispatch `setNativeProps` through React).
  * Production callers never invoke this.
  */
 export function __addSkipRefForTest(ref: { current: View | null }): void {

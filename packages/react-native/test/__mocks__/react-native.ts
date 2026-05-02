@@ -88,11 +88,11 @@ export const NativeModules: {
 };
 
 // Minimal `<View>` shim for unit tests. Real RN `View` is a host component
-// backed by a native module; under jsdom we only need a class identifier
+// backed by a native module; under happy-dom we only need a class identifier
 // that:
 //   1. is callable as a React component (so `<View>{children}</View>` does
-//      not crash at render time — though most tests in this package do not
-//      render it),
+//      not crash at render time — most tests in this package do not render
+//      it; `skip-render.test.tsx` is the exception, via react-test-renderer),
 //   2. carries a `setNativeProps` instance method so the screenshot path's
 //      hide / restore can dispatch via the ref.
 // Tests that need to assert `setNativeProps` calls construct fake `View`
@@ -113,7 +113,7 @@ export class View extends Component<ViewProps> {
   setNativeProps(_props: { opacity?: number; [key: string]: unknown }): void {
     // Default no-op; individual tests override on the instance to capture
     // calls. Production code reaches the real RN setNativeProps via the
-    // host bridge — this stub exists only for vitest/jsdom.
+    // host bridge — this stub exists only for vitest/happy-dom.
   }
 
   render(): ReactNode {

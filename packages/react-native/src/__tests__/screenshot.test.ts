@@ -32,11 +32,11 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-// jsdom 24's Blob does not implement `arrayBuffer()`; the global `Response`
-// constructor is happy to consume any Blob-shaped value and yields the same
-// bytes via its own arrayBuffer() — the path used throughout the codebase.
+// happy-dom ships a spec-correct Blob.arrayBuffer; reading bytes directly is
+// the obvious path. Wrapped in a one-liner so the test-side call sites do
+// not repeat the `new Uint8Array(...)` boilerplate.
 async function blobBytes(blob: Blob): Promise<Uint8Array> {
-  return new Uint8Array(await new Response(blob).arrayBuffer());
+  return new Uint8Array(await blob.arrayBuffer());
 }
 
 const PLACEHOLDER_BYTES = base64ToBytes(PLACEHOLDER_PNG_BASE64);

@@ -142,3 +142,42 @@ Two minor cleanliness notes worth addressing in this PR:
 
 - [x] Tightened `react-native-view-shot` peer range to `^4.0.0`.
 - [x] Dropped `passWithNoTests: true` (and its now-stale comment) in `vitest.config.ts` — there are 15 tests across three files.
+
+## Validation — 2026-05-02
+
+**Verdict**: APPROVED
+
+### Items Confirmed Fixed
+
+- [x] **Changeset added** — `.changeset/react-native-screenshot.md:1-3` declares `@tatlacas/brevwick-react-native`, `@tatlacas/brevwick-sdk`, `@tatlacas/brevwick-react` all `minor` (lockstep per the `linked` group). Body explains the screenshot path, peer-dep optionality, MIME guard, and refcount semantics. CI gate "Require a changeset on PRs that touch packages/**" — green.
+- [x] **Integration test for try/finally restore-on-failure** — `packages/react-native/src/__tests__/screenshot.test.ts:190-235` `describe('captureScreenshot — skip subtree integration')` confirmed real. The test imports `../skip` AFTER `vi.resetModules()` so it registers the synthetic ref against the SAME module instance the production `hideRegisteredSkipViews` reads from (the comment at line 198-202 explicitly notes the shadowed-module pitfall). It asserts `setNativeProps` called twice with `{opacity:0}` then `{opacity:1}` against a rejecting `captureRef`, proving the `finally` block fires on the failure path. Not a fake.
+- [x] **Render-driven `<BrevwickSkip>` test** — new file `packages/react-native/src/__tests__/skip-render.test.tsx:1-101` mounts `<BrevwickSkip>` via `react-test-renderer` and asserts registry size 0 → 1 → 0 across mount/unmount (lines 49-72), plus a "two distinct siblings" case (lines 75-100) verifying snapshot[0] !== snapshot[1]. `react-test-renderer@^19.2.5` and `@types/react-test-renderer@^19.1.0` are devDeps in `packages/react-native/package.json:69,73`.
+- [x] **`dataUriToBlob` MIME guard** — `packages/react-native/src/screenshot.ts:84-89` refuses non-`image/*` MIME by returning `null`. New test at `screenshot.test.ts:169-187` asserts a `data:text/plain;base64,aGVsbG8=` payload yields the placeholder bytes.
+- [x] **Hermes `crypto.subtle` caveat** — `packages/react-native/src/screenshot.ts:125-134` carries the `@remarks` TSDoc block referencing #99. Issue #99 confirmed open: "feat(react-native): host-supplied SHA-256 digest capability for Hermes (no crypto.subtle)" — body lays out Option A (host-supplied digest) and Option B (pure-JS fallback) with cross-links to #83 and #84.
+- [x] **Peer range tightened** — `packages/react-native/package.json:58` is `"react-native-view-shot": "^4.0.0"`.
+- [x] **`passWithNoTests: true` removed** — `packages/react-native/vitest.config.ts` has `environment: 'happy-dom'` and `include: ['src/**/*.test.{ts,tsx}']` only; no `passWithNoTests` flag remains.
+
+### Items Returned to Fixer
+
+(none)
+
+### Independent Findings
+
+- Architecture: `packages/sdk/` and `packages/react/` untouched. RN-only types (`View`, `RefObject<View>`, `react-native-view-shot`) confined to `packages/react-native/`. No DOM globals (`document`, `window`, `HTMLElement`) anywhere in the new modules.
+- Public API: `packages/react-native/src/index.ts` is strictly append-only (`+ export { captureScreenshot }`, `+ export type { CaptureScreenshotOpts }`, `+ export { BrevwickSkip }`, `+ export type { BrevwickSkipProps }`) — preserves parallel-safety with sibling worktrees #83+#84 (provider/hook), #85 (device), #87 (route ring). Internal helpers (`hideRegisteredSkipViews`, `restoreSkippedViews`, `__addSkipRefForTest`, `__resetSkipRegistryForTest`, `__resetScreenshotModuleCacheForTest`) intentionally NOT re-exported.
+- Tree-shakeability: `"sideEffects": false` set; no top-level invocations beyond pure const initialisation; `external` in `tsup.config.ts` lists `react-native-view-shot` so the peer is not bundled.
+- Never-throws integrity: `captureScreenshot` `try/finally` (`screenshot.ts:143-173`) covers peer-absent, missing-`captureRef`, throw, non-data-URI, non-image-MIME, empty-bytes — all five paths return the placeholder. Confirmed by 5 dedicated test cases + the integration test.
+- Coverage: react-native package patch coverage 92.92% statements / 81.81% branch / 89.47% functions — well above the 80% gate. `screenshot.ts` 96.49% / `skip.tsx` 100%. codecov/patch and codecov/project both green on the PR.
+- No Claude attribution: zero `Co-Authored-By: Claude` lines in either commit body, PR body, or any source file. Verified via `git log` grep.
+- Conventional-commit subjects: PR title "feat(react-native): screenshot via react-native-view-shot optional peer" is 71 chars (within 72-char limit). Branch commit subjects exceed 72 chars (77 and 82) but the squash-merge to main uses the PR title — non-blocking per the repo's squash-only merge policy.
+
+### Tooling
+
+- pnpm install --frozen-lockfile: pass
+- pnpm format:check: pass (Prettier — all matched files clean)
+- pnpm lint: pass (ESLint — no errors)
+- pnpm type-check: pass (all 17 packages — sdk, react, react-native, solid, vue, svelte, angular)
+- pnpm test:cover: pass (react-native: 15/15 across 3 files; full repo all green)
+- pnpm build: pass (all packages + examples built; tsup emits dual ESM/CJS for react-native at 2.04 KB / 2.70 KB)
+- gh pr checks 98: pass (`check` x2, `codecov/patch`, `codecov/project`, `size-check`, `verify-signatures` — all green)
+- gh pr view 98 mergeable: MERGEABLE (mergeStateStatus BLOCKED is the standard branch-protection-awaiting-review state, not a failure)
