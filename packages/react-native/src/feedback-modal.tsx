@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ReactElement,
+  type RefObject,
 } from 'react';
 import {
   ActivityIndicator,
@@ -30,6 +31,7 @@ import {
   type FeedbackPhase,
   type UseFeedbackResult,
 } from './use-feedback';
+import { captureScreenshot as captureScreenshotNative } from './screenshot';
 import {
   createWidgetStyles,
   resolvePalette,
@@ -107,6 +109,21 @@ export interface FeedbackModalProps {
    * prop; the modal falls back to its own `useFeedback()` call.
    */
   feedback?: UseFeedbackResult;
+  /**
+   * Optional ref to a host `<View>` whose subtree should be rasterised
+   * for the "Include screenshot" attachment. When supplied, the modal
+   * routes capture through the React Native adapter's native path
+   * (`./screenshot.captureScreenshot`, backed by `react-native-view-shot`),
+   * so the attached image reflects the actual on-device UI.
+   *
+   * When omitted, capture falls back to `useFeedback().captureScreenshot()`,
+   * which delegates to the core SDK's DOM path — on a real RN runtime that
+   * resolves to a 1×1 transparent PNG placeholder. Pass a ref to your
+   * navigation root (or any ancestor whose subtree you want captured) to
+   * get a real screenshot; the placeholder fallback exists so the modal
+   * stays usable in tests and SSR-style environments.
+   */
+  viewRef?: RefObject<View | null>;
 }
 
 /**
@@ -131,6 +148,7 @@ export function FeedbackModal({
   onClose,
   theme = 'system',
   feedback: feedbackProp,
+  viewRef,
 }: FeedbackModalProps): ReactElement {
   const brevwick = useBrevwick();
   // Always call `useFeedback()` to satisfy hook ordering rules; discard
@@ -141,6 +159,11 @@ export function FeedbackModal({
   const feedback = feedbackProp ?? localFeedback;
   const { submit, captureScreenshot, status, phase, error, retry, reset } =
     feedback;
+  // Standalone modal (no external `feedback` prop) means we own the hook
+  // and are responsible for rolling its `status` back to `'idle'` on
+  // manual close. The `FeedbackButton` parent does this in its own
+  // `handleClose`, so the FAB-driven path doesn't need it here.
+  const ownsFeedback = feedbackProp === undefined;
   const colorScheme = useColorScheme();
   const palette: BrevwickPalette = useMemo(
     () => resolvePalette(theme, colorScheme),
@@ -199,7 +222,16 @@ export function FeedbackModal({
     })();
     void (async () => {
       try {
-        const blob = await captureScreenshot();
+        // Pick the native RN path when the parent handed us a `<View>` ref
+        // — that yields a real on-device rasterisation via
+        // `react-native-view-shot`. Without a ref we fall back to the
+        // hook's `captureScreenshot()` which delegates to the core SDK's
+        // DOM path; on a real RN runtime that resolves to a 1×1 transparent
+        // PNG placeholder, but the fallback keeps the modal functional in
+        // tests and SSR-style environments.
+        const blob = viewRef
+          ? await captureScreenshotNative(viewRef)
+          : await captureScreenshot();
         if (cancelled || !mountedRef.current) return;
         setScreenshotBlob(blob);
         setScreenshotNote(null);
@@ -213,6 +245,14 @@ export function FeedbackModal({
         // `logFailure` so device logs carry the diagnostic when capture
         // fails outside the SDK's own placeholder path.
         if (cancelled || !mountedRef.current) return;
+        // Drop any stale screenshot from a prior successful open — without
+        // this, a previously-captured blob would silently ride along on
+        // the next submit even though the user is being told the new
+        // capture failed. Clearing both blob + uri also flips the preview
+        // back to the inline note so the visual state matches the wire
+        // payload.
+        setScreenshotBlob(null);
+        setScreenshotUri(null);
         const reason = err instanceof Error ? `: ${err.message}` : '';
         globalThis.console?.warn?.(
           `brevwick: screenshot capture failed in FeedbackModal${reason}`,
@@ -224,7 +264,7 @@ export function FeedbackModal({
     return () => {
       cancelled = true;
     };
-  }, [visible, brevwick, captureScreenshot]);
+  }, [visible, brevwick, captureScreenshot, viewRef]);
 
   // Auto-dismiss + draft reset on success. Runs after the user has had a
   // moment to read the "Sent ✓" confirmation. The cleanup clears the timer
@@ -241,6 +281,12 @@ export function FeedbackModal({
       setExpected('');
       setActual('');
       setIncludeScreenshot(true);
+      // `useAi` is part of the per-issue draft, not a sticky preference —
+      // mirror the web React adapter and roll it back to its default so
+      // the next issue starts from the project's render-policy baseline
+      // (the toggle defaults to `true` on first render and is hidden
+      // entirely unless `ai_submitter_choice_allowed`).
+      setUseAi(true);
       setScreenshotBlob(null);
       setScreenshotUri(null);
       setScreenshotNote(null);
@@ -259,14 +305,30 @@ export function FeedbackModal({
 
   // Cancel / × / back-gesture — also clears any pending success-dismiss
   // timer so it cannot fire on the now-hidden modal and double-invoke
-  // `onClose`.
+  // `onClose`. When the modal owns its hook (no `feedback` prop) AND the
+  // user closes during the "Sent ✓" dwell, `status === 'success'` would
+  // otherwise persist to the next open and render the form locked into
+  // the terminal state. The FAB-driven path doesn't need this branch
+  // because `FeedbackButton.handleClose` already calls `reset()` itself.
   const handleManualClose = useCallback(() => {
     if (successDismissTimerRef.current !== null) {
       clearTimeout(successDismissTimerRef.current);
       successDismissTimerRef.current = null;
     }
+    if (ownsFeedback && status === 'success') {
+      setDescription('');
+      setExpected('');
+      setActual('');
+      setIncludeScreenshot(true);
+      setUseAi(true);
+      setScreenshotBlob(null);
+      setScreenshotUri(null);
+      setScreenshotNote(null);
+      setDraftError(null);
+      reset();
+    }
     onClose();
-  }, [onClose]);
+  }, [onClose, ownsFeedback, status, reset]);
 
   const showAiToggle =
     config?.ai_enabled === true && config.ai_submitter_choice_allowed === true;
@@ -414,7 +476,19 @@ export function FeedbackModal({
                   />
                 ) : (
                   <Text style={styles.screenshotPlaceholder}>
-                    {screenshotNote ?? 'Screenshot will be captured on send.'}
+                    {/*
+                     * Placeholder copy reflects what actually happened — capture
+                     * runs on open, not on send. Three discriminable states:
+                     *   1. an explicit failure note from the catch path,
+                     *   2. the blob landed but `FileReader` could not produce a
+                     *      preview URI (older Hermes builds; the bytes still
+                     *      ride along on submit),
+                     *   3. the capture is in flight on first open.
+                     */}
+                    {screenshotNote ??
+                      (screenshotBlob
+                        ? 'Screenshot attached (preview unavailable on this device).'
+                        : 'Capturing screenshot…')}
                   </Text>
                 )}
               </View>

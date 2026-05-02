@@ -1,9 +1,16 @@
-import { useCallback, useMemo, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type ReactElement,
+  type RefObject,
+} from 'react';
 import {
   Pressable,
   StyleSheet,
   Text,
   useColorScheme,
+  View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -72,6 +79,13 @@ export interface FeedbackButtonProps {
   hidden?: boolean;
   /** When true, the FAB renders disabled and cannot open the modal. */
   disabled?: boolean;
+  /**
+   * Optional ref to a host `<View>` whose subtree should be rasterised
+   * for the "Include screenshot" attachment in the modal. Forwarded
+   * verbatim to {@link FeedbackModal} — see its `viewRef` prop for the
+   * native-vs-placeholder selection contract.
+   */
+  viewRef?: RefObject<View | null>;
 }
 
 const DEFAULT_INSET = 24;
@@ -154,6 +168,7 @@ export function FeedbackButton({
   label,
   hidden = false,
   disabled = false,
+  viewRef,
 }: FeedbackButtonProps): ReactElement | null {
   const [modalOpen, setModalOpen] = useState(false);
   // Single hook instance shared with the modal. The modal accepts the
@@ -204,7 +219,12 @@ export function FeedbackButton({
       <Pressable
         onPress={handleOpen}
         disabled={disabled}
-        accessibilityLabel="Send feedback"
+        // Track the visible label so VoiceOver/TalkBack announce the
+        // post-submit terminal copy (`Sent ✓` / `Try again`) instead of a
+        // stale static "Send feedback". `accessibilityLabel` overrides the
+        // child Text for screen readers in RN, so a static value here
+        // would silently disagree with what the user sees on screen.
+        accessibilityLabel={resolvedLabel}
         accessibilityRole="button"
         accessibilityState={{ disabled }}
         style={({ pressed }) =>
@@ -224,6 +244,7 @@ export function FeedbackButton({
         onClose={handleClose}
         theme={theme}
         feedback={feedback}
+        viewRef={viewRef}
       />
     </>
   );

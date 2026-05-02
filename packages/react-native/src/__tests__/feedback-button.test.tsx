@@ -18,6 +18,19 @@ import type {
   SubmitResult,
 } from '@tatlacas/brevwick-sdk';
 
+// ---- Module mocks -------------------------------------------------------
+// `vi.hoisted` runs before the import-time evaluation that pulls in
+// `feedback-modal.tsx` (which itself statically imports `./screenshot`),
+// so the spy is in place before the module-graph snapshot the SUT closes
+// over. Without this, `vi.doMock` from inside a test would arrive too
+// late — the modal would already be bound to the real `captureScreenshot`.
+const { nativeCapture } = vi.hoisted(() => ({
+  nativeCapture: vi.fn<(viewRef: unknown) => Promise<Blob>>(),
+}));
+vi.mock('../screenshot', () => ({
+  captureScreenshot: nativeCapture,
+}));
+
 // ---- SDK mock -----------------------------------------------------------
 const submit = vi.fn<(input: FeedbackInput) => Promise<SubmitResult>>();
 const captureScreenshot = vi.fn<() => Promise<Blob>>();
@@ -62,6 +75,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
 
 import { BrevwickProvider } from '../provider';
 import { FeedbackButton } from '../feedback-button';
+import { FeedbackModal } from '../feedback-modal';
 
 // ---- Helpers ------------------------------------------------------------
 const renderTree = async (ui: ReactElement): Promise<ReactTestRenderer> => {
@@ -76,10 +90,14 @@ const renderTree = async (ui: ReactElement): Promise<ReactTestRenderer> => {
   return renderer;
 };
 
+// Locate the FAB by `accessibilityState` (only the FAB sets it; the modal's
+// pressables do not). `accessibilityLabel` is unstable for this lookup
+// because the FAB's label tracks the submit lifecycle (`Send feedback` →
+// `Capturing…` → `Sending…` → `Sent ✓` / `Try again`).
 const findFab = (renderer: ReactTestRenderer) =>
   renderer.root
     .findAllByType(Pressable)
-    .find((p) => p.props.accessibilityLabel === 'Send feedback');
+    .find((p) => p.props.accessibilityState !== undefined);
 
 const findPressableByLabel = (renderer: ReactTestRenderer, label: string) =>
   renderer.root
@@ -125,6 +143,9 @@ describe('FeedbackButton', () => {
     const fab = findFab(renderer);
     expect(fab).toBeDefined();
     expect(fab!.props.accessibilityRole).toBe('button');
+    // accessibilityLabel mirrors the visible Text so VoiceOver/TalkBack
+    // never announce a value that disagrees with what's on screen.
+    expect(fab!.props.accessibilityLabel).toBe('Send feedback');
 
     // Default label "Send feedback" is rendered as a Text child of the FAB.
     const fabLabels = renderer.root.findAllByType(Text);
@@ -577,6 +598,241 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     expect(descAgain.props.value).toBe('half-written thought');
   });
 
+  it("tracks the FAB's accessibilityLabel through the submit lifecycle", async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_a11y' });
+    const renderer = await renderTree(<FeedbackButton />);
+    await openModal(renderer);
+
+    // Idle: matches the default visible copy.
+    expect(findFab(renderer)!.props.accessibilityLabel).toBe('Send feedback');
+
+    const desc = findInputByLabel(renderer, 'Feedback description');
+    await act(async () => {
+      desc.props.onChangeText('test a11y label tracking');
+    });
+    const sendBtn = findPressableByLabel(renderer, 'Send')!;
+    await act(async () => {
+      await sendBtn.props.onPress();
+    });
+
+    // After a successful submit the FAB reads "Sent ✓" — VoiceOver/
+    // TalkBack must announce that, not the stale "Send feedback".
+    expect(findFab(renderer)!.props.accessibilityLabel).toBe('Sent ✓');
+
+    // After dismissal the FAB rolls back to its default label.
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(findFab(renderer)!.props.accessibilityLabel).toBe('Send feedback');
+  });
+
+  it('clears a stale screenshot when a later capture attempt fails', async () => {
+    // First open: capture succeeds → blob + uri populate.
+    captureScreenshot.mockReset();
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['png'], { type: 'image/png' }),
+    );
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_first' });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const renderer = await renderTree(<FeedbackButton />);
+      await openModal(renderer);
+
+      // Cancel without submitting so the captured blob persists across
+      // close/reopen — that's the seam where a stale blob could ride
+      // along on the next submit.
+      const cancelBtn = findPressableByLabel(renderer, 'Cancel')!;
+      await act(async () => {
+        cancelBtn.props.onPress();
+      });
+
+      // Second open: capture rejects.
+      captureScreenshot.mockRejectedValueOnce(new Error('viewshot offline'));
+      const fab = findFab(renderer)!;
+      await act(async () => {
+        fab.props.onPress();
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // The submit must NOT include the previously-captured blob —
+      // clearing happens in the capture catch block.
+      const desc = findInputByLabel(renderer, 'Feedback description');
+      await act(async () => {
+        desc.props.onChangeText('post-failure submit');
+      });
+      const sendBtn = findPressableByLabel(renderer, 'Send')!;
+      await act(async () => {
+        await sendBtn.props.onPress();
+      });
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(submit.mock.calls[0]![0].attachments).toBeUndefined();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('resets the AI toggle to the default on successful submit', async () => {
+    getConfig.mockReset();
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_useai_first' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_useai_second' });
+
+    const renderer = await renderTree(<FeedbackButton />);
+    await openModal(renderer);
+
+    // Toggle AI off for this report.
+    const aiSwitch = renderer.root
+      .findAll((node) => node.props?.accessibilityLabel === 'Format with AI')
+      .find((node) => typeof node.props?.onValueChange === 'function')!;
+    await act(async () => {
+      aiSwitch.props.onValueChange(false);
+    });
+
+    const desc = findInputByLabel(renderer, 'Feedback description');
+    await act(async () => {
+      desc.props.onChangeText('first send with AI off');
+    });
+    const sendBtn = findPressableByLabel(renderer, 'Send')!;
+    await act(async () => {
+      await sendBtn.props.onPress();
+    });
+    // First call rode the user's per-issue choice.
+    expect(submit.mock.calls[0]![0].use_ai).toBe(false);
+
+    // Auto-dismiss runs the success-reset path.
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    // Reopen — the toggle defaults back to `true` instead of remaining
+    // sticky from the last submit.
+    const fab = findFab(renderer)!;
+    await act(async () => {
+      fab.props.onPress();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const desc2 = findInputByLabel(renderer, 'Feedback description');
+    await act(async () => {
+      desc2.props.onChangeText('second send — default AI');
+    });
+    const sendBtn2 = findPressableByLabel(renderer, 'Send')!;
+    await act(async () => {
+      await sendBtn2.props.onPress();
+    });
+    expect(submit.mock.calls[1]![0].use_ai).toBe(true);
+  });
+
+  it('renders the in-flight placeholder before capture resolves and the preview-unavailable copy when FileReader fails', async () => {
+    // Hold the capture promise open so the test can observe the
+    // in-flight placeholder before the blob arrives.
+    let resolveCapture!: (blob: Blob) => void;
+    captureScreenshot.mockReset();
+    captureScreenshot.mockImplementationOnce(
+      () =>
+        new Promise<Blob>((resolve) => {
+          resolveCapture = resolve;
+        }),
+    );
+
+    const renderer = await renderTree(<FeedbackButton />);
+    await openModal(renderer);
+
+    // No blob yet → "Capturing screenshot…" copy.
+    expect(
+      renderer.root
+        .findAllByType(Text)
+        .some((t) => t.props.children === 'Capturing screenshot…'),
+    ).toBe(true);
+
+    // Now resolve, but make blobToDataUri fail by stubbing FileReader so
+    // it never invokes onloadend with a string. The blob is still
+    // attached, but the preview falls back to the "(preview unavailable)"
+    // copy — the new state-aware placeholder.
+    const RealFileReader = globalThis.FileReader;
+    class FailingFileReader {
+      result: unknown = null;
+      onloadend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      readAsDataURL(): void {
+        // Schedule onerror so blobToDataUri resolves to null.
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).FileReader = FailingFileReader;
+    try {
+      await act(async () => {
+        resolveCapture(new Blob(['png'], { type: 'image/png' }));
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const placeholderTexts = renderer.root
+        .findAllByType(Text)
+        .map((t) => t.props.children);
+      expect(placeholderTexts).toContain(
+        'Screenshot attached (preview unavailable on this device).',
+      );
+      expect(placeholderTexts).not.toContain(
+        'Screenshot will be captured on send.',
+      );
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).FileReader = RealFileReader;
+    }
+  });
+
+  it('routes screenshot capture through the native path when `viewRef` is supplied', async () => {
+    const nativeBlob = new Blob(['native-png'], { type: 'image/png' });
+    nativeCapture.mockReset();
+    nativeCapture.mockResolvedValueOnce(nativeBlob);
+
+    // The native function only forwards the ref to `captureRef`, so any
+    // RefObject-shaped value satisfies the call shape we're asserting.
+    const fakeRef = { current: {} } as { current: unknown };
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_native' });
+
+    const renderer = await renderTree(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <FeedbackButton viewRef={fakeRef as any} />,
+    );
+    await openModal(renderer);
+
+    // The hook's `captureScreenshot` (the SDK's DOM placeholder path)
+    // must NOT be called when a viewRef is provided.
+    expect(captureScreenshot).not.toHaveBeenCalled();
+    expect(nativeCapture).toHaveBeenCalledTimes(1);
+    expect(nativeCapture).toHaveBeenCalledWith(fakeRef);
+
+    const desc = findInputByLabel(renderer, 'Feedback description');
+    await act(async () => {
+      desc.props.onChangeText('via native screenshot');
+    });
+    const sendBtn = findPressableByLabel(renderer, 'Send')!;
+    await act(async () => {
+      await sendBtn.props.onPress();
+    });
+
+    // The submit attached the blob produced by the native capture, not
+    // the SDK's placeholder.
+    expect(submit).toHaveBeenCalledTimes(1);
+    const attachments = submit.mock.calls[0]![0].attachments!;
+    expect(attachments).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((attachments[0] as any).blob).toBe(nativeBlob);
+  });
+
   it('surfaces an inline note and warns to the console when screenshot capture rejects', async () => {
     captureScreenshot.mockReset();
     captureScreenshot.mockRejectedValueOnce(new Error('view tree unmounted'));
@@ -623,5 +879,74 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+describe('FeedbackModal — standalone consumer (owns its hook)', () => {
+  it('resets hook state when the user cancels during the success dwell', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_standalone' });
+
+    let visible = true;
+    const onClose = vi.fn(() => {
+      visible = false;
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <BrevwickProvider config={{ projectKey: 'pk_test_standalone' }}>
+          <FeedbackModal visible={visible} onClose={onClose} />
+        </BrevwickProvider>,
+      );
+    });
+    // Settle the on-open effects.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const desc = findInputByLabel(renderer, 'Feedback description');
+    await act(async () => {
+      desc.props.onChangeText('standalone consumer');
+    });
+    const sendBtn = findPressableByLabel(renderer, 'Send')!;
+    await act(async () => {
+      await sendBtn.props.onPress();
+    });
+
+    // Sanity — the modal is in the success dwell. The primary button now
+    // reads "Sent ✓" which is what the user is mid-reading when they
+    // tap Cancel.
+    expect(findPressableByLabel(renderer, 'Sent ✓')).toBeDefined();
+
+    const cancelBtn = findPressableByLabel(renderer, 'Cancel')!;
+    await act(async () => {
+      cancelBtn.props.onPress();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    // Reopen — without the manual-close hook reset, the hook's
+    // `status === 'success'` would persist and the form would render
+    // locked into "Sent ✓" with the inputs disabled. After the fix the
+    // primary button is back to "Send" and the description is editable.
+    await act(async () => {
+      renderer.update(
+        <BrevwickProvider config={{ projectKey: 'pk_test_standalone' }}>
+          <FeedbackModal visible={true} onClose={onClose} />
+        </BrevwickProvider>,
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(findPressableByLabel(renderer, 'Send')).toBeDefined();
+    expect(findPressableByLabel(renderer, 'Sent ✓')).toBeUndefined();
+    const desc2 = findInputByLabel(renderer, 'Feedback description');
+    expect(desc2.props.editable).toBe(true);
+    // Draft is also wiped — the manual-close branch clears the same
+    // fields the success-dismiss timer would have touched.
+    expect(desc2.props.value).toBe('');
   });
 });
