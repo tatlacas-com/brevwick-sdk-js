@@ -1,9 +1,4 @@
-import { readFileSync } from 'node:fs';
 import { defineConfig } from 'tsup';
-
-const pkg = JSON.parse(
-  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
-) as { version: string };
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -25,7 +20,8 @@ export default defineConfig({
     '@tatlacas/brevwick-sdk',
   ],
   target: 'es2020',
-  define: {
-    __BREVWICK_REACT_NATIVE_VERSION__: JSON.stringify(pkg.version),
-  },
+  // Note: no `define` for the version literal — Metro resolves this package
+  // via `package.json#react-native` → `./src/index.ts` and does not run
+  // define-style substitution, so the literal is codegenned into
+  // `src/version.ts` by `scripts/generate-version.mjs` (prebuild hook).
 });

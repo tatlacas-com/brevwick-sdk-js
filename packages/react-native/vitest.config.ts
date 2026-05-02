@@ -1,15 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-const pkg = JSON.parse(
-  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
-) as { version: string };
-
 export default defineConfig({
-  define: {
-    __BREVWICK_REACT_NATIVE_VERSION__: JSON.stringify(pkg.version),
-  },
   resolve: {
     alias: {
       // Unit tests run under jsdom; route every `react-native` import to a
