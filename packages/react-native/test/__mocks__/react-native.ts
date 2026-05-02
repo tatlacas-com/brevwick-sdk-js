@@ -59,16 +59,64 @@ export const Dimensions = {
   }),
 };
 
-export const NativeModules = {
+// `I18nManager` is exported BOTH as a top-level `react-native` symbol AND as
+// `NativeModules.I18nManager` — real React Native does the same, with both
+// references pointing at the same underlying native-module table. The shared
+// reference matters: tests that mutate one path (e.g. `I18nManager
+// .localeIdentifier = 'de_DE'`) should see the change reflected on the other,
+// and `device.ts` reads from the `NativeModules` path per issue #85.
+export const I18nManager: { localeIdentifier?: string; isRTL: boolean } = {
+  localeIdentifier: 'en_US',
+  isRTL: false,
+};
+
+export const NativeModules: {
+  SettingsManager: {
+    settings:
+      | { AppleLocale?: string; AppleLanguages?: readonly string[] }
+      | undefined;
+  };
+  I18nManager: { localeIdentifier?: string; isRTL: boolean };
+} = {
   SettingsManager: {
     settings: {
       AppleLocale: 'en_US',
       AppleLanguages: ['en_US'],
     },
   },
+  I18nManager,
 };
 
-export const I18nManager = {
-  localeIdentifier: 'en_US',
-  isRTL: false,
-};
+// Minimal `<View>` shim for unit tests. Real RN `View` is a host component
+// backed by a native module; under happy-dom we only need a class identifier
+// that:
+//   1. is callable as a React component (so `<View>{children}</View>` does
+//      not crash at render time — most tests in this package do not render
+//      it; `skip-render.test.tsx` is the exception, via react-test-renderer),
+//   2. carries a `setNativeProps` instance method so the screenshot path's
+//      hide / restore can dispatch via the ref.
+// Tests that need to assert `setNativeProps` calls construct fake `View`
+// instances directly rather than going through React rendering.
+import { Component, type ReactNode } from 'react';
+
+export interface ViewProps {
+  children?: ReactNode;
+  style?: unknown;
+  testID?: string;
+  onLayout?: (event: unknown) => void;
+  accessibilityLabel?: string;
+  accessibilityRole?: string;
+  pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
+}
+
+export class View extends Component<ViewProps> {
+  setNativeProps(_props: { opacity?: number; [key: string]: unknown }): void {
+    // Default no-op; individual tests override on the instance to capture
+    // calls. Production code reaches the real RN setNativeProps via the
+    // host bridge — this stub exists only for vitest/happy-dom.
+  }
+
+  render(): ReactNode {
+    return this.props.children ?? null;
+  }
+}
