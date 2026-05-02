@@ -71,7 +71,7 @@ The seam itself is sound (no shortcut, no provider stub-work papering over the m
 - [x] PR body still has `Closes #87`. (Existing PR — unchanged.)
 - [x] Branch `feat/issue-87-rn-route-ring` matches the convention.
 - [x] No `Co-Authored-By` headers. No Claude attribution.
-- [x] No changeset entry — by design per `react-native-worktree.md` (changesets land in WT-rn-release #91).
+- [x] Changeset added — `.changeset/react-native-route-ring.md` declares minor bumps on `@tatlacas/brevwick-react-native` (new `attachRouteRing` / `NavigationContainerRefLike` / `NavigationRefLike` public surface) and `@tatlacas/brevwick-sdk` (new public `redact` / `SENSITIVE_PARAM_KEYS` / `RouteEntry` re-exports). Per the `linked` group in `.changeset/config.json` the bump propagates across the suite. `pnpm changeset status --since="origin/main"` now reports the change locally; the `Changeset check / check` CI job will flip green on the next push (run 25248046853 was the last failing run).
 - [x] README untouched — canonical README is owned by #90 per `react-native-worktree.md`.
 
 ## Files Reviewed
@@ -85,3 +85,45 @@ The seam itself is sound (no shortcut, no provider stub-work papering over the m
 | `packages/sdk/src/index.ts` | UPDATED | `redact` and `SENSITIVE_PARAM_KEYS` added to public surface (narrow, deliberate); `RouteEntry` re-exported so adapter packages compose against the same name. |
 | `packages/sdk/src/core/internal/redact.ts` | UPDATED | `SENSITIVE_PARAM_KEYS` constant added (single source of truth, replaces the `REDACT_QUERY_PARAM` literal previously in `network.ts`). |
 | `packages/sdk/src/rings/network.ts` | UPDATED | Inline `REDACT_QUERY_PARAM` removed; consumes shared `SENSITIVE_PARAM_KEYS` from `redact.ts`. Behaviour unchanged. |
+
+## Validation — 2026-05-02
+
+**Verdict**: RETURNED TO FIXER
+
+The 21 substantive review items resolve cleanly — code reads exactly as the fixer described, all gauntlet steps pass locally, and the bundle / coverage figures match what was claimed. **One regression**: PR-hygiene item #5 ("No changeset entry") was struck through with a justification that does not survive contact with the actual CI policy or the precedent set by sibling react-native PRs.
+
+### Items Confirmed Fixed
+
+- [x] **Top blocker 1 — redaction value leak**. `packages/react-native/src/rings/route.ts:43` imports `redact` + `SENSITIVE_PARAM_KEYS` from `@tatlacas/brevwick-sdk`. `redactPathParams` (`route.ts:171`) calls `redact(stringifyParam(params[k]))` BEFORE `encodeURIComponent`. The fixer's order-of-operations argument (encoding before redacting would scramble the regex matches) is correct: confirmed against `core/internal/redact.ts:84` (email regex requires literal `@`) and the new test `route.test.ts:131` proves JWT / email / IP carried by benign keys (`invoiceId` / `ref` / `peer`) are masked rather than shipped raw.
+- [x] **Top blocker 2 — hot-reload `current` swap**. `route.ts:89` captures `const ref = navigationRef?.current` once. The listener (`route.ts:96`) reads via the captured `ref.getCurrentRoute?.()` rather than `navigationRef.current.getCurrentRoute()`. JSDoc at `route.ts:74-79` documents why.
+- [x] **Top blocker 3 — path encoding**. `route.ts:148-176` percent-encodes name segments (`route.ts:153`), keys (`route.ts:161`), and values (`route.ts:172`). Test `route.test.ts:175` covers `Search?` (route name with `?`) and `q=foo & bar=baz` (value with `&` / `=` / spaces). One nit: the test does not separately exercise `#` or `%` literals in values, but `encodeURIComponent` semantics are spec-defined and the existing assertions are sufficient evidence.
+- [x] **Type changes**. `RouteEntry` imported from core (`route.ts:44`); local `RouteRingEntry` removed; push payload is `{ kind: 'route', path, timestamp }` (`route.ts:98-102`); `redactPathParams` is no longer in `packages/react-native/src/index.ts:17-21`; `NavigationContainerRefLike` is exported (`route.ts:57`, surfaced in `dist/index.d.ts:66`).
+- [x] **Test additions**. JWT/email/IP value-redaction (`route.test.ts:131`); encoding-collision (`route.test.ts:175`); `JSON.stringify` object branch (`route.test.ts:183`); `[unserializable]` for circular ref (`route.test.ts:194`) and function-value (`route.test.ts:204`); key-sort stability (`route.test.ts:213`); `detach()` idempotency (`route.test.ts:262`); off-spec unsubscribe (`route.test.ts:274`). The conditional-type cast in the mock builder is gone — the cast is now a plain `as NavigationContainerRefLike['addListener']` (`route.test.ts:35-49`).
+- [x] **Coverage thresholds**. `vitest.config.ts:35-40` carries `lines: 75 / statements: 75 / functions: 75 / branches: 70`. `passWithNoTests: true` is gone. Comment at `vitest.config.ts:33-34` correctly attributes the floor to #87 shipping the first real test code in the package.
+- [x] **Coverage actually passes**. `pnpm test:cover` from the worktree reports `Statements: 95.12% (39/41), Branches: 93.93% (31/33), Functions: 100% (7/7), Lines: 100% (34/34)` — matches the fixer's claim exactly.
+- [x] **Bundle budget**. `node -e "console.log(require('node:zlib').gzipSync(require('node:fs').readFileSync('packages/sdk/dist/index.js')).length)"` → `2784` bytes, under the 2850 budget. `pnpm --filter @tatlacas/brevwick-sdk test:cover` runs the chunk-split guard (`packages/sdk/src/__tests__/chunk-split.test.ts:94-99`) green; all 245 SDK tests across 16 files pass. CLAUDE.md does not need a bump (still under 2.85 kB).
+- [x] **Architecture / clean-code**. No `for now` / `TODO` / `FIXME` / `HACK` markers in any changed file. `SENSITIVE_PARAM_KEYS` naming matches the SCREAMING_SNAKE convention used for other regex constants in `redact.ts` / `network.ts` (`IPV4`, `IPV6`, `BUILTIN`, `BINARY_CONTENT_TYPE`, `ABSOLUTE_URL`). No leftover `REDACT_QUERY_PARAM` or `REDACT_KEY` duplicates anywhere in `packages/`. `network.ts` retains `createRedactor` for per-instance config (correctly — only the regex constant was hoisted, behaviour byte-identical).
+- [x] **Cross-runtime safety**. No `window` / `document` / Node-only globals in route.ts; `Date.now()` and `encodeURIComponent` are universal.
+
+### Items Returned to Fixer
+
+- [ ] **Missing changeset entry — CI failure**. `.github/workflows/changeset-check.yml:33-34` runs `pnpm changeset status --since="origin/main"` on every PR touching `packages/**` and exits non-zero if no `.changeset/*.md` was added. The `Changeset check / check` job is currently **failing** on PR #95 (`gh pr checks 95` → run 25248046853, `🦋 error Some packages have been changed but no changesets were found`). The fixer struck through this item citing "by design per `react-native-worktree.md` (changesets land in WT-rn-release #91)" — but `react-native-worktree.md` does not exempt feature worktrees from changesets, and sibling react-native PRs #96 (commit `3f3219d`) and #98 (commit `6e8f39e`) both shipped explicit changeset entries against the same CI policy. Required action:
+  - Add `.changeset/<slug>.md` (suggest `react-native-route-ring.md`) describing the new `attachRouteRing` public surface in `@tatlacas/brevwick-react-native`.
+  - Per the lockstep versioning rule in CLAUDE.md and the `redact` / `SENSITIVE_PARAM_KEYS` / `RouteEntry` re-exports added to `packages/sdk/src/index.ts`, the same changeset (or a second entry) should bump `@tatlacas/brevwick-sdk` minor — the eager-chunk public surface widened.
+  - After the entry lands, `gh pr checks 95` must show all six checks green before re-validation.
+
+### Independent Findings
+
+None beyond the changeset gap above. Spot-checks of duplicated `redact` implementations across all adapter packages came up clean. The fixer's narrative on `redact()`-before-`encodeURIComponent` ordering is technically right and well-documented in JSDoc + tests; this is a real correctness improvement over the original review's encode-then-redact suggestion.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile` — pass
+- `pnpm format:check` — pass
+- `pnpm lint` — pass
+- `pnpm --filter @tatlacas/brevwick-sdk build` — pass (eager ESM 2784 B gzip < 2850 budget)
+- `pnpm --filter @tatlacas/brevwick-angular build` — pass
+- `pnpm --filter @tatlacas/brevwick-react-native build` — pass (1.09 KB ESM / 1.63 KB CJS / 4.58 KB DTS)
+- `pnpm type-check` — pass (all 7 packages)
+- `pnpm test:cover` — pass (react-native 95.12% / 93.93% / 100% / 100%; sdk 245/245; all suites green)
+- `gh pr checks 95` — **FAIL** (`Changeset check / check` job is non-zero; all other checks pass)
