@@ -1,5 +1,105 @@
 # brevwick-react
 
+## 1.0.0-beta.9
+
+### Minor Changes
+
+- [#93](https://github.com/tatlacas-com/brevwick-sdk-js/pull/93) [`6807e6e`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/6807e6e624497c116da36ae81f10f06faf350185) Thanks [@tatlacas](https://github.com/tatlacas)! - chore(react-native): scaffold @tatlacas/brevwick-react-native ([#82](https://github.com/tatlacas-com/brevwick-sdk-js/issues/82))
+
+  Empty workspace package skeleton for the upcoming React Native adapter.
+  Mirrors `packages/react/` conventions (tsup CJS+ESM build, vitest,
+  tsconfig). Adds the `react-native` field for Metro source preference
+  and declares `react-native-view-shot` as an optional peer dep so the
+  never-throws screenshot path can lazy-import without forcing every
+  consumer to install it.
+
+  Public surface this PR ships:
+  - `BREVWICK_REACT_NATIVE_VERSION` — diagnostics literal injected by
+    tsup `define`, mirroring the React/Solid/Vue/Svelte/Angular adapters.
+
+  Feature work (provider, hook, FAB, screenshot, route ring, device
+  context) lands in [#83](https://github.com/tatlacas-com/brevwick-sdk-js/issues/83)–[#88](https://github.com/tatlacas-com/brevwick-sdk-js/issues/88); example app + canonical README in [#89](https://github.com/tatlacas-com/brevwick-sdk-js/issues/89)/[#90](https://github.com/tatlacas-com/brevwick-sdk-js/issues/90);
+  beta release flips in [#91](https://github.com/tatlacas-com/brevwick-sdk-js/issues/91).
+
+  The `@tatlacas/brevwick-sdk` and `@tatlacas/brevwick-react` bumps are
+  the lockstep pre-1.0 version — the `linked` group in
+  `.changeset/config.json` keeps the suite moving together. No code
+  change in either package for this PR.
+
+- [#98](https://github.com/tatlacas-com/brevwick-sdk-js/pull/98) [`ccdc5b7`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ccdc5b77c2ba2f0b4abe1ba4f0fe51af842233be) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(react-native): captureScreenshot via react-native-view-shot optional peer ([#86](https://github.com/tatlacas-com/brevwick-sdk-js/issues/86))
+
+  Adds `captureScreenshot(viewRef, opts?)` and `<BrevwickSkip>` to
+  `@tatlacas/brevwick-react-native`. `react-native-view-shot` is declared as an
+  **optional** peer dep so Expo Go consumers (no custom dev client) and
+  consumers who never capture a screenshot skip the install entirely. The peer
+  is dynamic-imported on first call; if the module is missing or `captureRef`
+  rejects, the capture resolves to a 1×1 transparent PNG placeholder rather
+  than throwing — preserving the never-throws contract from SDD § 12.
+
+  `<BrevwickSkip>` mirrors the JS SDK `[data-brevwick-skip]` selector and
+  Flutter's `BrevwickSkip`: any subtree wrapped by it is hidden via
+  `setNativeProps({ opacity: 0 })` for the rasterised frame and restored on the
+  way out, including on the failure path. The hide/restore is refcount-aware so
+  overlapping captures cannot strand the UI hidden — outermost capture wins.
+
+  `dataUriToBlob` rejects non-`image/*` MIME payloads, mirroring the core's
+  `isValidImageBlob` invariant.
+
+  The `@tatlacas/brevwick-sdk` and `@tatlacas/brevwick-react` bumps are the
+  lockstep pre-1.0 version per the `linked` group in `.changeset/config.json`.
+  No code change in either package for this PR.
+
+- [#101](https://github.com/tatlacas-com/brevwick-sdk-js/pull/101) [`96d1a15`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/96d1a151f8eca750a4168b6d7542faf87a53eac3) Thanks [@tatlacas](https://github.com/tatlacas)! - feat(react-native): public `useRouteRing` hook + RN-aware
+  `useFeedback().captureScreenshot(viewRef)`; SDK exports
+  `PROJECT_KEY_PATTERN` ([#89](https://github.com/tatlacas-com/brevwick-sdk-js/issues/89), [#90](https://github.com/tatlacas-com/brevwick-sdk-js/issues/90))
+
+  Public surface added by this PR (PR [#101](https://github.com/tatlacas-com/brevwick-sdk-js/issues/101) review action items):
+  - `useRouteRing(navigationRef?)` from `@tatlacas/brevwick-react-native` —
+    owns the `_internal.push` reach-around the example previously copy/
+    pasted into every consumer's `RouteRingBridge`. Resolves both the
+    `Brevwick` instance and the `navigationRef` from context, attaches via
+    `attachRouteRing`, and detaches on unmount. Pass an explicit
+    `navigationRef` for layouts that mount the bridge outside the provider
+    tree.
+  - `useFeedback().captureScreenshot` now accepts an optional `viewRef`
+    (and `CaptureScreenshotOpts`) and routes RN captures through the
+    package's native `captureScreenshot` (`react-native-view-shot` when
+    the peer is installed, placeholder PNG otherwise) instead of always
+    falling through to the core SDK's DOM-based path. Calls without a
+    `viewRef` keep the previous behaviour.
+  - `BrevwickNavigationRef.current.addListener` now narrows the event
+    parameter to the `'state'` literal (the only event the route ring
+    subscribes to), so `useNavigationContainerRef<TParamList>()`'s
+    strictly-typed ref is structurally assignable to
+    `BrevwickProviderProps.navigationRef` without an
+    `as unknown as BrevwickNavigationRef` cast at the consumer site.
+
+  Core SDK surface widens narrowly to support adapter + example
+  composition without duplication:
+  - `PROJECT_KEY_PATTERN` — the validator's project-key regex, exported
+    so adapters and example apps can gate UI on the same source of truth
+    `validateConfig` enforces. Use as `PROJECT_KEY_PATTERN.test(value)`;
+    no boolean-returning helper is shipped because the eager bundle is
+    within ~30 B of its 2.85 kB ceiling and a one-line `.test(value)` is
+    no friction for callers.
+
+  Also fixes the `examples/react-native` peer-dep mismatch: the package
+  now declares `react-native-view-shot: >=3.8.0 <5` so both Expo SDK 51
+  (`~3.8.0`) and bare RN (`^4.0.0`) sit inside the supported range. CI
+  gains a `pnpm --filter @tatlacas/brevwick-react-native build` step
+  ahead of `pnpm type-check` so a clean checkout no longer fails on
+  TS2307 from `examples/react-native/tsconfig.json` (`moduleResolution:
+Bundler`) trying to resolve `dist/` before it has been built.
+
+  The `@tatlacas/brevwick-sdk` bump is the lockstep pre-1.0 minor; the
+  linked group in `.changeset/config.json` propagates the bump across
+  the suite.
+
+### Patch Changes
+
+- Updated dependencies [[`d509f88`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/d509f88743a38c96bff7446610ac98702dfcb00c), [`6807e6e`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/6807e6e624497c116da36ae81f10f06faf350185), [`ccdc5b7`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ccdc5b77c2ba2f0b4abe1ba4f0fe51af842233be), [`96d1a15`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/96d1a151f8eca750a4168b6d7542faf87a53eac3)]:
+  - @tatlacas/brevwick-sdk@1.0.0-beta.9
+
 ## 1.0.0-beta.8
 
 ### Minor Changes
