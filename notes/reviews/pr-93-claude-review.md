@@ -104,3 +104,99 @@ CI is red on `Require a changeset on PRs that touch packages/**`, and the publis
 6. Add `minify: true` to `packages/react-native/tsup.config.ts`.
 7. Either revert `BREVWICK_REACT_NATIVE_VERSION` to `export {}` or call out the deviation in the PR body.
 8. Strengthen the `passWithNoTests` rationale comment with the issue number that removes it.
+
+---
+
+## Validation — 2026-05-02
+
+**Verdict**: RETURNED TO FIXER
+
+Validated commit `ba57689` against the live PR body and the working tree.
+Of the strike-throughs, two are factually incorrect — the fixer marked the PR-body update `[x]`
+but never edited the PR body. The remaining items are confirmed in code.
+
+### Items Confirmed Fixed
+
+- [x] **Changeset entry present** — `.changeset/react-native-scaffold.md` bumps
+      `@tatlacas/brevwick-react-native`, `@tatlacas/brevwick-sdk`,
+      `@tatlacas/brevwick-react` (lockstep through `linked` group).
+- [x] **`@tatlacas/brevwick-react-native` in `linked` group** — confirmed at
+      `.changeset/config.json:17`.
+- [x] **Mock relocated, alias updated** — `packages/react-native/src/__mocks__/`
+      removed; new file at `packages/react-native/test/__mocks__/react-native.ts:1-75`;
+      vitest alias points at the new path (`packages/react-native/vitest.config.ts:20-22`).
+- [x] **Tarball clean** — `pnpm pack --dry-run` lists `dist/`, `package.json`,
+      `README.md`, `src/index.ts` only. No `__mocks__/` paths.
+- [x] **`Platform.select` honours `Platform.OS`** — `test/__mocks__/react-native.ts:33-47`.
+      Replicated semantics in a standalone harness:
+      `ios+{ios:a,android:b}=a`, `android+{ios:a,android:b}=b`,
+      `ios+{android:b,default:d}=d`, `android+{ios:a,default:d}=d`,
+      `web+{ios:a,android:b}=undefined`. All correct.
+- [x] **`react-native-view-shot` peer range tightened** — `>=4 <5` at
+      `packages/react-native/package.json:54`.
+- [x] **`minify: true` in `tsup.config.ts`** — `packages/react-native/tsup.config.ts:19`.
+- [x] **`BREVWICK_REACT_NATIVE_VERSION` JSDoc added** — `packages/react-native/src/index.ts:5-14`,
+      carried through to `dist/index.d.ts`.
+- [x] **`passWithNoTests` comment names #83** — `packages/react-native/vitest.config.ts:28-36`
+      explicitly directs the next worktree to drop the flag and add `coverage.thresholds`.
+- [x] **CI green on `ba57689`** — `gh pr checks 93`: `check` (×2), `codecov/patch`,
+      `codecov/project`, `size-check`, `verify-signatures` all pass. None pending.
+- [x] **Local gauntlet green** — `pnpm install --frozen-lockfile` (already up to date),
+      `pnpm format:check` (clean), `pnpm lint` (zero output), `pnpm -r type-check` (all packages
+      done), `pnpm -r test` (242 tests pass across the suite; rn package correctly reports
+      "No test files found" with `passWithNoTests`), `pnpm -r build` (all packages build,
+      rn `dist/` size: ESM 98 B / CJS 605 B / DTS 522 B).
+- [x] **Repo conventions** — both branch commits authored by
+      `Tatenda Caston <tathove@tatlacas.com>`; zero `Co-Authored-By` trailers; subjects
+      57 chars (≤72) and conventional; branch is up-to-date with `origin/main`
+      (`merge-base == origin/main`); fixup commit stages only the seven files it claims to.
+- [x] **`tsconfig.json` excludes `test/`** — `include: ["src/**/*"]` confirmed at
+      `packages/react-native/tsconfig.json:9`. The relocated mock cannot leak into emitted types.
+- [x] **No forbidden patterns** in `src/` or `test/` — no `process.`, `window`, `document`,
+      `: any`. Empty named-exports surface, no dead code, no magic numbers.
+- [x] **`files: ["dist", "src", ...]`** — confirmed intentional for Metro `react-native`
+      source-preference field; with the relocation, only `src/index.ts` ships under `src/`.
+
+### Items Returned to Fixer (resolved 2026-05-02)
+
+- [x] **PR body now calls out the `BREVWICK_REACT_NATIVE_VERSION` deviation.**
+      Updated the live PR description via REST `PATCH /repos/tatlacas-com/brevwick-sdk-js/pulls/93`
+      (the `gh pr edit` GraphQL path was returning a `projects (classic) deprecation` 500
+      that blocked the body write — REST works around it). The Summary section now contains:
+      *"Includes a `BREVWICK_REACT_NATIVE_VERSION` const so feature worktrees can reference
+      it without a follow-up scaffolding change — minor deviation from issue #82's literal
+      `export {}` wording. Mirrors the parity surface already shipped by
+      `@tatlacas/brevwick-react`, `-solid`, `-vue`, `-svelte`, and `-angular`."*
+      Verified with `gh pr view 93 --json body`. Audit-trail comment posted on the PR
+      (https://github.com/tatlacas-com/brevwick-sdk-js/pull/93#issuecomment-4363285412).
+- [x] **PR body now documents the `.size-limit.js` deferral to #91.**
+      Same REST PATCH added to the *Out of scope (covered by follow-ups)* section:
+      *"`.size-limit.js` budgets for `@tatlacas/brevwick-react-native` — deferred to #91
+      (beta release worktree). No bundle budget config ships in this scaffold by design;
+      reviewers expecting one should track #91."* Verified in the live PR body.
+
+### Independent Findings
+
+- None. Architecture is clean (RN-only module behind the `react-native` peer; no DOM/Node
+  imports in `src/`). Public surface is one constant + JSDoc. Tarball is minimal. Build
+  outputs are minified. The `tsconfig.json include: ["src/**/*"]` correctly excludes the
+  relocated mock. Test mocks contain no published surface.
+
+### Tooling
+
+- pnpm install --frozen-lockfile: pass (no churn)
+- pnpm format:check: pass
+- pnpm lint: pass
+- pnpm -r type-check: pass
+- pnpm -r test: pass
+- pnpm -r build: pass
+- gh pr checks 93: pass (all six checks green)
+
+The two outstanding items are PR-metadata only and resolve in one `gh pr edit` command —
+no code change needed. The validator returns rather than approves because false
+strike-throughs erode the audit trail; if the validator ratifies them, the next reviewer
+or future agent reading the review file will trust them. The fixer must either edit the
+PR body to match the claim, or restore the items to `- [ ]` and pick a different
+resolution (the option to revert `BREVWICK_REACT_NATIVE_VERSION` to `export {}` and the
+option to drop the `#91` deferral mention since it is already in the worktree spec are
+both available — but the current state asserts a third option that was not executed).
