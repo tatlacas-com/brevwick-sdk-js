@@ -4,11 +4,17 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      // Route every `react-native` import to a local stub so import-time
-      // evaluation in feature worktrees does not depend on a Metro bundler
-      // or a device. The stub lives under `test/` (not `src/`) so it never
-      // ships in the published npm tarball. Richer mocks land alongside
-      // the feature work that needs them.
+      // Route every `react-native` import that travels through Vite's
+      // transformer to a local stub so import-time evaluation in feature
+      // worktrees does not depend on a Metro bundler or a device. The stub
+      // lives under `test/` (not `src/`) so it never ships in the published
+      // npm tarball. Richer mocks land alongside the feature work that
+      // needs them.
+      //
+      // The companion `test/setup.ts` patches Node's CJS loader for the
+      // same specifier — necessary because `@testing-library/react-native`
+      // ships a CJS bundle whose deep `require('react-native')` calls are
+      // resolved by Node directly and bypass Vite's alias.
       'react-native': fileURLToPath(
         new URL('./test/__mocks__/react-native.ts', import.meta.url),
       ),
@@ -22,6 +28,7 @@ export default defineConfig({
     // assert wire bytes against the placeholder.
     environment: 'happy-dom',
     include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['./test/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
@@ -39,11 +46,11 @@ export default defineConfig({
         'src/version.ts',
       ],
       // Floor mirroring `packages/react/vitest.config.ts` (75 / 75 / 75 / 70).
-      // Set when #87 (route ring) shipped the first real test code in this
-      // package; branches sit a notch lower because the screenshot module
-      // has several defensive `?? null` / `?? default` ternaries that
-      // resolve only on the unhappy paths. #83's provider work will
-      // tighten further.
+      // Branches sit a notch lower because the screenshot module has several
+      // defensive `?? null` / `?? default` ternaries that resolve only on
+      // the unhappy paths, and the no-bus / outside-provider paths in the
+      // hook surface defensive branches a single test exercises statement-
+      // wise but not every permutation.
       thresholds: {
         lines: 75,
         statements: 75,

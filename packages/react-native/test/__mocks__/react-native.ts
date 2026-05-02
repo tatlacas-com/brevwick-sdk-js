@@ -1,7 +1,9 @@
 // Minimal `react-native` stub for unit tests running under jsdom. Feature
 // worktrees extend this surface as new RN APIs are touched; the goal here is
 // only to keep import-time evaluation safe when modules pull in
-// `react-native` for `Platform.OS`, dimensions, or locale lookups.
+// `react-native` for `Platform.OS`, dimensions, locale lookups, or
+// `StyleSheet.flatten` (the latter reached via
+// `@testing-library/react-native`'s `helpers/map-props`).
 //
 // This stub intentionally lives outside `src/` so it does not ship in the
 // published npm tarball (the package's `files` array globs `src/`, which is
@@ -120,3 +122,21 @@ export class View extends Component<ViewProps> {
     return this.props.children ?? null;
   }
 }
+
+// `@testing-library/react-native@13` pulls in `helpers/map-props.js` which
+// calls `StyleSheet.flatten(props.style)` to extract a few diagnostic
+// styles for failure messages. The provider/hook tests don't render any
+// styled host components, so the simplest faithful behaviour is: collapse
+// an array of style objects into a single object (mirroring upstream's
+// shallow-merge semantics) and pass non-array values through unchanged.
+type Style = Record<string, unknown>;
+export const StyleSheet = {
+  flatten(style?: Style | ReadonlyArray<Style | undefined> | null): Style {
+    if (style == null) return {};
+    if (!Array.isArray(style)) return style as Style;
+    return (style as ReadonlyArray<Style | undefined>).reduce<Style>(
+      (acc, entry) => (entry ? { ...acc, ...entry } : acc),
+      {},
+    );
+  },
+};

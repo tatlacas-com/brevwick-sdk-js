@@ -28,8 +28,13 @@ export { BrevwickSkip } from './skip';
 export type { BrevwickSkipProps } from './skip';
 
 export { BrevwickProvider } from './provider';
-export type { BrevwickNavigationRef, BrevwickProviderProps } from './provider';
+export type { BrevwickProviderProps } from './provider';
 export { useBrevwick } from './context';
+export {
+  useBrevwickNavigationRef,
+  BrevwickNavigationRefContext,
+} from './navigation-ref-context';
+export type { BrevwickNavigationRef } from './navigation-ref-context';
 
 export { useFeedback } from './use-feedback';
 export type {

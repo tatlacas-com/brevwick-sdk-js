@@ -1,4 +1,8 @@
-import { act, renderHook } from '@testing-library/react';
+// Use the `/pure` entry to skip RNTL's automatic `expect.extend(matchers)`
+// and `afterEach(cleanup)` registration: the hook tests cover state
+// transitions, not visual matchers, and Vitest's `expect` global is not
+// available at module-load time when the auto-register would run.
+import { act, renderHook } from '@testing-library/react-native/pure';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   Brevwick,
@@ -262,5 +266,41 @@ describe('useFeedback', () => {
     expect(bus.listeners.size).toBe(1);
     unmount();
     expect(bus.listeners.size).toBe(0);
+  });
+
+  it('does not setState after unmount when an in-flight submit resolves', async () => {
+    // Closes the `aliveRef.current` branch in `runSubmit`'s success path:
+    // a submit kicked off before unmount must be allowed to settle without
+    // touching the unmounted hook's state.
+    let resolveSubmit!: (value: SubmitResult) => void;
+    submit.mockImplementationOnce(
+      () =>
+        new Promise<SubmitResult>((resolve) => {
+          resolveSubmit = resolve;
+        }),
+    );
+
+    const { result, unmount } = renderHook(() => useFeedback(), { wrapper });
+
+    let pending!: Promise<SubmitResult>;
+    act(() => {
+      pending = result.current.submit({ description: 'late' });
+    });
+    expect(result.current.status).toBe('submitting');
+
+    // Tear down before the submit resolves. The aliveRef flip in the
+    // useEffect cleanup must prevent the post-await success branch from
+    // calling setStatus on a stale tree.
+    unmount();
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await act(async () => {
+      resolveSubmit({ ok: true, issue_id: 'rep_late' });
+      // Awaiting the original promise from outside `act` is the realistic
+      // caller shape — an event handler that survives unmount.
+      await pending;
+    });
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });
