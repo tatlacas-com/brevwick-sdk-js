@@ -150,6 +150,24 @@ export default [
     '8 kB',
   ),
 
+  // ── React Native bundle (≤ 25 kB gzip) ───────────────────────────────────
+  // The RN adapter mirrors the React adapter's 25 kB ceiling documented in
+  // `CLAUDE.md`. Current eager weight of the FeedbackButton + Modal +
+  // route ring + device + screenshot wrapper artefact is ~6 kB gzip, well
+  // under the budget — this entry exists so any future bloat that crosses
+  // the ceiling fails CI before it ships, the same defence-in-depth the
+  // other adapters get.
+  fileEntry(
+    '@tatlacas/brevwick-react-native (ESM)',
+    'packages/react-native/dist/index.js',
+    '25 kB',
+  ),
+  fileEntry(
+    '@tatlacas/brevwick-react-native (CJS)',
+    'packages/react-native/dist/index.cjs',
+    '25 kB',
+  ),
+
   // ── On-widget-open total weight (≤ 25 kB gzip) ───────────────────────────
   // Bundled-import mode: esbuild re-bundles the screenshot module + its
   // resolved `modern-screenshot` peer the way a consumer's bundler would for

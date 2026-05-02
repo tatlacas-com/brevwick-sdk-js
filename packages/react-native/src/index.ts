@@ -43,14 +43,27 @@ export type {
   UseFeedbackResult,
 } from './use-feedback';
 
+export { FeedbackButton } from './feedback-button';
+export type {
+  FeedbackButtonProps,
+  FeedbackButtonPosition,
+} from './feedback-button';
+export { FeedbackModal } from './feedback-modal';
+export type { FeedbackModalProps } from './feedback-modal';
+export type { BrevwickTheme } from './styles';
+
 // Re-export the SDK types RN consumers most often touch so they don't need a
 // second `@tatlacas/brevwick-sdk` import in app code. The full SDK surface is
-// still available via the underlying package.
+// still available via the underlying package. `ProjectConfig` is included
+// because the FeedbackModal's "Format with AI" toggle gate keys off it; any
+// consumer composing their own modal alongside `useFeedback()` needs the
+// type to discriminate `ai_enabled` / `ai_submitter_choice_allowed`.
 export type {
   Brevwick,
   BrevwickConfig,
   FeedbackAttachment,
   FeedbackInput,
+  ProjectConfig,
   SubmitError,
   SubmitErrorCode,
   SubmitResult,
