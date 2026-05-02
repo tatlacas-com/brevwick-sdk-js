@@ -37,7 +37,7 @@ cd ../brevwick-sdk-js-issue-<N>
 
 ## Writing `<topic>-worktree.md` files
 
-When the user asks to write or update a worktree.md, follow this convention. Existing examples in this repo: `landing-parity-worktree.md`, `launch-readiness-worktree.md`, `phase4-worktree.md`, `react-native-worktree.md`.
+When the user asks to write or update a worktree.md, follow this convention. Existing examples in this repo: `landing-parity-worktree.md`, `launch-readiness-worktree.md`, `worktrees-feedback-ux.md`, `react-native-worktree.md`. Treat older examples as **legacy** — they predate this convention and may use patterns we now disallow (e.g. `landing-parity-worktree.md` uses `git add -A`, which the rules below replace with explicit paths). When touching a legacy file, opportunistically migrate it; do not copy its anti-patterns into new files.
 
 **Filename:** `<topic>-worktree.md` at repo root. The topic matches the initiative (a phase, a feature, a launch milestone). Plural variant `worktrees-<topic>.md` is acceptable when there are many.
 
@@ -64,7 +64,7 @@ When the user asks to write or update a worktree.md, follow this convention. Exi
 - A bash code block with this exact shape:
 
   ```bash
-  cd /Users/tatlacas/repos/brevwick/<repo>
+  cd ~/repos/brevwick/<repo>
   git fetch origin
   git worktree add ../<repo>-wt-<slug> -b <type>/<branch-name> origin/main
   cd ../<repo>-wt-<slug>
@@ -77,13 +77,13 @@ When the user asks to write or update a worktree.md, follow this convention. Exi
 **Per-worktree agent prompt (inside the `claude --dangerously-skip-permissions \"...\"` block):**
 
 - STEP 1 — Read project context: `CLAUDE.md`, the issue body via `gh api repos/<owner>/<repo>/issues/<N> --jq '.body'`, plan file, every reference file/package.
-- STEP 2..N-2 — Implementation steps: file paths, exact field names, snippet shapes, validation criteria. Reference Flutter/JS SDK precedent files by absolute path when wire-format parity matters.
-- STEP N-1 — Verify: `pnpm install --frozen-lockfile && pnpm lint && pnpm type-check && pnpm test && pnpm build` (or repo-specific gauntlet); manual smoke if relevant.
+- STEP 2..N-2 — Implementation steps: file paths, exact field names, snippet shapes, validation criteria. Reference Flutter/JS SDK precedent files by tilde-path when wire-format parity matters.
+- STEP N-1 — Verify: full CI gauntlet from `.github/workflows/ci.yml` — `pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm type-check && pnpm test:cover && pnpm build`. `pnpm lint` does not cover Prettier; `format:check` is mandatory. Add `pnpm size` if the change touches bundle-budgeted code.
 - STEP N — Commit + PR: `git add` specific paths (no `-A`/`.`); `git commit -m '<conventional commit subject ≤72 chars>'`; `git push -u origin <branch>`; `gh pr create --title '...' --body "$(cat <<'PREOF'` … `PREOF\n)"`. PR body uses `Closes #<N>` per issue, has Summary / Out of scope / Test plan sections, no Co-Authored-By.
 
 **Style notes:**
 
-- Use absolute paths starting with `/Users/tatlacas/repos/brevwick/` for cross-repo references (this is the user's machine; portable enough for the team).
+- Use tilde-prefixed paths (`~/repos/brevwick/...`, `~/.claude/plans/...`) for cross-repo references; tilde expands at shell time so the same docs work on any contributor's machine. Do **not** introduce new absolute paths like `/home/tatlacas/...` or `/Users/tatlacas/...`; legacy worktree files have them and should be migrated when touched.
 - Prefer "Tier" terminology consistently — never "Phase" inside a worktree.md (that word belongs to ROADMAP.md).
 - When bundling N issues into one worktree, explain the bundling rationale (shared files, review coherence) explicitly. When splitting issues across worktrees that could have been bundled, also explain why.
 - Length: a one-issue worktree.md is ~150 lines. A 10-issue / 8-worktree initiative is ~700 lines. Don't aim for shorter — reviewers and future agents read this file end-to-end.

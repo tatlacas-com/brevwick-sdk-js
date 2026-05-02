@@ -8,7 +8,7 @@ Tier 0 is gated: WT-rn-scaffold (#82) must land before any other worktree branch
 
 - `CLAUDE.md` (this repo) — pnpm workspace publishing multiple npm packages; bundle budget DO NOT EXCEED; redaction mandatory; lockstep versioning; squash-merge only; no Co-Authored-By
 - [SDD § 12 SDK contracts](https://github.com/tatlacas-com/brevwick-ops/blob/main/docs/brevwick-sdd.md#12-sdk-contracts) — public API contract every adapter must satisfy
-- Plan document: `/Users/tatlacas/.claude/plans/we-now-have-sdks-generic-dolphin.md`
+- Plan document: `~/.claude/plans/we-now-have-sdks-generic-dolphin.md`
 - Issues: [#82](https://github.com/tatlacas-com/brevwick-sdk-js/issues/82) scaffold, [#83](https://github.com/tatlacas-com/brevwick-sdk-js/issues/83) provider, [#84](https://github.com/tatlacas-com/brevwick-sdk-js/issues/84) useFeedback, [#85](https://github.com/tatlacas-com/brevwick-sdk-js/issues/85) device, [#86](https://github.com/tatlacas-com/brevwick-sdk-js/issues/86) screenshot, [#87](https://github.com/tatlacas-com/brevwick-sdk-js/issues/87) route ring, [#88](https://github.com/tatlacas-com/brevwick-sdk-js/issues/88) FeedbackButton, [#89](https://github.com/tatlacas-com/brevwick-sdk-js/issues/89) Expo example, [#90](https://github.com/tatlacas-com/brevwick-sdk-js/issues/90) docs, [#91](https://github.com/tatlacas-com/brevwick-sdk-js/issues/91) release
 - Companion repos:
   - `brevwick-ops/react-native-worktree.md` — SDD § 12.4 + ADR-0008 (1 worktree)
@@ -26,7 +26,7 @@ Tier 0 is gated: WT-rn-scaffold (#82) must land before any other worktree branch
 - Wire format parity with `@tatlacas/brevwick-sdk` and `brevwick` (Flutter); `device_context.platform` is `react-native-ios` / `react-native-android` (the only deliberate divergence; documented in #52 SDD update)
 - Never-throws contract: `submit()` and `captureScreenshot()` must resolve, never reject. Placeholder PNG (1×1 transparent) when capture fails or `react-native-view-shot` peer is absent.
 - Conventional commits, subject ≤ 72 chars; no Co-Authored-By
-- CI gauntlet green locally before push: `pnpm install --frozen-lockfile && pnpm lint && pnpm type-check && pnpm test && pnpm build`
+- CI gauntlet green locally before push (matches `.github/workflows/ci.yml`): `pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm type-check && pnpm test:cover && pnpm build && pnpm size`
 - Squash-merge into `main` only
 - **Do not remove worktrees** — the user cleans them up
 
@@ -77,10 +77,10 @@ TIER 2 — After Tier 1 fully landed (2 parallel)
   WT-rn-example-docs:       #89 + #90 bundled  Expo example app + README
 
 TIER 3 — After Tier 2 merges (1 worktree)
-  WT-rn-release:            #91  changesets + 0.1.0-beta.0 publish
+  WT-rn-release:            #91  changesets + first lockstep beta publish
 ```
 
-Worktrees live at `/Users/tatlacas/repos/brevwick/brevwick-sdk-js-wt-rn-<slug>`.
+Worktrees live at `~/repos/brevwick/brevwick-sdk-js-wt-rn-<slug>`.
 
 ---
 
@@ -99,7 +99,7 @@ Lands the empty workspace package: `package.json`, `tsup.config.ts`, `tsconfig.j
 **Can run in parallel with:** anything outside this initiative.
 
 ```bash
-cd /Users/tatlacas/repos/brevwick/brevwick-sdk-js
+cd ~/repos/brevwick/brevwick-sdk-js
 git fetch origin
 git worktree add ../brevwick-sdk-js-wt-rn-scaffold -b chore/issue-82-react-native-scaffold origin/main
 cd ../brevwick-sdk-js-wt-rn-scaffold
@@ -114,7 +114,7 @@ STEP 1 — Read project context:
 - Read packages/react/package.json, packages/react/tsup.config.ts, packages/react/tsconfig.json, packages/react/vitest.config.ts — they are the closest template.
 - Read packages/sdk/package.json for the core's exports/types layout.
 - Run: gh api repos/tatlacas-com/brevwick-sdk-js/issues/82 --jq '.body'
-- Read the plan: /Users/tatlacas/.claude/plans/we-now-have-sdks-generic-dolphin.md (architecture + critical files sections).
+- Read the plan: ~/.claude/plans/we-now-have-sdks-generic-dolphin.md (architecture + critical files sections).
 
 STEP 2 — Create packages/react-native/package.json:
 - name: '@tatlacas/brevwick-react-native'
@@ -215,7 +215,7 @@ Bundled because `useFeedback` depends on the context shape installed by `Brevwic
 **Can run in parallel with:** WT-rn-device, WT-rn-screenshot, WT-rn-route-ring.
 
 ```bash
-cd /Users/tatlacas/repos/brevwick/brevwick-sdk-js
+cd ~/repos/brevwick/brevwick-sdk-js
 git fetch origin
 git worktree add ../brevwick-sdk-js-wt-rn-provider-hook -b feat/issue-83-84-rn-provider-hook origin/main
 cd ../brevwick-sdk-js-wt-rn-provider-hook
@@ -300,7 +300,7 @@ Auto-collects RN device context for every submit. Wire-shape matches Flutter SDK
 **Can run in parallel with:** WT-rn-provider-hook, WT-rn-screenshot, WT-rn-route-ring.
 
 ```bash
-cd /Users/tatlacas/repos/brevwick/brevwick-sdk-js
+cd ~/repos/brevwick/brevwick-sdk-js
 git fetch origin
 git worktree add ../brevwick-sdk-js-wt-rn-device -b feat/issue-85-rn-device origin/main
 cd ../brevwick-sdk-js-wt-rn-device
@@ -313,7 +313,7 @@ THIS REPO: \$(pwd)
 STEP 1 — Read context:
 - Read CLAUDE.md.
 - Run: gh api repos/tatlacas-com/brevwick-sdk-js/issues/85 --jq '.body'
-- Read the Flutter precedent: /Users/tatlacas/repos/brevwick/brevwick-sdk-flutter/lib/src/device.dart for wire-shape parity.
+- Read the Flutter precedent: ~/repos/brevwick/brevwick-sdk-flutter/lib/src/device.dart for wire-shape parity.
 - Read the plan's 'What's RN-specific' table.
 
 STEP 2 — packages/react-native/src/device.ts:
@@ -324,7 +324,7 @@ STEP 2 — packages/react-native/src/device.ts:
   - locale: NativeModules.SettingsManager?.settings?.AppleLocale (iOS) || NativeModules.I18nManager?.localeIdentifier (Android) || 'en-US'
   - sdk: { name: 'brevwick-react-native', version: <package version, read at build time>, platform: Platform.OS }
 - Cache the static fields at first call; re-read locale + viewport per submit (orientation changes; locale switching).
-- All snake_case fields must match Flutter wire shape EXACTLY. Verify against /Users/tatlacas/repos/brevwick/brevwick-sdk-flutter/lib/src/device.dart.
+- All snake_case fields must match Flutter wire shape EXACTLY. Verify against ~/repos/brevwick/brevwick-sdk-flutter/lib/src/device.dart.
 
 STEP 3 — Wire into the provider:
 - The provider's userContext callback path merges device context into the submit payload via a small helper (or pass collectDeviceContext as the userContext-extending function).
@@ -371,7 +371,7 @@ Native widget capture via `react-native-view-shot`, lazy-imported as an optional
 **Can run in parallel with:** WT-rn-provider-hook, WT-rn-device, WT-rn-route-ring.
 
 ```bash
-cd /Users/tatlacas/repos/brevwick/brevwick-sdk-js
+cd ~/repos/brevwick/brevwick-sdk-js
 git fetch origin
 git worktree add ../brevwick-sdk-js-wt-rn-screenshot -b feat/issue-86-rn-screenshot origin/main
 cd ../brevwick-sdk-js-wt-rn-screenshot
@@ -385,7 +385,7 @@ STEP 1 — Read context:
 - Read CLAUDE.md (never-throws contract section; redaction not relevant here but referenced).
 - Read packages/sdk/src/screenshot.ts for the placeholder semantics — the RN path mirrors them.
 - Run: gh api repos/tatlacas-com/brevwick-sdk-js/issues/86 --jq '.body'
-- Read Flutter precedent: /Users/tatlacas/repos/brevwick/brevwick-sdk-flutter/lib/src/screenshot.dart (especially BrevwickSkip refcount).
+- Read Flutter precedent: ~/repos/brevwick/brevwick-sdk-flutter/lib/src/screenshot.dart (especially BrevwickSkip refcount).
 
 STEP 2 — packages/react-native/src/screenshot.ts:
 - captureScreenshot(viewRef: RefObject<View>): Promise<Blob>
@@ -398,7 +398,7 @@ STEP 2 — packages/react-native/src/screenshot.ts:
 STEP 3 — packages/react-native/src/skip.tsx:
 - <BrevwickSkip>{children}</BrevwickSkip> wraps a subtree; sets a marker on the underlying View ref so the screenshot path can hide-then-restore via setNativeProps({ opacity: 0 }) or a refcount-aware Visibility-equivalent.
 - Refcount via WeakMap so concurrent captures don't double-restore.
-- Mirror Flutter's BrevwickSkip pattern in /Users/tatlacas/repos/brevwick/brevwick-sdk-flutter/lib/src/screenshot.dart.
+- Mirror Flutter's BrevwickSkip pattern in ~/repos/brevwick/brevwick-sdk-flutter/lib/src/screenshot.dart.
 
 STEP 4 — Wire into the provider's instance.captureScreenshot:
 - The core's createBrevwick().captureScreenshot is DOM-specific; RN provider overrides via the existing 'capture override' pattern in the core (verify: packages/sdk/src/screenshot.ts may expose a hook). If not exposed, add a thin override layer on the RN provider so useFeedback().captureScreenshot calls the RN path.
@@ -449,7 +449,7 @@ PREOF
 **Can run in parallel with:** WT-rn-provider-hook, WT-rn-device, WT-rn-screenshot.
 
 ```bash
-cd /Users/tatlacas/repos/brevwick/brevwick-sdk-js
+cd ~/repos/brevwick/brevwick-sdk-js
 git fetch origin
 git worktree add ../brevwick-sdk-js-wt-rn-route-ring -b feat/issue-87-rn-route-ring origin/main
 cd ../brevwick-sdk-js-wt-rn-route-ring
@@ -462,7 +462,7 @@ THIS REPO: \$(pwd)
 STEP 1 — Read context:
 - Read CLAUDE.md.
 - Read packages/sdk/src/rings/ — the core's route ring buffer is reused; this worktree only changes the EVENT SOURCE.
-- Read Flutter precedent: /Users/tatlacas/repos/brevwick/brevwick-sdk-flutter/lib/src/rings/route.dart (buffer + redaction semantics; 20-entry cap).
+- Read Flutter precedent: ~/repos/brevwick/brevwick-sdk-flutter/lib/src/rings/route.dart (buffer + redaction semantics; 20-entry cap).
 - Run: gh api repos/tatlacas-com/brevwick-sdk-js/issues/87 --jq '.body'
 - IF WT-rn-provider-hook has merged: rebase onto origin/main and read packages/react-native/src/provider.tsx for the navigationRef prop shape.
 - IF WT-rn-provider-hook has NOT merged: assume the prop interface { current: { addListener: ... } | null }; coordinate with that worktree on rebase.
@@ -532,7 +532,7 @@ Drop-in `<FeedbackButton />`: floating Pressable + RN `<Modal>` form. Matches `p
 **Can run in parallel with:** WT-rn-example-docs.
 
 ```bash
-cd /Users/tatlacas/repos/brevwick/brevwick-sdk-js
+cd ~/repos/brevwick/brevwick-sdk-js
 git fetch origin
 git worktree add ../brevwick-sdk-js-wt-rn-feedback-button -b feat/issue-88-rn-feedback-button origin/main
 cd ../brevwick-sdk-js-wt-rn-feedback-button
@@ -615,7 +615,7 @@ Bundled because both ship the same install snippet, env-var convention, and veri
 **Can run in parallel with:** WT-rn-feedback-button.
 
 ```bash
-cd /Users/tatlacas/repos/brevwick/brevwick-sdk-js
+cd ~/repos/brevwick/brevwick-sdk-js
 git fetch origin
 git worktree add ../brevwick-sdk-js-wt-rn-example-docs -b docs/issue-89-90-rn-example-docs origin/main
 cd ../brevwick-sdk-js-wt-rn-example-docs
@@ -696,9 +696,9 @@ PREOF
 
 ---
 
-### Worktree rn-release: changesets + 0.1.0-beta.0 publish (#91)
+### Worktree rn-release: changesets + first lockstep beta publish (#91)
 
-Cuts the first npm beta of `@tatlacas/brevwick-react-native`. Lockstep with the suite (currently `1.0.0-beta.x`). Optional: add `size-limit` budget entries so future PRs are gated.
+Cuts the first npm beta of `@tatlacas/brevwick-react-native`, lockstep with the suite (currently `1.0.0-beta.x`; whatever the next beta number is at merge time). Optional: add `size-limit` budget entries so future PRs are gated.
 
 **Scope:** `.changeset/*.md`, optionally `.size-limit.js` or `packages/react-native/.size-limit.json`. Verify `package.json publishConfig` already has `provenance: true` (set by #82).
 
@@ -707,7 +707,7 @@ Cuts the first npm beta of `@tatlacas/brevwick-react-native`. Lockstep with the 
 **Can run in parallel with:** companion brevwick-web registry flip (`coming-soon` → `live`) — cross-repo follow-up, not a blocker for this PR.
 
 ```bash
-cd /Users/tatlacas/repos/brevwick/brevwick-sdk-js
+cd ~/repos/brevwick/brevwick-sdk-js
 git fetch origin
 git worktree add ../brevwick-sdk-js-wt-rn-release -b chore/issue-91-rn-release origin/main
 cd ../brevwick-sdk-js-wt-rn-release
