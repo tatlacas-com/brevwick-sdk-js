@@ -15,7 +15,11 @@
  */
 import type { NetworkEntry } from '../types';
 import type { RingContext, RingDefinition } from '../core/internal';
-import { createRedactor, type Redactor } from '../core/internal/redact';
+import {
+  SENSITIVE_PARAM_KEYS,
+  createRedactor,
+  type Redactor,
+} from '../core/internal/redact';
 
 const REQUEST_BODY_CAP = 2048;
 const RESPONSE_BODY_CAP = 4096;
@@ -37,7 +41,6 @@ const HEADER_ALLOWLIST: ReadonlySet<string> = new Set([
   'x-trace-id',
 ]);
 
-const REDACT_QUERY_PARAM = /^(token|auth|key|session|sig).*/i;
 const BINARY_CONTENT_TYPE = /(^image\/)|(^audio\/)|(^video\/)|octet-stream/i;
 
 function sanitiseHeaders(
@@ -86,7 +89,7 @@ function redactUrl(raw: string): string {
   if (!parsed) return raw;
   const toDelete: string[] = [];
   parsed.searchParams.forEach((_, key) => {
-    if (REDACT_QUERY_PARAM.test(key)) toDelete.push(key);
+    if (SENSITIVE_PARAM_KEYS.test(key)) toDelete.push(key);
   });
   for (const key of toDelete) parsed.searchParams.delete(key);
   // Preserve the input shape: if the caller passed a relative URL, return one.

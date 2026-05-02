@@ -232,10 +232,34 @@ const defaultRedactor = createRedactor();
  * do not need per-instance config — `submit.ts` and the rings inject a
  * configured redactor at install time, but module-level callers (and the
  * test suite for redact itself) use this default.
+ *
+ * Re-exported on the public surface (`@tatlacas/brevwick-sdk`) so adapter
+ * packages (e.g. `@tatlacas/brevwick-react-native`) can run the same global
+ * sweep over text they emit before pushing into a ring. This is the
+ * "every payload that leaves the device runs through `redact()` first"
+ * contract from CLAUDE.md.
  */
 export function redact(input: string): string {
   return defaultRedactor(input);
 }
+
+/**
+ * Shared sensitive-parameter key matcher. Names that match this regex are
+ * considered too risky to ship on the wire as keys in a query/param string;
+ * the value is replaced with a marker rather than serialised. Used by:
+ *
+ *  - `packages/sdk/src/rings/network.ts` — strips matching `URLSearchParams`
+ *    keys from captured URLs.
+ *  - `packages/react-native/src/rings/route.ts` — masks matching React
+ *    Navigation route param keys before serialising them into the route
+ *    `path`.
+ *
+ * Centralising the regex here keeps both rings in lockstep — historically
+ * the two had drifted with two parallel definitions of "what counts as
+ * sensitive". Re-exported on the public SDK surface so adapter packages
+ * import the source-of-truth instead of redefining it.
+ */
+export const SENSITIVE_PARAM_KEYS: RegExp = /^(token|auth|key|session|sig).*/i;
 
 export function redactValue<T>(
   value: T,

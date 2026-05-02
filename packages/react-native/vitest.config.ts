@@ -39,9 +39,11 @@ export default defineConfig({
         'src/version.ts',
       ],
       // Floor mirroring `packages/react/vitest.config.ts` (75 / 75 / 75 / 70).
-      // Branches sit a notch lower because the screenshot module has several
-      // defensive `?? null` / `?? default` ternaries that resolve only on
-      // the unhappy paths.
+      // Set when #87 (route ring) shipped the first real test code in this
+      // package; branches sit a notch lower because the screenshot module
+      // has several defensive `?? null` / `?? default` ternaries that
+      // resolve only on the unhappy paths. #83's provider work will
+      // tighten further.
       thresholds: {
         lines: 75,
         statements: 75,
