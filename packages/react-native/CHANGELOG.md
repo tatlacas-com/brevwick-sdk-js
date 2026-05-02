@@ -17,7 +17,7 @@
   Collector is shipped unwired and integrated into `composePayload()` by
   [#83](https://github.com/tatlacas-com/brevwick-sdk-js/issues/83)+[#84](https://github.com/tatlacas-com/brevwick-sdk-js/issues/84) (WT-rn-provider-hook).
 
-- [#102](https://github.com/tatlacas-com/brevwick-sdk-js/pull/102) [`6990577`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/6990577b3e3c07c69354f5a829aacbc2aacbac95) Thanks [@tatlacas](https://github.com/tatlacas)! - chore(release): @tatlacas/brevwick-react-native first beta ([#91](https://github.com/tatlacas-com/brevwick-sdk-js/issues/91))
+- [#102](https://github.com/tatlacas-com/brevwick-sdk-js/pull/102) [`6990577`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/6990577b3e3c07c69354f5a829aacbc2aacbac95) Thanks [@tatlacas](https://github.com/tatlacas)! - chore(release): @tatlacas/brevwick-react-native first beta ([#91](https://github.com/tatlacas-com/brevwick-sdk-js/issues/91)).
 
   Initial React Native adapter package: BrevwickProvider, useFeedback hook,
   FeedbackButton + Modal, react-native-view-shot optional-peer screenshot,
