@@ -92,6 +92,25 @@ describe('collectDeviceContext', () => {
     });
   });
 
+  it('produces a react-native-macos shape on RN-macOS without throwing', () => {
+    // `DeviceContext.platform` is typed as `string` precisely so future RN
+    // platforms (`react-native-macos`, `react-native-windows`,
+    // `react-native-web`) flow through unchanged. RN-macOS / Windows are
+    // explicitly out of the launch targets, but pinning the matrix here
+    // catches an accidental "throw on unknown OS" regression and confirms
+    // the wider-platform contract the worktree.md alludes to. The cohort
+    // intentionally splits from `device_context.platform: 'web'` that the
+    // core JS SDK emits — backend triage can branch on the prefix.
+    platform.OS = 'macos';
+    platform.Version = '14.0';
+    settingsManager.settings = undefined;
+    i18n.localeIdentifier = 'en_US';
+    const ctx = collectDeviceContext();
+    expect(ctx.platform).toBe('react-native-macos');
+    expect(ctx.sdk.platform).toBe('macos');
+    expect(ctx.ua).toBe('react-native macos 14.0');
+  });
+
   it('only diverges from the iOS snapshot in the platform string when the same call is made on Android', () => {
     // Wire-shape parity guard: the only documented divergence between the
     // RN and the Flutter `device_context` is `platform`. If a future edit
@@ -145,6 +164,15 @@ describe('locale fallback chain', () => {
     settingsManager.settings = { AppleLocale: '' };
     i18n.localeIdentifier = '';
     expect(collectDeviceContext().locale).toBe('en-US');
+  });
+
+  it('skips an empty-string AppleLanguages[0] and falls through to the next link', () => {
+    // The AppleLanguages branch uses the same `length > 0` guard as the
+    // AppleLocale branch — an empty first entry must not be returned, it
+    // falls through to I18nManager.localeIdentifier.
+    settingsManager.settings = { AppleLanguages: [''] };
+    i18n.localeIdentifier = 'pt_BR';
+    expect(collectDeviceContext().locale).toBe('pt_BR');
   });
 });
 

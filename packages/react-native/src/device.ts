@@ -117,12 +117,11 @@ function readLocale(): string {
     return appleLocale;
   }
   const appleLanguages = settingsManager?.settings?.AppleLanguages;
-  if (
-    Array.isArray(appleLanguages) &&
-    appleLanguages.length > 0 &&
-    typeof appleLanguages[0] === 'string'
-  ) {
-    return appleLanguages[0]!;
+  if (Array.isArray(appleLanguages) && appleLanguages.length > 0) {
+    const first = appleLanguages[0];
+    if (typeof first === 'string' && first.length > 0) {
+      return first;
+    }
   }
   const i18nManager = (
     NativeModules as unknown as {
