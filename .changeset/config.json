@@ -13,7 +13,8 @@
       "@tatlacas/brevwick-solid",
       "@tatlacas/brevwick-vue",
       "@tatlacas/brevwick-svelte",
-      "@tatlacas/brevwick-angular"
+      "@tatlacas/brevwick-angular",
+      "@tatlacas/brevwick-react-native"
     ]
   ],
   "access": "public",

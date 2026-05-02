@@ -1,0 +1,73 @@
+{
+  "name": "@tatlacas/brevwick-react-native",
+  "version": "1.0.0-beta.0",
+  "description": "Brevwick React Native bindings — drop-in QA feedback widget for Expo and bare React Native apps.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "react-native": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "prebuild": "node scripts/generate-version.mjs",
+    "build": "tsup",
+    "predev": "node scripts/generate-version.mjs",
+    "dev": "tsup --watch",
+    "pretest": "node scripts/generate-version.mjs",
+    "test": "vitest run",
+    "pretest:cover": "node scripts/generate-version.mjs",
+    "test:cover": "vitest run --coverage",
+    "type-check": "node scripts/generate-version.mjs && tsc --noEmit"
+  },
+  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",
+    "directory": "packages/react-native"
+  },
+  "keywords": [
+    "brevwick",
+    "react-native",
+    "expo",
+    "qa",
+    "feedback",
+    "bug-issue"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "peerDependencies": {
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "react": ">=18 <20",
+    "react-native": ">=0.72 <0.78",
+    "react-native-view-shot": ">=4 <5"
+  },
+  "peerDependenciesMeta": {
+    "react-native-view-shot": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@tatlacas/brevwick-sdk": "workspace:*",
+    "@testing-library/react-native": "^13.0.0",
+    "@types/react": "^19.2.14",
+    "react": "^19.2.4",
+    "react-native": "^0.76.0",
+    "react-native-view-shot": "^4.0.0"
+  }
+}
