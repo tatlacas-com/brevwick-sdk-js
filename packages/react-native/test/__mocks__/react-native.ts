@@ -59,16 +59,30 @@ export const Dimensions = {
   }),
 };
 
-export const NativeModules = {
+// `I18nManager` is exported BOTH as a top-level `react-native` symbol AND as
+// `NativeModules.I18nManager` — real React Native does the same, with both
+// references pointing at the same underlying native-module table. The shared
+// reference matters: tests that mutate one path (e.g. `I18nManager
+// .localeIdentifier = 'de_DE'`) should see the change reflected on the other,
+// and `device.ts` reads from the `NativeModules` path per issue #85.
+export const I18nManager: { localeIdentifier?: string; isRTL: boolean } = {
+  localeIdentifier: 'en_US',
+  isRTL: false,
+};
+
+export const NativeModules: {
+  SettingsManager: {
+    settings:
+      | { AppleLocale?: string; AppleLanguages?: readonly string[] }
+      | undefined;
+  };
+  I18nManager: { localeIdentifier?: string; isRTL: boolean };
+} = {
   SettingsManager: {
     settings: {
       AppleLocale: 'en_US',
       AppleLanguages: ['en_US'],
     },
   },
-};
-
-export const I18nManager = {
-  localeIdentifier: 'en_US',
-  isRTL: false,
+  I18nManager,
 };
