@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Brevwick RN Example",
+    "slug": "brevwick-rn-example",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "scheme": "brevwick-rn-example",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.brevwick.example"
+    },
+    "android": {
+      "package": "dev.brevwick.example",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

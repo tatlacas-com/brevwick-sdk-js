@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
+import type { View } from 'react-native';
 import type {
   FeedbackInput,
   SubmitError,
@@ -6,6 +13,10 @@ import type {
 } from '@tatlacas/brevwick-sdk';
 import { useBrevwick } from './context';
 import { getPhaseBus, type PhaseEvent } from './internal-bridge';
+import {
+  captureScreenshot as captureScreenshotNative,
+  type CaptureScreenshotOpts,
+} from './screenshot';
 
 /**
  * Submission lifecycle surfaced by {@link useFeedback}. Held for backward
@@ -48,8 +59,24 @@ export type FeedbackPhase =
 export interface UseFeedbackResult {
   /** Submit feedback. Returns the same tagged union the core SDK returns. */
   submit: (input: FeedbackInput) => Promise<SubmitResult>;
-  /** Capture a screenshot via the core SDK. RN-specific capture lands in #86. */
-  captureScreenshot: () => Promise<Blob>;
+  /**
+   * Capture a screenshot.
+   *
+   * - **With a `viewRef`** (recommended on RN), delegates to the package's
+   *   {@link captureScreenshotNative} which uses `react-native-view-shot`
+   *   when the optional peer is installed.
+   * - **Without a `viewRef`**, delegates to the core SDK's
+   *   {@link Brevwick.captureScreenshot} — that path depends on `document`
+   *   and on RN always resolves to the placeholder PNG. Pass a `viewRef`
+   *   for real captures.
+   *
+   * Never throws — returns the placeholder PNG on any failure (preserves
+   * the SDK's never-throws contract from SDD § 12).
+   */
+  captureScreenshot: (
+    viewRef?: RefObject<View | null>,
+    opts?: CaptureScreenshotOpts,
+  ) => Promise<Blob>;
   /** Current submission status. */
   status: FeedbackStatus;
   /**
@@ -173,7 +200,20 @@ export function useFeedback(): UseFeedbackResult {
   }, [runSubmit]);
 
   const captureScreenshot = useCallback(
-    (): Promise<Blob> => brevwick.captureScreenshot(),
+    (
+      viewRef?: RefObject<View | null>,
+      opts?: CaptureScreenshotOpts,
+    ): Promise<Blob> => {
+      // When the caller hands us a viewRef, route through the RN-native
+      // capture path (`react-native-view-shot` when available, placeholder
+      // on failure / missing peer). Without a viewRef we cannot reach the
+      // RN view tree, so fall back to the core SDK's capture — on RN that
+      // path always resolves to the placeholder because `document` is
+      // undefined, but the contract stays consistent: never throws, always
+      // a Blob.
+      if (viewRef) return captureScreenshotNative(viewRef, opts);
+      return brevwick.captureScreenshot();
+    },
     [brevwick],
   );
 

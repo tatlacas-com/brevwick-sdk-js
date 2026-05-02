@@ -212,12 +212,28 @@ describe('useFeedback', () => {
     expect(retried).toBeUndefined();
   });
 
-  it('captureScreenshot passes through to the SDK', async () => {
+  it('captureScreenshot() with no viewRef passes through to the SDK (DOM path)', async () => {
     const blob = new Blob(['png'], { type: 'image/png' });
     captureScreenshot.mockResolvedValueOnce(blob);
     const { result } = renderHook(() => useFeedback(), { wrapper });
     await expect(result.current.captureScreenshot()).resolves.toBe(blob);
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('captureScreenshot(viewRef) routes through the RN-native path, not the SDK', async () => {
+    // The RN-native screenshot path falls through to a placeholder PNG when
+    // `react-native-view-shot` is not installed (the test runtime). We
+    // assert two things: the returned Blob is a non-empty `image/png`
+    // (the placeholder shape) AND the core SDK's `captureScreenshot` was
+    // NOT called — proving the hook routed to the RN path on viewRef
+    // presence, fixing the README claim that the no-arg form returns a
+    // working capture on RN.
+    const { result } = renderHook(() => useFeedback(), { wrapper });
+    const fakeViewRef = { current: null };
+    const out = await result.current.captureScreenshot(fakeViewRef);
+    expect(out.type).toBe('image/png');
+    expect(out.size).toBeGreaterThan(0);
+    expect(captureScreenshot).not.toHaveBeenCalled();
   });
 
   it('throws synchronously when used outside a provider', () => {

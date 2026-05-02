@@ -7,6 +7,8 @@ React bindings for [Brevwick](https://brevwick.dev) — a provider, a drop-in fl
 
 Wraps [`@tatlacas/brevwick-sdk`](https://www.npmjs.com/package/@tatlacas/brevwick-sdk) — all configuration and submit semantics live there. This package adds the React ergonomics.
 
+> **Building for React Native?** Use [`@tatlacas/brevwick-react-native`](../react-native/README.md) instead — same provider / `useFeedback` ergonomics, but with RN-native primitives (Hermes-safe imports, `react-native-view-shot` for screenshots, React Navigation route ring).
+
 ## Install
 
 ```bash

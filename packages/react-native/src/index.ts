@@ -20,6 +20,12 @@ export type {
   NavigationRefLike,
 } from './rings/route';
 
+// Public route-ring hook. Owns the `_internal.push` reach-around so the
+// documented-private SDK surface only crosses the adapter boundary in one
+// place — every consumer that needs the route ring uses this hook (or the
+// lower-level `attachRouteRing`) rather than re-implementing the cast.
+export { useRouteRing } from './use-route-ring';
+
 export { collectDeviceContext, type DeviceContext } from './device';
 
 export { captureScreenshot } from './screenshot';

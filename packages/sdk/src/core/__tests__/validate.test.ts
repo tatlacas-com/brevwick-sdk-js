@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { INVALID_CONFIG_CODE, validateConfig } from '../validate';
+import {
+  INVALID_CONFIG_CODE,
+  PROJECT_KEY_PATTERN,
+  validateConfig,
+} from '../validate';
 
 const VALID_KEY = 'pk_live_abcdefghijklmnop01';
 
@@ -231,5 +235,46 @@ describe('validateConfig', () => {
     } catch (err) {
       expect((err as { code?: string }).code).toBe(INVALID_CONFIG_CODE);
     }
+  });
+});
+
+// `PROJECT_KEY_PATTERN` is exported so adapter packages and example apps
+// can gate UI on the same source of truth `validateConfig` enforces.
+// These tests pin the contract — if anyone tightens the pattern, the
+// failures here force a coordinated update at every consumer that
+// imports it.
+describe('PROJECT_KEY_PATTERN', () => {
+  it.each([
+    ['pk_live_abcdefghijklmnop'],
+    ['pk_test_abcdefghijklmnop'],
+    ['pk_live_ABCDEFGHIJKLMNOP01'],
+    ['pk_test_placeholder0000000'], // 24 chars after prefix; matches the example fallback.
+  ])('accepts %s', (key) => {
+    expect(PROJECT_KEY_PATTERN.test(key)).toBe(true);
+  });
+
+  it.each([
+    ['empty string', ''],
+    ['placeholder seed', 'pk_test_replace_me'],
+    ['wrong prefix', 'sk_live_abcdefghijklmnop'],
+    ['wrong env', 'pk_dev_abcdefghijklmnop'],
+    ['too short', 'pk_live_short'],
+    ['contains hyphen', 'pk_live_abcdefghijk-mnop'],
+  ])('rejects %s', (_label, value) => {
+    expect(PROJECT_KEY_PATTERN.test(value)).toBe(false);
+  });
+
+  it('agrees with validateConfig (single source of truth)', () => {
+    // Property-style: any string the regex accepts must be accepted by
+    // validateConfig, and vice versa for the rejections sample. If these
+    // ever diverge, the regex has stopped being a useful gate and a
+    // consumer would render UI that crashes on createBrevwick(...).
+    const valid = 'pk_live_abcdefghijklmnop';
+    expect(PROJECT_KEY_PATTERN.test(valid)).toBe(true);
+    expect(() => validateConfig({ projectKey: valid })).not.toThrow();
+
+    const invalid = 'pk_live_short';
+    expect(PROJECT_KEY_PATTERN.test(invalid)).toBe(false);
+    expect(() => validateConfig({ projectKey: invalid })).toThrow();
   });
 });

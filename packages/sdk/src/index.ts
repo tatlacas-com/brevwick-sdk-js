@@ -21,6 +21,18 @@ export { createBrevwick } from './core/client';
  */
 export { redact, SENSITIVE_PARAM_KEYS } from './core/internal/redact';
 
+/**
+ * Project-key regex surfaced for adapter packages and example apps that
+ * need to gate UI on whether a user-supplied env var would be accepted by
+ * {@link createBrevwick}. Single source of truth — the SDK's own validator
+ * (`validateConfig`) consumes the same regex, so any tightening here flows
+ * to every consumer without per-call-site drift. Use as
+ * `PROJECT_KEY_PATTERN.test(value)`; we don't ship a wrapped boolean
+ * helper because the eager bundle is within ~30 B of its 2.85 kB ceiling
+ * (CLAUDE.md / SDD § 12) and a one-line `.test(value)` is no friction.
+ */
+export { PROJECT_KEY_PATTERN } from './core/validate';
+
 export type {
   Brevwick,
   BrevwickConfig,
