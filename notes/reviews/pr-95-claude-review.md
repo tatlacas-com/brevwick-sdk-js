@@ -86,11 +86,19 @@ The seam itself is sound (no shortcut, no provider stub-work papering over the m
 | `packages/sdk/src/core/internal/redact.ts` | UPDATED | `SENSITIVE_PARAM_KEYS` constant added (single source of truth, replaces the `REDACT_QUERY_PARAM` literal previously in `network.ts`). |
 | `packages/sdk/src/rings/network.ts` | UPDATED | Inline `REDACT_QUERY_PARAM` removed; consumes shared `SENSITIVE_PARAM_KEYS` from `redact.ts`. Behaviour unchanged. |
 
-## Validation — 2026-05-02
+## Validation — 2026-05-02 (round 1 — HISTORICAL)
 
-**Verdict**: RETURNED TO FIXER
+> **Status: superseded by round 2 below.** Round 1 returned the PR to the
+> fixer over a single missing-changeset regression. That regression was
+> resolved in commit `f584636` and round 2 (further down this file) reports
+> APPROVED. The "Items Returned to Fixer" section on this round records
+> the original gap for audit-trail purposes only — the changeset is now
+> present at `.changeset/react-native-route-ring.md` and `Changeset check`
+> CI is green. Do **not** treat this section as a live action list.
 
-The 21 substantive review items resolve cleanly — code reads exactly as the fixer described, all gauntlet steps pass locally, and the bundle / coverage figures match what was claimed. **One regression**: PR-hygiene item #5 ("No changeset entry") was struck through with a justification that does not survive contact with the actual CI policy or the precedent set by sibling react-native PRs.
+**Verdict (at the time of writing)**: RETURNED TO FIXER
+
+The 21 substantive review items resolve cleanly — code reads exactly as the fixer described, all gauntlet steps pass locally, and the bundle / coverage figures match what was claimed. **One regression** (since fixed): PR-hygiene item #5 ("No changeset entry") was struck through with a justification that does not survive contact with the actual CI policy or the precedent set by sibling react-native PRs.
 
 ### Items Confirmed Fixed
 
@@ -105,12 +113,9 @@ The 21 substantive review items resolve cleanly — code reads exactly as the fi
 - [x] **Architecture / clean-code**. No `for now` / `TODO` / `FIXME` / `HACK` markers in any changed file. `SENSITIVE_PARAM_KEYS` naming matches the SCREAMING_SNAKE convention used for other regex constants in `redact.ts` / `network.ts` (`IPV4`, `IPV6`, `BUILTIN`, `BINARY_CONTENT_TYPE`, `ABSOLUTE_URL`). No leftover `REDACT_QUERY_PARAM` or `REDACT_KEY` duplicates anywhere in `packages/`. `network.ts` retains `createRedactor` for per-instance config (correctly — only the regex constant was hoisted, behaviour byte-identical).
 - [x] **Cross-runtime safety**. No `window` / `document` / Node-only globals in route.ts; `Date.now()` and `encodeURIComponent` are universal.
 
-### Items Returned to Fixer
+### Items Returned to Fixer (RESOLVED in round 2)
 
-- [ ] **Missing changeset entry — CI failure**. `.github/workflows/changeset-check.yml:33-34` runs `pnpm changeset status --since="origin/main"` on every PR touching `packages/**` and exits non-zero if no `.changeset/*.md` was added. The `Changeset check / check` job is currently **failing** on PR #95 (`gh pr checks 95` → run 25248046853, `🦋 error Some packages have been changed but no changesets were found`). The fixer struck through this item citing "by design per `react-native-worktree.md` (changesets land in WT-rn-release #91)" — but `react-native-worktree.md` does not exempt feature worktrees from changesets, and sibling react-native PRs #96 (commit `3f3219d`) and #98 (commit `6e8f39e`) both shipped explicit changeset entries against the same CI policy. Required action:
-  - Add `.changeset/<slug>.md` (suggest `react-native-route-ring.md`) describing the new `attachRouteRing` public surface in `@tatlacas/brevwick-react-native`.
-  - Per the lockstep versioning rule in CLAUDE.md and the `redact` / `SENSITIVE_PARAM_KEYS` / `RouteEntry` re-exports added to `packages/sdk/src/index.ts`, the same changeset (or a second entry) should bump `@tatlacas/brevwick-sdk` minor — the eager-chunk public surface widened.
-  - After the entry lands, `gh pr checks 95` must show all six checks green before re-validation.
+- [x] **Missing changeset entry — CI failure** (now fixed in `f584636`). `.github/workflows/changeset-check.yml:33-34` runs `pnpm changeset status --since="origin/main"` on every PR touching `packages/**` and exits non-zero if no `.changeset/*.md` was added. The `Changeset check / check` job was failing on PR #95 at commit `da5888f` (run 25248046853, `🦋 error Some packages have been changed but no changesets were found`). The fixer's earlier strike-through citing "by design per `react-native-worktree.md`" did not survive — `react-native-worktree.md` does not exempt feature worktrees from changesets, and sibling react-native PRs #96 (commit `3f3219d`) and #98 (commit `6e8f39e`) both shipped explicit changeset entries against the same CI policy. **Resolved by**: `.changeset/react-native-route-ring.md` declaring `@tatlacas/brevwick-react-native: minor` (new `attachRouteRing` public surface) and `@tatlacas/brevwick-sdk: minor` (new `redact` / `SENSITIVE_PARAM_KEYS` / `RouteEntry` re-exports). `gh pr checks 95` is green on `f584636`. See round 2 for full re-validation.
 
 ### Independent Findings
 
@@ -127,3 +132,38 @@ None beyond the changeset gap above. Spot-checks of duplicated `redact` implemen
 - `pnpm type-check` — pass (all 7 packages)
 - `pnpm test:cover` — pass (react-native 95.12% / 93.93% / 100% / 100%; sdk 245/245; all suites green)
 - `gh pr checks 95` — **FAIL** (`Changeset check / check` job is non-zero; all other checks pass)
+
+## Validation — 2026-05-02 (round 2)
+
+**Verdict**: APPROVED
+
+The single open regression from round 1 (missing changeset) is resolved. Commit `f584636` is scoped exactly to the changeset addition + checklist update; nothing else moved.
+
+### Items Confirmed Fixed
+
+- [x] **Changeset present and correct** — `.changeset/react-native-route-ring.md` exists. Frontmatter declares `@tatlacas/brevwick-react-native: minor` (new `attachRouteRing` / `NavigationContainerRefLike` / `NavigationRefLike` public surface) and `@tatlacas/brevwick-sdk: minor` (new public `redact` / `SENSITIVE_PARAM_KEYS` / `RouteEntry` re-exports). Body references issue #87, calls out the lockstep linked group from `.changeset/config.json`, and notes the network-ring deduplication that consumes the new constant.
+- [x] **`pnpm changeset status --since="origin/main"` reports the change** — Reports all 7 linked packages bumped. The label says `major` rather than `minor`, but that is correct under pre-release `beta` mode (`.changeset/pre.json` mode: `pre` / tag: `beta`) — pre mode surfaces as a major bump in `status` output even when the source changeset is `minor`. Not a regression.
+- [x] **CI fully green on `f584636`** — `gh pr checks 95` shows all 6 checks pass (`check` x2, `codecov/patch`, `codecov/project`, `size-check`, `verify-signatures`). The previously-failing `Changeset check / check` from round 1's run 25248046853 is now part of the `check` job and passing. No other check has regressed.
+- [x] **Checklist hygiene** — Line 74 is `- [x]` with a substantive note describing the changeset frontmatter, body coverage, and CI flip. No item is left as `- [ ]` in the substantive review sections (only line 110's preserved record of what round 1 returned remains, which is the intended audit trail).
+- [x] **Commit hygiene** — Subject `chore: add changeset for #87 react-native route ring` is 52 chars (≤72), conventional (`chore:`), single-line body. `git log -1 --format=%B f584636` shows no `Co-Authored-By`, no Claude attribution.
+- [x] **Scope drift** — `git show f584636 --stat` confirms the commit only touches `.changeset/react-native-route-ring.md` (+37) and `notes/reviews/pr-95-claude-review.md` (+44/-1). The fixer's untracked `packages/angular/src/lib/internal/version.ts` (`1.0.0-beta.7` → `1.0.0-beta.8`) remains in the worktree's working tree only — `git diff origin/main..HEAD -- packages/angular/src/lib/internal/version.ts` returns empty, confirming it is NOT in the PR diff.
+
+### Items Returned to Fixer
+
+None.
+
+### Independent Findings
+
+None. No banned-phrase scapegoating in the new strike-out justification on line 74. Round 1's items 1–8 remain valid — spot-checked the line-anchored claims against the diff and they still match.
+
+### Tooling
+
+- `pnpm install --frozen-lockfile` — pass
+- `pnpm format:check` — pass
+- `pnpm lint` — pass
+- `pnpm type-check` — pass (all 7 packages)
+- `pnpm test` (across all `packages/**`) — pass (497 tests across 42 files: sdk 245, react 132, svelte 30, solid 29, angular 23, vue 23, react-native 15)
+- `pnpm -r --filter "./packages/**" build` — pass (all 7 packages built; SDK eager chunk under 2.85 kB budget per chunk-split.test.ts; react-native 1.08 KB ESM / 1.61 KB CJS / 4.45 KB DTS)
+- `gh pr checks 95` — pass (6/6)
+
+Note: `pnpm build` at the workspace root fails inside `examples/next` and `examples/remix`. Both failures are pre-existing on `origin/main` (unrelated to this PR — see the `MODULE_NOT_FOUND` for `examples/svelte/tsconfig.json` originating from a Remix vite plugin tsconfig walk). CI does not run the example apps' builds. Confirmed not a regression introduced by `f584636`.
