@@ -3,7 +3,6 @@
   "compilerOptions": {
     "strict": true,
     "jsx": "react-jsx",
-    "moduleResolution": "Bundler",
     "noEmit": true
   },
   "include": ["src", "App.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]

@@ -168,7 +168,7 @@ export default function App() {
 }
 ```
 
-Build a custom feedback UI with `useFeedback()` (the drop-in `<FeedbackButton />` lands with #88), wire the React Navigation route ring with `attachRouteRing` + `useBrevwickNavigationRef`, and capture screenshots via the optional `react-native-view-shot` peer.
+Build a custom feedback UI with `useFeedback()` (the drop-in `<FeedbackButton />` lands with #88), wire the React Navigation route ring by rendering `useRouteRing()` inside the provider, and capture screenshots via the optional `react-native-view-shot` peer.
 
 Full API → [packages/react-native/README.md](./packages/react-native/README.md).
 

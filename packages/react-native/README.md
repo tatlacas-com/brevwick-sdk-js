@@ -41,12 +41,12 @@ deps (npm 7+, pnpm, yarn 3+) pull it in automatically.
 
 ### Peer dependency matrix
 
-| Peer                     | Range          | Notes                                                                                                                                                                                                          |
-| ------------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `react`                  | `>=18 <20`     | 18.x and 19.x both supported.                                                                                                                                                                                  |
-| `react-native`           | `>=0.72 <0.78` | Hermes and JSC both work; New Architecture is supported.                                                                                                                                                       |
-| `@tatlacas/brevwick-sdk` | `workspace:*`  | Lockstep with this package — installer pulls a matching version.                                                                                                                                               |
-| `react-native-view-shot` | `>=3.8.0 <5`   | **Optional.** Without it, screenshots resolve to a 1×1 placeholder PNG. Expo SDK 51 ships `~3.8.0`; bare RN typically pins `^4.0.0`. Both work — `captureRef` returns the same data-URI shape on either major. |
+| Peer                     | Range                                     | Notes                                                                                                                                                                                                          |
+| ------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `react`                  | `>=18 <20`                                | 18.x and 19.x both supported.                                                                                                                                                                                  |
+| `react-native`           | `>=0.72 <0.78`                            | Hermes and JSC both work; New Architecture is supported.                                                                                                                                                       |
+| `@tatlacas/brevwick-sdk` | matches `@tatlacas/brevwick-react-native` | Lockstep with this package — `npm install @tatlacas/brevwick-react-native` resolves the matching version automatically.                                                                                        |
+| `react-native-view-shot` | `>=3.8.0 <5`                              | **Optional.** Without it, screenshots resolve to a 1×1 placeholder PNG. Expo SDK 51 ships `~3.8.0`; bare RN typically pins `^4.0.0`. Both work — `captureRef` returns the same data-URI shape on either major. |
 
 ## Quick start
 

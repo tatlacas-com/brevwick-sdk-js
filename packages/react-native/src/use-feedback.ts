@@ -74,7 +74,7 @@ export interface UseFeedbackResult {
    * the SDK's never-throws contract from SDD § 12).
    */
   captureScreenshot: (
-    viewRef?: RefObject<View | null> | RefObject<View>,
+    viewRef?: RefObject<View | null>,
     opts?: CaptureScreenshotOpts,
   ) => Promise<Blob>;
   /** Current submission status. */
@@ -201,7 +201,7 @@ export function useFeedback(): UseFeedbackResult {
 
   const captureScreenshot = useCallback(
     (
-      viewRef?: RefObject<View | null> | RefObject<View>,
+      viewRef?: RefObject<View | null>,
       opts?: CaptureScreenshotOpts,
     ): Promise<Blob> => {
       // When the caller hands us a viewRef, route through the RN-native

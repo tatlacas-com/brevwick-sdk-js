@@ -134,7 +134,7 @@ export interface CaptureScreenshotOpts {
  * fallback must land in core's submit before the RN adapter can submit.
  */
 export async function captureScreenshot(
-  viewRef: RefObject<View | null> | RefObject<View>,
+  viewRef: RefObject<View | null>,
   opts?: CaptureScreenshotOpts,
 ): Promise<Blob> {
   const quality = opts?.quality ?? DEFAULT_QUALITY;

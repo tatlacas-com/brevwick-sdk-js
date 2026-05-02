@@ -28,7 +28,14 @@ const Stack = createStackNavigator<RootStackParamList>();
 // of crashing inside `useMemo` on `createBrevwick(...)`.
 const PLACEHOLDER_KEY = 'pk_test_replace_me';
 const PROJECT_KEY = process.env.EXPO_PUBLIC_BREVWICK_PROJECT_KEY ?? '';
-const ENDPOINT = process.env.EXPO_PUBLIC_BREVWICK_ENDPOINT;
+// `.env` files load env vars as strings, so a present-but-blank
+// `EXPO_PUBLIC_BREVWICK_ENDPOINT=` (the seeded value in `.env.example`)
+// surfaces here as `''`. `validateConfig` parses `endpoint` as a URL and
+// would reject `''` — coerce to `undefined` so the SDK falls through to
+// its default `https://api.brevwick.com`.
+const RAW_ENDPOINT = process.env.EXPO_PUBLIC_BREVWICK_ENDPOINT;
+const ENDPOINT =
+  RAW_ENDPOINT && RAW_ENDPOINT.length > 0 ? RAW_ENDPOINT : undefined;
 const KEY_IS_READY =
   PROJECT_KEY.length > 0 &&
   PROJECT_KEY !== PLACEHOLDER_KEY &&

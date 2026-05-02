@@ -67,6 +67,27 @@ else stays server-side and is `undefined` at runtime.
   modal, calls `useFeedback().submit({ description })`, and surfaces the
   staged success / error states inline.
 
+## Why `@types/react@19` with React 18.2 runtime?
+
+Expo SDK 51 ships React 18.2 at runtime, but `@types/react` is pinned to
+`^19.2.14` in this example's `devDependencies`. This is intentional and
+specific to the monorepo / pnpm setup, not advice for your own app:
+
+- The workspace also publishes a React 19 web adapter, so pnpm hoists
+  `@types/react@19.2.14` into the store.
+- React Navigation v6 declares `@types/react` as an optional dependency
+  rather than a peer, so its `.d.ts` files resolve `react` against
+  whatever the package manager hoisted — here, the React 19 types.
+- When the example pulls `<NavigationContainer>` (typed via React 19) into
+  the same JSX position as `<BrevwickProvider>` (typed via React 18),
+  TypeScript rejects the union: React 18's `ReactNode` does not accept
+  React 19's `ReactElement<unknown>`. Aligning `@types/react` to `^19`
+  here makes both sides agree.
+
+In a single-package consumer app (no monorepo), pin `@types/react` to the
+same major as your `react` runtime — `^18.3` for Expo SDK 51, `^19` for
+SDK 53+.
+
 ## Verifying the submission
 
 After submitting from the example, check your project dashboard at
