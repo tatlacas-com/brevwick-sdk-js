@@ -9,3 +9,8 @@
 export { BREVWICK_REACT_NATIVE_VERSION } from './version';
 
 export { collectDeviceContext, type DeviceContext } from './device';
+
+export { captureScreenshot } from './screenshot';
+export type { CaptureScreenshotOpts } from './screenshot';
+export { BrevwickSkip } from './skip';
+export type { BrevwickSkipProps } from './skip';

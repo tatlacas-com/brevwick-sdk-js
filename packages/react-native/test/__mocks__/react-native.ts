@@ -86,3 +86,37 @@ export const NativeModules: {
   },
   I18nManager,
 };
+
+// Minimal `<View>` shim for unit tests. Real RN `View` is a host component
+// backed by a native module; under jsdom we only need a class identifier
+// that:
+//   1. is callable as a React component (so `<View>{children}</View>` does
+//      not crash at render time — though most tests in this package do not
+//      render it),
+//   2. carries a `setNativeProps` instance method so the screenshot path's
+//      hide / restore can dispatch via the ref.
+// Tests that need to assert `setNativeProps` calls construct fake `View`
+// instances directly rather than going through React rendering.
+import { Component, type ReactNode } from 'react';
+
+export interface ViewProps {
+  children?: ReactNode;
+  style?: unknown;
+  testID?: string;
+  onLayout?: (event: unknown) => void;
+  accessibilityLabel?: string;
+  accessibilityRole?: string;
+  pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
+}
+
+export class View extends Component<ViewProps> {
+  setNativeProps(_props: { opacity?: number; [key: string]: unknown }): void {
+    // Default no-op; individual tests override on the instance to capture
+    // calls. Production code reaches the real RN setNativeProps via the
+    // host bridge — this stub exists only for vitest/jsdom.
+  }
+
+  render(): ReactNode {
+    return this.props.children ?? null;
+  }
+}

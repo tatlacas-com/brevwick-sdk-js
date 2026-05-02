@@ -15,7 +15,13 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'jsdom',
+    // happy-dom (matching `packages/sdk` and `packages/react`) ships a
+    // spec-correct `Blob.arrayBuffer()` and `Response`/`fetch` surface; the
+    // scaffold's earlier `jsdom` choice was fine for an empty package but
+    // its Blob lacks `arrayBuffer()`, which the screenshot path needs to
+    // assert wire bytes against the placeholder. Cross-package consistency
+    // is also a win — every other adapter test runs under happy-dom.
+    environment: 'happy-dom',
     include: ['src/**/*.test.{ts,tsx}'],
     // The scaffold ships zero tests by design (the issue calls for an
     // empty named-exports placeholder). Without `passWithNoTests`, vitest
