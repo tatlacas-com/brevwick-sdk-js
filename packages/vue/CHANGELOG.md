@@ -1,5 +1,12 @@
 # @tatlacas/brevwick-vue
 
+## 1.0.0-beta.9
+
+### Patch Changes
+
+- Updated dependencies [[`d509f88`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/d509f88743a38c96bff7446610ac98702dfcb00c), [`6807e6e`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/6807e6e624497c116da36ae81f10f06faf350185), [`ccdc5b7`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ccdc5b77c2ba2f0b4abe1ba4f0fe51af842233be), [`96d1a15`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/96d1a151f8eca750a4168b6d7542faf87a53eac3)]:
+  - @tatlacas/brevwick-sdk@1.0.0-beta.9
+
 ## 1.0.0-beta.8
 
 ### Minor Changes
