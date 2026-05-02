@@ -55,7 +55,7 @@
     "@tatlacas/brevwick-sdk": "workspace:*",
     "react": ">=18 <20",
     "react-native": ">=0.72 <0.78",
-    "react-native-view-shot": "^4.0.0"
+    "react-native-view-shot": ">=3.8.0 <5"
   },
   "peerDependenciesMeta": {
     "react-native-view-shot": {

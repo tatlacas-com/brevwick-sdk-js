@@ -16,7 +16,20 @@ export class BrevwickConfigError extends Error {
   }
 }
 
-const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
+/**
+ * Public regex that gates accepted `projectKey` strings — exported so adapter
+ * packages and example apps can validate user-supplied keys before constructing
+ * a `Brevwick` instance, without duplicating (and risking drift from) the
+ * single source of truth used by {@link validateConfig}. The pattern accepts
+ * `pk_live_…` or `pk_test_…` followed by 16+ alphanumeric characters; tighten
+ * here and every consumer picks up the change automatically.
+ *
+ * The regex is the only export — a `boolean`-returning helper would have
+ * cost ~25 B gzipped on top of the eager bundle (we are 30 B from the
+ * 2.85 kB ceiling), and `PROJECT_KEY_PATTERN.test(value)` is a one-line
+ * call for consumers anyway.
+ */
+export const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
 const DEFAULT_ENDPOINT = 'https://api.brevwick.com';
 const VALID_ENVIRONMENTS = [
   'dev',

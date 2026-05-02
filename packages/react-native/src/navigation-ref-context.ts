@@ -7,11 +7,20 @@ import { createContext, useContext } from 'react';
  * the adapter does not pull React Navigation in as a hard dependency for
  * consumers that don't use it. The route-ring worktree (#87) reads this
  * via {@link useBrevwickNavigationRef} and subscribes through `addListener`.
+ *
+ * `addListener` is typed against the `'state'` event literal — the only
+ * event the route ring subscribes to — so the strict overloaded signature
+ * exposed by `useNavigationContainerRef<TParamList>()` (where `event` is
+ * narrowed to a union of literal event names) is structurally assignable
+ * **without** a `as unknown as BrevwickNavigationRef` cast at the call
+ * site. Function parameter types are contravariant in TypeScript, so a
+ * narrower event type here means consumer refs widen to fit; the previous
+ * `event: string` shape did the opposite.
  */
 export interface BrevwickNavigationRef {
   current: {
     addListener: (
-      event: string,
+      event: 'state',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cb: (...args: any[]) => void,
     ) => () => void;

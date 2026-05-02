@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import {
   Modal,
   Pressable,
@@ -30,20 +30,49 @@ export function FeedbackFab({ keyReady }: FeedbackFabProps): ReactElement {
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState('');
   const { submit, status, error, reset } = useFeedback();
-  const submittingRef = useRef(false);
+  // Hold the post-success dismiss timer so we can cancel it on unmount or
+  // on early Cancel — without this, the timer would fire after teardown
+  // and call `reset()` / `setOpen(false)` against a stale render tree.
+  const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (dismissTimeoutRef.current !== null) {
+        clearTimeout(dismissTimeoutRef.current);
+        dismissTimeoutRef.current = null;
+      }
+    },
+    [],
+  );
+
+  function clearDismissTimer(): void {
+    if (dismissTimeoutRef.current !== null) {
+      clearTimeout(dismissTimeoutRef.current);
+      dismissTimeoutRef.current = null;
+    }
+  }
 
   async function handleSubmit(): Promise<void> {
-    if (submittingRef.current || !description.trim()) return;
-    submittingRef.current = true;
+    // `useFeedback().status` is the single source of truth for an in-flight
+    // submission — re-shadowing it with a local ref would just risk drift.
+    if (status === 'submitting' || !description.trim()) return;
     const result = await submit({ description });
-    submittingRef.current = false;
     if (result.ok) {
       setDescription('');
-      setTimeout(() => {
+      clearDismissTimer();
+      dismissTimeoutRef.current = setTimeout(() => {
+        dismissTimeoutRef.current = null;
         setOpen(false);
         reset();
       }, 1500);
     }
+  }
+
+  function handleCancel(): void {
+    clearDismissTimer();
+    setOpen(false);
+    setDescription('');
+    reset();
   }
 
   return (
@@ -64,7 +93,7 @@ export function FeedbackFab({ keyReady }: FeedbackFabProps): ReactElement {
         animationType="slide"
         transparent
         visible={open}
-        onRequestClose={() => setOpen(false)}
+        onRequestClose={handleCancel}
       >
         <View style={styles.modalScrim}>
           <View style={styles.modalCard}>
@@ -88,11 +117,7 @@ export function FeedbackFab({ keyReady }: FeedbackFabProps): ReactElement {
             )}
             <View style={styles.row}>
               <Pressable
-                onPress={() => {
-                  setOpen(false);
-                  setDescription('');
-                  reset();
-                }}
+                onPress={handleCancel}
                 style={[styles.btn, styles.btnGhost]}
               >
                 <Text style={styles.btnGhostLabel}>Cancel</Text>

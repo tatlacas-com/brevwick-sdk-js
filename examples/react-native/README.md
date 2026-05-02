@@ -52,10 +52,10 @@ of the wiring, Expo Go is fine; for screenshot QA, build a dev client per
 Expo only inlines env vars whose names start with `EXPO_PUBLIC_`. Anything
 else stays server-side and is `undefined` at runtime.
 
-| Variable                           | Required | Purpose                                                                                                     |
-| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
-| `EXPO_PUBLIC_BREVWICK_PROJECT_KEY` | yes      | Public ingest key (`pk_test_…` or `pk_live_…`).                                                             |
-| `EXPO_PUBLIC_BREVWICK_ENDPOINT`    | no       | Override ingest endpoint. Defaults to `staging-api.brevwick.com` in `.env.example`; omit to hit production. |
+| Variable                           | Required | Purpose                                                                                                                                                                                            |
+| ---------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EXPO_PUBLIC_BREVWICK_PROJECT_KEY` | yes      | Public ingest key (`pk_test_…` or `pk_live_…`).                                                                                                                                                    |
+| `EXPO_PUBLIC_BREVWICK_ENDPOINT`    | no       | Override ingest endpoint. Blank in `.env.example` so the SDK default (`https://api.brevwick.com`) is used; set to `https://staging-api.brevwick.com` to point at staging from a Brevwick test key. |
 
 ## What the demo does
 

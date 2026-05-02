@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react';
+import { useState, type ReactElement, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../App';
@@ -38,7 +38,11 @@ export function Home({ navigation }: Props): ReactElement {
           onPress={async () => {
             setLastAction('Failed fetch in flight');
             try {
-              await fetch('https://httpbin.org/status/503');
+              // `.invalid` is a reserved TLD (RFC 2606) — every resolver
+              // MUST return NXDOMAIN, so the failure is deterministic on
+              // every device and every network. Avoid third-party hosts
+              // (httpbin.org etc.) here: their flakiness reads as "the
+              // SDK is broken" in screenshots.
               await fetch('https://this-host-does-not-exist.brevwick.invalid');
             } catch {
               // Expected — example wants the error in the network ring.
@@ -76,7 +80,10 @@ export function Home({ navigation }: Props): ReactElement {
 
 interface SectionProps {
   title: string;
-  children: ReactElement | ReactElement[];
+  // `ReactNode` is the union the React docs recommend for arbitrary children:
+  // it accepts strings, fragments, conditional renders, and arrays — all of
+  // which the example screens elsewhere already use.
+  children: ReactNode;
 }
 function Section({ title, children }: SectionProps): ReactElement {
   return (

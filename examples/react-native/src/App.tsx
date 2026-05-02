@@ -7,8 +7,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import {
   BrevwickProvider,
   type BrevwickConfig,
-  type BrevwickNavigationRef,
 } from '@tatlacas/brevwick-react-native';
+import { PROJECT_KEY_PATTERN } from '@tatlacas/brevwick-sdk';
 import { Home } from './screens/Home';
 import { Details } from './screens/Details';
 import { FeedbackFab } from './FeedbackFab';
@@ -21,11 +21,11 @@ export type RootStackParamList = {
 
 const Stack = createStackNavigator<RootStackParamList>();
 
-// Mirrors `validateConfig` from `@tatlacas/brevwick-sdk` so the example
-// renders without crashing the React tree when `.env` still holds the
-// seeded placeholder. `createBrevwick(...)` would throw synchronously
-// inside the provider's `useMemo` otherwise.
-const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
+// Defer to the SDK's public `PROJECT_KEY_PATTERN` rather than re-
+// implementing the regex — single source of truth with `validateConfig`.
+// When the env var still holds the seeded placeholder, render with
+// `enabled: false` so the provider memoises a no-op SDK instance instead
+// of crashing inside `useMemo` on `createBrevwick(...)`.
 const PLACEHOLDER_KEY = 'pk_test_replace_me';
 const PROJECT_KEY = process.env.EXPO_PUBLIC_BREVWICK_PROJECT_KEY ?? '';
 const ENDPOINT = process.env.EXPO_PUBLIC_BREVWICK_ENDPOINT;
@@ -33,6 +33,11 @@ const KEY_IS_READY =
   PROJECT_KEY.length > 0 &&
   PROJECT_KEY !== PLACEHOLDER_KEY &&
   PROJECT_KEY_PATTERN.test(PROJECT_KEY);
+// Keep this in lockstep with the SDK's `PROJECT_KEY_PATTERN`
+// (`/^pk_(live|test)_[A-Za-z0-9]{16,}$/`) — 24 alphanumeric chars after the
+// prefix, well above the 16-char floor. Re-exported from the SDK so a
+// future tightening flows here automatically.
+const FALLBACK_PROJECT_KEY = 'pk_test_placeholder0000000';
 
 export default function App(): ReactElement {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
@@ -41,7 +46,7 @@ export default function App(): ReactElement {
   // on every render — it keys its SDK instance on config identity.
   const config = useMemo<BrevwickConfig>(
     () => ({
-      projectKey: KEY_IS_READY ? PROJECT_KEY : 'pk_test_placeholder0000000',
+      projectKey: KEY_IS_READY ? PROJECT_KEY : FALLBACK_PROJECT_KEY,
       endpoint: ENDPOINT,
       environment: 'stg',
       enabled: KEY_IS_READY,
@@ -50,15 +55,7 @@ export default function App(): ReactElement {
   );
 
   return (
-    // React Navigation's `addListener<T extends keyof EventMap>` is more
-    // strictly typed than `BrevwickNavigationRef`'s structural slot
-    // (which accepts any string event name), so we cast to the loose
-    // shape the provider expects. Both surfaces agree at runtime — the
-    // route ring only ever subscribes to `'state'`.
-    <BrevwickProvider
-      config={config}
-      navigationRef={navigationRef as unknown as BrevwickNavigationRef}
-    >
+    <BrevwickProvider config={config} navigationRef={navigationRef}>
       <NavigationContainer ref={navigationRef}>
         <Stack.Navigator>
           <Stack.Screen

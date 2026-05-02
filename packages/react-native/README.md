@@ -4,10 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 React Native bindings for [Brevwick](https://brevwick.dev) — a provider, a
-`useFeedback` hook, a route-ring helper for React Navigation / Expo Router,
-a `BrevwickSkip` wrapper, and a native screenshot path that gracefully
-falls back to a placeholder when the optional `react-native-view-shot` peer
-isn't installed.
+`useFeedback` hook, a `useRouteRing` helper for React Navigation / Expo
+Router, a `BrevwickSkip` wrapper, and a native screenshot path that
+gracefully falls back to a placeholder when the optional
+`react-native-view-shot` peer isn't installed.
 
 Wraps [`@tatlacas/brevwick-sdk`](https://www.npmjs.com/package/@tatlacas/brevwick-sdk)
 — all configuration, redaction, and submit semantics live there. This
@@ -41,12 +41,12 @@ deps (npm 7+, pnpm, yarn 3+) pull it in automatically.
 
 ### Peer dependency matrix
 
-| Peer                     | Range          | Notes                                                                   |
-| ------------------------ | -------------- | ----------------------------------------------------------------------- |
-| `react`                  | `>=18 <20`     | 18.x and 19.x both supported.                                           |
-| `react-native`           | `>=0.72 <0.78` | Hermes and JSC both work; New Architecture is supported.                |
-| `@tatlacas/brevwick-sdk` | `workspace:*`  | Lockstep with this package — installer pulls a matching version.        |
-| `react-native-view-shot` | `^4.0.0`       | **Optional.** Without it, screenshots resolve to a 1×1 placeholder PNG. |
+| Peer                     | Range          | Notes                                                                                                                                                                                                          |
+| ------------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `react`                  | `>=18 <20`     | 18.x and 19.x both supported.                                                                                                                                                                                  |
+| `react-native`           | `>=0.72 <0.78` | Hermes and JSC both work; New Architecture is supported.                                                                                                                                                       |
+| `@tatlacas/brevwick-sdk` | `workspace:*`  | Lockstep with this package — installer pulls a matching version.                                                                                                                                               |
+| `react-native-view-shot` | `>=3.8.0 <5`   | **Optional.** Without it, screenshots resolve to a 1×1 placeholder PNG. Expo SDK 51 ships `~3.8.0`; bare RN typically pins `^4.0.0`. Both work — `captureRef` returns the same data-URI shape on either major. |
 
 ## Quick start
 
@@ -111,11 +111,11 @@ wiring.
 </BrevwickProvider>
 ```
 
-| Prop            | Type                                 | Description                                                                                                                              |
-| --------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `config`        | `BrevwickConfig`                     | SDK config — see the [core SDK reference](https://www.npmjs.com/package/@tatlacas/brevwick-sdk). **Reference-stable**: hoist or memoise. |
-| `navigationRef` | `BrevwickNavigationRef \| undefined` | Forwarded to descendants via `BrevwickNavigationRefContext`. Read by the route-ring helper; the provider does not subscribe directly.    |
-| `children`      | `ReactNode`                          | Your tree.                                                                                                                               |
+| Prop             | Type                    | Description                                                                                                                                     |
+| ---------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`         | `BrevwickConfig`        | SDK config — see the [core SDK reference](https://www.npmjs.com/package/@tatlacas/brevwick-sdk). **Reference-stable**: hoist or memoise.        |
+| `navigationRef?` | `BrevwickNavigationRef` | Optional. Forwarded to descendants via `BrevwickNavigationRefContext`. Read by the route-ring helper; the provider does not subscribe directly. |
+| `children?`      | `ReactNode`             | Your tree.                                                                                                                                      |
 
 ## Route ring (React Navigation + Expo Router)
 
@@ -124,29 +124,10 @@ ref accepted directly by `BrevwickProvider`. Expo Router rides on top of
 React Navigation, so the same wiring serves both.
 
 ```tsx
-import { useEffect } from 'react';
-import {
-  attachRouteRing,
-  useBrevwick,
-  useBrevwickNavigationRef,
-  type Brevwick,
-} from '@tatlacas/brevwick-react-native';
-import type { RouteEntry } from '@tatlacas/brevwick-sdk';
-
-type BrevwickWithInternal = Brevwick & {
-  _internal?: { push?: (entry: RouteEntry) => void };
-};
+import { useRouteRing } from '@tatlacas/brevwick-react-native';
 
 function RouteRingBridge() {
-  const brevwick = useBrevwick() as BrevwickWithInternal;
-  const navigationRef = useBrevwickNavigationRef();
-
-  useEffect(() => {
-    const push = brevwick._internal?.push;
-    if (!navigationRef || typeof push !== 'function') return undefined;
-    return attachRouteRing(navigationRef, push);
-  }, [brevwick, navigationRef]);
-
+  useRouteRing();
   return null;
 }
 ```
@@ -158,10 +139,21 @@ React Navigation `state` events flow into the SDK's 20-entry route ring
 redacted via the SDK's global `redact()` before percent-encoding so a JWT
 or email carried by a benign-named key is still scrubbed.
 
-> The bridge wires React Navigation's `state` event into the SDK's
-> internal `push`. The drop-in `<FeedbackButton />` (#88) will own this
-> wiring once it lands; until then, copy the bridge above (or the
-> equivalent from `examples/react-native/src/RouteRingBridge.tsx`).
+`useRouteRing` resolves both the `Brevwick` instance and the
+`navigationRef` from context (the prop you forwarded to
+`<BrevwickProvider>`). For unusual layouts where the bridge is mounted
+outside the provider tree, pass an explicit ref:
+
+```tsx
+useRouteRing(navigationRef);
+```
+
+The drop-in `<FeedbackButton />` (#88) will own this wiring once it lands.
+Under the hood the hook composes `attachRouteRing(navigationRef, push)`
+with a captured `Brevwick._internal.push` — the lockstep coupling that
+the SDK + adapters version together. Consumers should prefer the hook
+over reaching into `_internal` directly so the documented-private surface
+crosses the adapter boundary in exactly one place.
 
 ## `useFeedback`
 
@@ -212,15 +204,15 @@ export function FeedbackFab() {
 
 ### Return value
 
-| Field               | Type                                              | Description                                                                                              |
-| ------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `submit`            | `(input: FeedbackInput) => Promise<SubmitResult>` | Submit feedback. Returns the same tagged union the core SDK returns.                                     |
-| `captureScreenshot` | `() => Promise<Blob>`                             | Capture a screenshot. Never throws — returns the placeholder PNG on failure.                             |
-| `status`            | `FeedbackStatus`                                  | `'idle' \| 'submitting' \| 'success' \| 'error'`. Backwards-compatible lifecycle.                        |
-| `phase`             | `FeedbackPhase`                                   | Submit-pipeline phase driven by the SDK's internal phase event.                                          |
-| `error`             | `SubmitError \| null`                             | Tagged error from the most recent failed submit. Cleared on the next `submit()` / `retry()` / `reset()`. |
-| `retry`             | `() => Promise<SubmitResult \| undefined>`        | Re-run the most recent `submit()` with the same input. No-op when no submit has been attempted.          |
-| `reset`             | `() => void`                                      | Reset `status` + `phase` back to `'idle'`, clear `error`, and forget the last submitted input.           |
+| Field               | Type                                                                         | Description                                                                                                                                                                                                                                                                                                     |
+| ------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `submit`            | `(input: FeedbackInput) => Promise<SubmitResult>`                            | Submit feedback. Returns the same tagged union the core SDK returns.                                                                                                                                                                                                                                            |
+| `captureScreenshot` | `(viewRef?: RefObject<View>, opts?: CaptureScreenshotOpts) => Promise<Blob>` | Capture a screenshot. **Pass a `viewRef` for real captures on RN** — it routes through `react-native-view-shot` (placeholder PNG when the optional peer is missing). Without a `viewRef` the call falls through to the core SDK's DOM-based path, which on RN always resolves to the placeholder. Never throws. |
+| `status`            | `FeedbackStatus`                                                             | `'idle' \| 'submitting' \| 'success' \| 'error'`. Backwards-compatible lifecycle.                                                                                                                                                                                                                               |
+| `phase`             | `FeedbackPhase`                                                              | Submit-pipeline phase driven by the SDK's internal phase event.                                                                                                                                                                                                                                                 |
+| `error`             | `SubmitError \| null`                                                        | Tagged error from the most recent failed submit. Cleared on the next `submit()` / `retry()` / `reset()`.                                                                                                                                                                                                        |
+| `retry`             | `() => Promise<SubmitResult \| undefined>`                                   | Re-run the most recent `submit()` with the same input. No-op when no submit has been attempted.                                                                                                                                                                                                                 |
+| `reset`             | `() => void`                                                                 | Reset `status` + `phase` back to `'idle'`, clear `error`, and forget the last submitted input.                                                                                                                                                                                                                  |
 
 Throws synchronously on mount when rendered outside a `BrevwickProvider`.
 
@@ -337,10 +329,33 @@ Reference:
 
 ### "Unable to resolve module react-native-view-shot"
 
-Either install it (`npx expo install react-native-view-shot`, then
-`pod install` for bare RN), or accept the placeholder fallback. Nothing
-in this package hard-imports `react-native-view-shot` — the import is
-guarded.
+Nothing in this package hard-imports `react-native-view-shot` — the
+runtime `await import('react-native-view-shot')` is wrapped in a
+`.catch(() => null)` so a missing peer falls through to the placeholder.
+Metro, however, walks `import()` calls statically at bundle time and
+will still raise the resolver error before the runtime guard runs.
+
+Pick one:
+
+- **Install the peer** (recommended). `npx expo install react-native-view-shot`,
+  then `pod install` for bare RN. The placeholder path then only fires
+  when the native module fails to load (e.g. running in Expo Go).
+- **Tell Metro to skip the resolution.** Add the package to Metro's
+  `resolver.blockList` so the dynamic `import()` is replaced with a
+  resolver miss the runtime guard catches:
+
+  ```js
+  // metro.config.js
+  const exclusionList = require('metro-config/src/defaults/exclusionList');
+
+  config.resolver.blockList = exclusionList([
+    /node_modules\/react-native-view-shot\/.*/,
+  ]);
+  ```
+
+  Captures resolve to the placeholder PNG; `useFeedback().captureScreenshot`
+  and the standalone `captureScreenshot(viewRef)` keep their never-throws
+  contract.
 
 ### Hermes vs JSC
 
@@ -393,10 +408,15 @@ import type {
 
 ## Bundle
 
-- `sideEffects: false` so bundlers tree-shake unused exports.
 - `react-native-view-shot` is dynamically `import()`-ed on first capture
   — not at provider mount, not at button render — so an app that never
-  takes a screenshot pays nothing for the peer.
+  takes a screenshot pays nothing for the peer (and the package can ship
+  as a true optional dependency).
+- `sideEffects: false` is set on the package. **Metro** does not honour
+  the `sideEffects` field today — its bundler runs its own dead-code
+  elimination pass instead. The flag is still present so non-Metro
+  consumers (web bundlers re-using this package's `dist/`, monorepo
+  bundle-analysis tooling) keep their tree-shaking guarantees intact.
 
 ## Links
 

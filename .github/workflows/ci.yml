@@ -63,6 +63,14 @@ jobs:
       # signal that ng-packagr's substitution pipeline produced a valid
       # artefact — the kind of guard issue #67 rev-1 was missing.
       - run: pnpm --filter @tatlacas/brevwick-angular build
+      # Build @tatlacas/brevwick-react-native before `pnpm type-check` so
+      # `examples/react-native/tsconfig.json` (`moduleResolution: Bundler`)
+      # can resolve `@tatlacas/brevwick-react-native` via its
+      # `package.json#exports` → `dist/index.d.ts` entry. Metro alone reads
+      # the top-level `react-native` field (`./src/index.ts`); tsc does
+      # not, so without a built `dist/` the example's recursive
+      # `pnpm -r type-check` fails with TS2307 on a clean checkout.
+      - run: pnpm --filter @tatlacas/brevwick-react-native build
       - run: pnpm type-check
       - run: pnpm test:cover
       - run: pnpm build
