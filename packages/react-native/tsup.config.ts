@@ -11,6 +11,12 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
+  // Mirror `packages/react/tsup.config.ts` — minified output keeps the
+  // first feature-worktree bundle under the size budget that #91 will
+  // wire into `.size-limit.js`. RN ships product `src/` to satisfy
+  // Metro's source-preference field, but the `dist/` artefact still
+  // matters for non-Metro consumers (web fallbacks, bundler analysis).
+  minify: true,
   splitting: false,
   external: [
     'react',
