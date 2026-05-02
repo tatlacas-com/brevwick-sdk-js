@@ -8,7 +8,7 @@ Drop-in FAB + Modal feedback form for React Native, mirroring the
 `@tatlacas/brevwick-react` widget UX 1:1 with RN primitives:
 
 - `<FeedbackButton />` — `Pressable` FAB with `position` (`'bottom-right' |
-  'bottom-left' | { bottom?, right?, left? }`), `theme`, `style`, `label`,
+'bottom-left' | { bottom?, right?, left? }`), `theme`, `style`, `label`,
   `hidden`, `disabled` props. Default label tracks the SDK submit phase
   (`Send feedback` → `Capturing…` → `Sending…` → `Sent ✓` / `Try again`).
   Accessible: `accessibilityLabel='Send feedback'` + `accessibilityRole='button'`.
