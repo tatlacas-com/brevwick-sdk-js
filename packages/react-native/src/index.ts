@@ -7,3 +7,6 @@
 // define-style substitution, so an ambient token would crash consumers with
 // `ReferenceError` at runtime.
 export { BREVWICK_REACT_NATIVE_VERSION } from './version';
+
+export { attachRouteRing, redactPathParams } from './rings/route';
+export type { NavigationRefLike, RouteRingEntry } from './rings/route';
