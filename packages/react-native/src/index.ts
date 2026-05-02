@@ -26,3 +26,32 @@ export { captureScreenshot } from './screenshot';
 export type { CaptureScreenshotOpts } from './screenshot';
 export { BrevwickSkip } from './skip';
 export type { BrevwickSkipProps } from './skip';
+
+export { BrevwickProvider } from './provider';
+export type { BrevwickProviderProps } from './provider';
+export { useBrevwick } from './context';
+export {
+  useBrevwickNavigationRef,
+  BrevwickNavigationRefContext,
+} from './navigation-ref-context';
+export type { BrevwickNavigationRef } from './navigation-ref-context';
+
+export { useFeedback } from './use-feedback';
+export type {
+  FeedbackPhase,
+  FeedbackStatus,
+  UseFeedbackResult,
+} from './use-feedback';
+
+// Re-export the SDK types RN consumers most often touch so they don't need a
+// second `@tatlacas/brevwick-sdk` import in app code. The full SDK surface is
+// still available via the underlying package.
+export type {
+  Brevwick,
+  BrevwickConfig,
+  FeedbackAttachment,
+  FeedbackInput,
+  SubmitError,
+  SubmitErrorCode,
+  SubmitResult,
+} from '@tatlacas/brevwick-sdk';

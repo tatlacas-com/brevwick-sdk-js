@@ -59,4 +59,19 @@ export default tseslint.config(
       globals: nodeGlobals,
     },
   },
+  // CommonJS test fixtures (e.g. the React Native mock loaded by Node's
+  // CJS loader from `test/setup.ts`) — they use `module.exports` and run
+  // under Node, not the bundle. `require()` is the only valid import form
+  // for these files, so the typescript-eslint default rule against it is
+  // disabled here.
+  {
+    files: ['**/*.cjs'],
+    languageOptions: {
+      globals: nodeGlobals,
+      sourceType: 'commonjs',
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 );
