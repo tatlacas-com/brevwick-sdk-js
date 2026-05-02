@@ -106,6 +106,87 @@ const StyleSheet = {
       {},
     );
   },
+  // Real RN's `StyleSheet.create` interns styles into a numeric registry; the
+  // FeedbackButton + FeedbackModal evaluate a `create({...})` call at module
+  // load time, so even hook-only tests (which don't render the components)
+  // would crash if this stub omitted it. The simplest faithful behaviour is
+  // to pass the input through — call sites use the resulting object's keys
+  // for `style={styles.foo}` props, and the equality semantics React applies
+  // for style props are unchanged by interning.
+  create(styles) {
+    return styles;
+  },
+  hairlineWidth: 1,
+  absoluteFillObject: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+};
+
+// Lightweight shims for the host components the feedback widget renders. Each
+// is a class component (mirroring `View`) so `react-test-renderer` can locate
+// them by constructor reference and `findAllByProps` traversals from tests
+// remain stable even when the production code refactors children.
+class Text extends Component {
+  render() {
+    return this.props.children ?? null;
+  }
+}
+class TextInput extends Component {
+  render() {
+    return this.props.children ?? null;
+  }
+}
+class Image extends Component {
+  render() {
+    return null;
+  }
+}
+class ActivityIndicator extends Component {
+  render() {
+    return null;
+  }
+}
+class Switch extends Component {
+  render() {
+    return null;
+  }
+}
+class ScrollView extends Component {
+  render() {
+    return this.props.children ?? null;
+  }
+}
+class Modal extends Component {
+  render() {
+    // Match real RN: when `visible={false}` the children are not mounted.
+    if (this.props.visible === false) return null;
+    return this.props.children ?? null;
+  }
+}
+class Pressable extends Component {
+  render() {
+    const { children } = this.props;
+    if (typeof children === 'function') {
+      // Real RN passes `{ pressed }` (and more in newer versions); tests
+      // never assert on the pressed state from the render-prop path.
+      return children({ pressed: false });
+    }
+    return children ?? null;
+  }
+}
+
+// Hook + module surfaces consumed by the widget. `useColorScheme` returns
+// `'light'` so the default theme resolution lands on the light palette
+// without needing a per-test mock; tests that need to exercise the dark
+// branch override `<FeedbackButton theme="dark" />` directly.
+const useColorScheme = () => 'light';
+const Appearance = {
+  getColorScheme: () => 'light',
+  addChangeListener: () => ({ remove: () => {} }),
 };
 
 module.exports = {
@@ -114,5 +195,15 @@ module.exports = {
   I18nManager,
   NativeModules,
   View,
+  Text,
+  TextInput,
+  Image,
+  ActivityIndicator,
+  Switch,
+  ScrollView,
+  Modal,
+  Pressable,
   StyleSheet,
+  useColorScheme,
+  Appearance,
 };

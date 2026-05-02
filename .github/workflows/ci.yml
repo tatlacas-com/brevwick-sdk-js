@@ -93,6 +93,7 @@ jobs:
             packages/vue/dist
             packages/svelte/dist
             packages/angular/dist
+            packages/react-native/dist
           retention-days: 1
           if-no-files-found: error
 
