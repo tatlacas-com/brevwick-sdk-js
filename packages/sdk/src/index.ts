@@ -6,6 +6,21 @@
 
 export { createBrevwick } from './core/client';
 
+/**
+ * Module-level default redactor + the shared sensitive-parameter key matcher.
+ *
+ * Adapter packages (e.g. `@tatlacas/brevwick-react-native`) use these to keep
+ * their ring entries on the same redaction contract as the core SDK without
+ * duplicating the regex set or the redactor implementation. Per CLAUDE.md
+ * "every payload that leaves the device runs through `redact()` first" —
+ * this re-export is what makes that enforceable from outside core.
+ *
+ * The richer per-instance `createRedactor(disable, custom)` factory stays
+ * internal until an adapter actually needs it; widening the surface
+ * pre-emptively would lock in a contract we may want to revise.
+ */
+export { redact, SENSITIVE_PARAM_KEYS } from './core/internal/redact';
+
 export type {
   Brevwick,
   BrevwickConfig,
@@ -20,6 +35,7 @@ export type {
   ProjectConfig,
   RedactCustomPattern,
   RedactPatternName,
+  RouteEntry,
   SubmitError,
   SubmitErrorCode,
   SubmitResult,

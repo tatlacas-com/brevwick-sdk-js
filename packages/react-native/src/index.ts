@@ -8,5 +8,14 @@
 // `ReferenceError` at runtime.
 export { BREVWICK_REACT_NATIVE_VERSION } from './version';
 
-export { attachRouteRing, redactPathParams } from './rings/route';
-export type { NavigationRefLike, RouteRingEntry } from './rings/route';
+// Public route-ring surface. `redactPathParams` is intentionally NOT
+// exported — it is an internal helper of `attachRouteRing` and surfacing
+// it would freeze a "redact this string for me" capability nothing in the
+// public contract requires. `RouteEntry` (the entry shape pushed into the
+// ring) lives in `@tatlacas/brevwick-sdk` and is re-exported from there;
+// consumers compose against the core type so adapter + core types unify.
+export { attachRouteRing } from './rings/route';
+export type {
+  NavigationContainerRefLike,
+  NavigationRefLike,
+} from './rings/route';
