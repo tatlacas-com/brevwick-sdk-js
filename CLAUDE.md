@@ -35,6 +35,59 @@ cd ../brevwick-sdk-js-issue-<N>
 
 **Do not remove worktrees** — the user cleans them up.
 
+## Writing `<topic>-worktree.md` files
+
+When the user asks to write or update a worktree.md, follow this convention. Existing examples in this repo: `landing-parity-worktree.md`, `launch-readiness-worktree.md`, `worktrees-feedback-ux.md`, `react-native-worktree.md`. Treat older examples as **legacy** — they predate this convention and may use patterns we now disallow (e.g. `landing-parity-worktree.md` uses `git add -A`, which the rules below replace with explicit paths). When touching a legacy file, opportunistically migrate it; do not copy its anti-patterns into new files.
+
+**Filename:** `<topic>-worktree.md` at repo root. The topic matches the initiative (a phase, a feature, a launch milestone). Plural variant `worktrees-<topic>.md` is acceptable when there are many.
+
+**Required structure (in order):**
+
+1. **H1:** `# <repo-name> <topic> Worktrees`
+2. **Opening paragraph:** count of issues / worktrees / tiers in the first sentence; one-sentence grouping rationale; one sentence on parallel-safety from T+0 (or where the gating is).
+3. **Key references** (bullet list): `CLAUDE.md` (this repo), SDD section link, plan file path under `~/.claude/plans/`, every issue number with link, reference packages/files to mirror, cross-repo companion worktree.md files.
+4. **Conventions** (bullet list): repeat the repo-specific rules that apply to every worktree in this initiative (bundle budget, redaction-mandatory, conventional commits, no Co-Authored-By, do-not-remove-worktrees). Don't paraphrase — restate so reviewers reading only this file get the rules.
+5. **Grouping rationale:** prose paragraphs explaining why issues are bundled into the worktrees they are. Call out shared-file conflict surface (which files multiple worktrees touch) and how to resolve.
+6. **Dependency map:** ASCII code block with `TIER N — <when>` headers and bulleted worktree entries. Show shared-file conflicts inline. End with the worktree path convention (`../<repo>-wt-<slug>`).
+7. **Per-tier sections** as `## TIER N`, each containing one or more worktree subsections.
+8. **Parallel execution cheat sheet** at the end: summarise what runs at T+0, what unblocks after each tier merges, cross-repo coordination notes.
+
+**Per-worktree subsection format:**
+
+- H3: `### Worktree <slug>: <title> (#<issue-numbers>)`
+- 1–3 sentence description of what this PR does and why it's grouped this way.
+- **Scope:** bullets or paragraph listing files/dirs touched. Be specific.
+- **Out of scope:** optional bullets for explicit non-goals.
+- **Depends on:** prior worktree slugs or "none".
+- **Blocks:** downstream worktree slugs or "nothing".
+- **Can run in parallel with:** sibling worktrees.
+- A bash code block with this exact shape:
+
+  ```bash
+  cd ~/repos/brevwick/<repo>
+  git fetch origin
+  git worktree add ../<repo>-wt-<slug> -b <type>/<branch-name> origin/main
+  cd ../<repo>-wt-<slug>
+
+  claude --dangerously-skip-permissions "
+  <Self-contained agent prompt with numbered STEP 1..N>
+  "
+  ```
+
+**Per-worktree agent prompt (inside the `claude --dangerously-skip-permissions \"...\"` block):**
+
+- STEP 1 — Read project context: `CLAUDE.md`, the issue body via `gh api repos/<owner>/<repo>/issues/<N> --jq '.body'`, plan file, every reference file/package.
+- STEP 2..N-2 — Implementation steps: file paths, exact field names, snippet shapes, validation criteria. Reference Flutter/JS SDK precedent files by tilde-path when wire-format parity matters.
+- STEP N-1 — Verify: full CI gauntlet from `.github/workflows/ci.yml` — `pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm type-check && pnpm test:cover && pnpm build`. `pnpm lint` does not cover Prettier; `format:check` is mandatory. Add `pnpm size` if the change touches bundle-budgeted code.
+- STEP N — Commit + PR: `git add` specific paths (no `-A`/`.`); `git commit -m '<conventional commit subject ≤72 chars>'`; `git push -u origin <branch>`; `gh pr create --title '...' --body "$(cat <<'PREOF'` … `PREOF\n)"`. PR body uses `Closes #<N>` per issue, has Summary / Out of scope / Test plan sections, no Co-Authored-By.
+
+**Style notes:**
+
+- Use tilde-prefixed paths (`~/repos/brevwick/...`, `~/.claude/plans/...`) for cross-repo references; tilde expands at shell time so the same docs work on any contributor's machine. Do **not** introduce new absolute paths like `/home/tatlacas/...` or `/Users/tatlacas/...`; legacy worktree files have them and should be migrated when touched.
+- Prefer "Tier" terminology consistently — never "Phase" inside a worktree.md (that word belongs to ROADMAP.md).
+- When bundling N issues into one worktree, explain the bundling rationale (shared files, review coherence) explicitly. When splitting issues across worktrees that could have been bundled, also explain why.
+- Length: a one-issue worktree.md is ~150 lines. A 10-issue / 8-worktree initiative is ~700 lines. Don't aim for shorter — reviewers and future agents read this file end-to-end.
+
 ## Project Overview
 
 pnpm workspace publishing three npm packages: `@tatlacas/brevwick-sdk` (core, framework-agnostic), `@tatlacas/brevwick-react` (React bindings), and `@tatlacas/brevwick-solid` (Solid bindings).
