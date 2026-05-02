@@ -81,6 +81,12 @@ function dataUriToBlob(uri: string): Blob | null {
   const payload = uri.slice(comma + 1);
   const mimeMatch = /^data:([^;,]+)/.exec(header);
   const type = mimeMatch?.[1] ?? MIME;
+  // Mirror the core's `isValidImageBlob` invariant
+  // (`packages/sdk/src/screenshot.ts`): if the data URI declares a non-image
+  // MIME family (a buggy native `captureRef` or a payload swap), refuse it
+  // here so the caller falls through to the placeholder instead of forwarding
+  // arbitrary `text/plain` / `application/octet-stream` bytes downstream.
+  if (!type.startsWith('image/')) return null;
   const isBase64 = /;base64/i.test(header);
   if (!isBase64) {
     return new Blob([decodeURIComponent(payload)], { type });
@@ -115,6 +121,17 @@ export interface CaptureScreenshotOpts {
  * `viewRef` may point to any RN View-like instance (`<View>`, a custom class
  * component with a forwarded ref, etc.). Passing `null`/an unmounted ref
  * returns the placeholder.
+ *
+ * @remarks
+ * **Hermes `crypto.subtle` caveat (downstream).** The core submit pipeline
+ * (`packages/sdk/src/submit.ts`) hashes attachment bytes via
+ * `crypto.subtle.digest('SHA-256', buf)` to satisfy the presign integrity
+ * contract. React Native's Hermes runtime does NOT ship `crypto.subtle`, so
+ * once the RN provider (#83) and `useFeedback` hook (#84) wire this function
+ * into the submit pipeline the hashing step will throw on device. This
+ * function itself is unaffected — it only forwards a `Blob`. The integration
+ * gap is tracked in #99: a host-supplied `digest` capability or pure-JS
+ * fallback must land in core's submit before the RN adapter can submit.
  */
 export async function captureScreenshot(
   viewRef: RefObject<View | null> | RefObject<View>,

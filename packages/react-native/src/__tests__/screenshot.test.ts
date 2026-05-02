@@ -165,4 +165,71 @@ describe('captureScreenshot — peer present', () => {
     // dynamic import on every call after the first.
     expect(factory).toHaveBeenCalledTimes(1);
   });
+
+  it('returns the placeholder when captureRef returns a non-image MIME data URI', async () => {
+    // A buggy native `captureRef` (or an unexpected payload swap) could
+    // produce a `data:text/plain;base64,...` URI; mirroring the core's
+    // `isValidImageBlob` invariant in `packages/sdk/src/screenshot.ts`,
+    // `dataUriToBlob` MUST refuse non-`image/*` MIME so the caller falls
+    // through to the placeholder rather than forwarding arbitrary bytes
+    // downstream.
+    const captureRef = vi
+      .fn()
+      .mockResolvedValue('data:text/plain;base64,aGVsbG8=');
+    vi.doMock('react-native-view-shot', () => ({ captureRef }));
+    const captureScreenshot = await loadCaptureScreenshot();
+
+    const blob = await captureScreenshot({ current: null });
+
+    expect(blob.type).toBe('image/png');
+    const bytes = await blobBytes(blob);
+    expect(bytes).toEqual(PLACEHOLDER_BYTES);
+  });
+});
+
+describe('captureScreenshot — skip subtree integration', () => {
+  // The unit-level tests in `skip.test.ts` cover the registry helpers
+  // directly; this case proves that `captureScreenshot`'s `try/finally`
+  // ALSO drives the hide-then-restore pair against a registered skip ref —
+  // crucially, that the restore fires even when `captureRef` rejects. That
+  // is the only path that strands UI hidden if it regresses.
+  //
+  // `vi.resetModules()` in `beforeEach` invalidates the module cache, so
+  // the ref MUST be registered against the SAME freshly-imported `../skip`
+  // module that `../screenshot` will pick up — the static `__addSkipRefForTest`
+  // import at the top of this file is bound to a stale module instance and
+  // would write into a different registry than the one the production
+  // `hideRegisteredSkipViews` call reads from.
+  it('restores skip-subtree opacity to 1 even when captureRef throws', async () => {
+    const captureRef = vi.fn().mockRejectedValue(new Error('boom'));
+    vi.doMock('react-native-view-shot', () => ({ captureRef }));
+
+    const skipMod = await import('../skip');
+    const captureScreenshot = await loadCaptureScreenshot();
+
+    const setNativeProps = vi.fn<(props: { opacity: number }) => void>();
+    // Synthetic View-like instance. The skip registry keys against the
+    // ref's `current`, dispatches `setNativeProps` against it on hide /
+    // restore, and never inspects further surface — a plain object with
+    // the right method shape is sufficient.
+    const fakeView = { setNativeProps } as unknown as never;
+    skipMod.__addSkipRefForTest({ current: fakeView });
+
+    const blob = await captureScreenshot({ current: null });
+
+    // Caller still sees the placeholder — never-throws contract holds.
+    expect(blob.type).toBe('image/png');
+    const bytes = await blobBytes(blob);
+    expect(bytes).toEqual(PLACEHOLDER_BYTES);
+
+    // The integration glue: hide ran (opacity 0) AND restore ran (opacity
+    // 1) against the registered skip view, in that order, despite the
+    // captureRef rejection — proving the `finally` block fires on the
+    // failure path.
+    expect(setNativeProps).toHaveBeenCalledTimes(2);
+    expect(setNativeProps).toHaveBeenNthCalledWith(1, { opacity: 0 });
+    expect(setNativeProps).toHaveBeenNthCalledWith(2, { opacity: 1 });
+
+    skipMod.__resetSkipRegistryForTest();
+  });
 });

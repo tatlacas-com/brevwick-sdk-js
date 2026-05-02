@@ -23,14 +23,5 @@ export default defineConfig({
     // is also a win — every other adapter test runs under happy-dom.
     environment: 'happy-dom',
     include: ['src/**/*.test.{ts,tsx}'],
-    // The scaffold ships zero tests by design (the issue calls for an
-    // empty named-exports placeholder). Without `passWithNoTests`, vitest
-    // would exit non-zero and turn CI red on a green diff. The first
-    // feature worktree (#83 — provider + hook) MUST drop this flag and
-    // add the corresponding `coverage.thresholds` block (mirroring
-    // `packages/react/vitest.config.ts`) so a contributor who forgets to
-    // write tests can no longer slip through. This flag is a transitional
-    // escape hatch, not a permanent permission.
-    passWithNoTests: true,
   },
 });
