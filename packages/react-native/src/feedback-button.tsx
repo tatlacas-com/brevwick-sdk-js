@@ -7,7 +7,11 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useFeedback, type FeedbackPhase } from './use-feedback';
+import {
+  useFeedback,
+  type FeedbackPhase,
+  type FeedbackStatus,
+} from './use-feedback';
 import { FeedbackModal } from './feedback-modal';
 import {
   createWidgetStyles,
@@ -20,6 +24,15 @@ import {
  * one of the two named corners (default 24px inset, 24px from the bottom)
  * or an explicit `{ bottom?, right?, left? }` triplet for callers that
  * need to clear a custom safe-area / tab-bar.
+ *
+ * @remarks
+ * **Web parity divergence.** The web React adapter restricts `position` to
+ * the `'bottom-right' | 'bottom-left'` named corners. The RN adapter
+ * widens the type with the `{ bottom?, right?, left? }` object form to
+ * accommodate the platform-specific safe-area / tab-bar / notch insets
+ * that have no analogue in the DOM. This widening is RN-only — consumers
+ * porting code between adapters must use the named-corner form for
+ * portable call sites.
  */
 export type FeedbackButtonPosition =
   | 'bottom-right'
@@ -42,9 +55,10 @@ export interface FeedbackButtonProps {
    */
   theme?: BrevwickTheme;
   /**
-   * Style overrides applied to the FAB Pressable. Composed *after* the
-   * built-in styles so a consumer can rewrite anything (background, size,
-   * shadow) without forking the component.
+   * Style overrides applied to the FAB Pressable. Composed via
+   * `StyleSheet.flatten` and placed last in the array so consumer entries
+   * win over the built-in styles — pass `style={{ backgroundColor: '#f00' }}`
+   * to recolour the FAB without forking the component.
    */
   style?: StyleProp<ViewStyle>;
   /**
@@ -63,26 +77,30 @@ export interface FeedbackButtonProps {
 const DEFAULT_INSET = 24;
 
 /**
- * Map the SDK's submit-pipeline phase to the FAB label. The SDK fires
- * phase events via the bus that `useFeedback()` subscribes to, so two
- * `useFeedback()` instances (FAB + Modal) advance together even though
- * only one of them owns the in-flight `submit()` call.
+ * Map the SDK's submission lifecycle (`status` + `phase`) to the FAB
+ * label. We branch on `status` first so the post-submit terminal states
+ * (`success` → `Sent ✓`, `error` → `Try again`) are reachable even though
+ * the SDK's phase bus does not emit an error event — the parent owns the
+ * `useFeedback()` instance and forwards both `status` and `phase` here so
+ * the FAB and Modal stay in lockstep.
  */
-function fabLabelForPhase(phase: FeedbackPhase, fallback: string): string {
-  switch (phase) {
-    case 'capturing':
-    case 'sanitising':
-      return 'Capturing…';
-    case 'formatting':
-      return 'Sending…';
-    case 'sent':
-      return 'Sent ✓';
-    case 'error':
-      return 'Try again';
-    case 'idle':
-    default:
-      return fallback;
+function fabLabelForState(
+  status: FeedbackStatus,
+  phase: FeedbackPhase,
+  fallback: string,
+): string {
+  if (status === 'success' || phase === 'sent') return 'Sent ✓';
+  if (status === 'error' || phase === 'error') return 'Try again';
+  if (status === 'submitting') {
+    // `'capturing'` is set synchronously by `useFeedback().submit` before
+    // any bus event fires; the bus then advances through `sanitising` →
+    // `formatting` → `sent`. Collapsing capturing+sanitising matches the
+    // web adapter's "Capturing…" copy because the user perceives both as
+    // the same waiting beat.
+    if (phase === 'formatting') return 'Sending…';
+    return 'Capturing…';
   }
+  return fallback;
 }
 
 function resolvePositionStyle(position: FeedbackButtonPosition): ViewStyle {
@@ -113,10 +131,17 @@ function resolvePositionStyle(position: FeedbackButtonPosition): ViewStyle {
  * Drop-in floating-action button + modal feedback form for React Native.
  *
  * Renders an absolute-positioned FAB pinned to the configured corner. The
- * label tracks the SDK's submit phase so users see real progress
- * (`Capturing…` → `Sending…` → `Sent ✓`) when the modal is open or
- * minimized. Tapping the FAB opens {@link FeedbackModal}; the modal owns
- * the form draft and survives a Cancel + reopen cycle.
+ * label tracks the SDK's submit lifecycle so users see real progress
+ * (`Capturing…` → `Sending…` → `Sent ✓` / `Try again`) when the modal is
+ * open or minimized. Tapping the FAB opens {@link FeedbackModal}; the
+ * modal owns the form draft and survives a Cancel + reopen cycle.
+ *
+ * The FAB owns a single `useFeedback()` instance and forwards it to the
+ * modal so both render against the same `status` / `phase` / `error`
+ * tuple. This is the deliberate fix for the "FAB stuck on Sending… after
+ * an ingest rejection" gap: the SDK's phase bus does not emit an error
+ * event, so two independent `useFeedback()` instances would diverge on
+ * the failure path — sharing one keeps them in lockstep.
  *
  * The component is a no-op without a surrounding `<BrevwickProvider>` —
  * `useFeedback()` throws synchronously in that case to fail loudly during
@@ -131,7 +156,12 @@ export function FeedbackButton({
   disabled = false,
 }: FeedbackButtonProps): ReactElement | null {
   const [modalOpen, setModalOpen] = useState(false);
-  const { phase, reset } = useFeedback();
+  // Single hook instance shared with the modal. The modal accepts the
+  // tuple via the `feedback` prop and skips its own `useFeedback()` call
+  // when it is provided, so `status`/`phase`/`error` updates triggered by
+  // the modal's `submit` flow are observed here in the same render.
+  const feedback = useFeedback();
+  const { status, phase, reset } = feedback;
   const colorScheme = useColorScheme();
   const palette = useMemo(
     () => resolvePalette(theme, colorScheme),
@@ -145,21 +175,29 @@ export function FeedbackButton({
   );
 
   const handleOpen = useCallback(() => {
+    // Defence in depth: `Pressable`'s `disabled` prop already gates the
+    // native `onPress` invocation, but a future analytics shim wrapping
+    // the FAB could still call `onPress` directly. Guarding here ensures
+    // the modal cannot open behind a visually-disabled FAB regardless of
+    // how the press arrives.
+    if (disabled) return;
     setModalOpen(true);
-  }, []);
+  }, [disabled]);
 
   const handleClose = useCallback(() => {
     setModalOpen(false);
-    // Roll the FAB hook's phase back to idle once the modal is gone so the
-    // label returns to its default copy on the next render. Without this,
-    // a `phase === 'sent'` lingers after the modal's auto-dismiss and the
-    // FAB would still read "Sent ✓" until the next submit.
+    // Roll the shared hook's phase back to idle once the modal is gone so
+    // the FAB label returns to its default copy on the next render.
+    // Without this, a `status === 'success'` (or `'error'`) lingers after
+    // the modal's auto-dismiss and the FAB would still read "Sent ✓"
+    // (or "Try again") until the next submit.
     reset();
   }, [reset]);
 
   if (hidden) return null;
 
-  const resolvedLabel = label ?? fabLabelForPhase(phase, 'Send feedback');
+  const resolvedLabel =
+    label ?? fabLabelForState(status, phase, 'Send feedback');
 
   return (
     <>
@@ -181,7 +219,12 @@ export function FeedbackButton({
       >
         <Text style={styles.fabLabel}>{resolvedLabel}</Text>
       </Pressable>
-      <FeedbackModal visible={modalOpen} onClose={handleClose} theme={theme} />
+      <FeedbackModal
+        visible={modalOpen}
+        onClose={handleClose}
+        theme={theme}
+        feedback={feedback}
+      />
     </>
   );
 }

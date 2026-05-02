@@ -25,7 +25,11 @@ import type {
   ProjectConfig,
 } from '@tatlacas/brevwick-sdk';
 import { useBrevwick } from './context';
-import { useFeedback, type FeedbackPhase } from './use-feedback';
+import {
+  useFeedback,
+  type FeedbackPhase,
+  type UseFeedbackResult,
+} from './use-feedback';
 import {
   createWidgetStyles,
   resolvePalette,
@@ -34,6 +38,8 @@ import {
 } from './styles';
 
 const SUCCESS_DISMISS_DELAY_MS = 2000;
+const SCREENSHOT_FAILURE_NOTE =
+  "Couldn't attach screenshot — sending without one.";
 
 /**
  * Convert a screenshot Blob to a `data:` URI suitable for `<Image source={{ uri }} />`.
@@ -91,6 +97,16 @@ export interface FeedbackModalProps {
    * `'light'`/`'dark'` override it.
    */
   theme?: BrevwickTheme;
+  /**
+   * Externally-owned `useFeedback()` instance. When supplied (the
+   * {@link FeedbackButton} path), the modal renders against this hook
+   * tuple instead of allocating its own — the FAB needs to observe the
+   * same `status` / `phase` / `error` so its label can advance through
+   * the post-submit terminal states (`Sent ✓` / `Try again`) which the
+   * SDK's phase bus does not emit. Standalone consumers can omit this
+   * prop; the modal falls back to its own `useFeedback()` call.
+   */
+  feedback?: UseFeedbackResult;
 }
 
 /**
@@ -100,7 +116,10 @@ export interface FeedbackModalProps {
  *
  * The draft state lives in component-local `useState`, so a Cancel or
  * back-gesture (which only flips `visible` to `false`) preserves the
- * draft for the next open. Successful submit clears the draft and calls
+ * draft for the next open. This applies to BOTH the text fields
+ * (description / expected / actual) AND the toggles (`includeScreenshot`,
+ * `useAi`) — toggle state is treated as part of the draft and persists
+ * across Cancel + reopen. Successful submit clears the draft and calls
  * `onClose` after a short confirmation delay.
  *
  * The "Format with AI" toggle is rendered exactly when the project's
@@ -111,10 +130,17 @@ export function FeedbackModal({
   visible,
   onClose,
   theme = 'system',
+  feedback: feedbackProp,
 }: FeedbackModalProps): ReactElement {
   const brevwick = useBrevwick();
+  // Always call `useFeedback()` to satisfy hook ordering rules; discard
+  // the result when the parent supplied one. Passing an externally-owned
+  // tuple keeps the FAB and Modal in lockstep across submit terminal
+  // states the phase bus does not emit (`error`).
+  const localFeedback = useFeedback();
+  const feedback = feedbackProp ?? localFeedback;
   const { submit, captureScreenshot, status, phase, error, retry, reset } =
-    useFeedback();
+    feedback;
   const colorScheme = useColorScheme();
   const palette: BrevwickPalette = useMemo(
     () => resolvePalette(theme, colorScheme),
@@ -131,12 +157,21 @@ export function FeedbackModal({
   const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [screenshotNote, setScreenshotNote] = useState<string | null>(null);
 
   // Tracks whether we've kicked off the on-open side-effects (config fetch +
   // screenshot capture) for the current open. Reset on close so the next
   // open re-runs them with whatever the SDK and view-tree look like then.
   const openTriggeredRef = useRef(false);
   const mountedRef = useRef(true);
+  // Pending success-dismiss timer. Held in a ref so the manual close path
+  // (`handleManualClose`) can clear it without waiting for the success
+  // effect's dependency-driven cleanup — the user tapping Cancel during
+  // the 2 s confirmation dwell would otherwise leave the timer to fire on
+  // a hidden modal, double-invoking `onClose`.
+  const successDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -167,11 +202,22 @@ export function FeedbackModal({
         const blob = await captureScreenshot();
         if (cancelled || !mountedRef.current) return;
         setScreenshotBlob(blob);
+        setScreenshotNote(null);
         const uri = await blobToDataUri(blob);
         if (cancelled || !mountedRef.current) return;
         setScreenshotUri(uri);
-      } catch {
-        // Capture failed — placeholder text covers the missing preview.
+      } catch (err) {
+        // Surface the failure to the user so they understand the submit
+        // will go through without a screenshot. We also emit a single
+        // `console.warn` matching the pattern in `screenshot.ts`'s
+        // `logFailure` so device logs carry the diagnostic when capture
+        // fails outside the SDK's own placeholder path.
+        if (cancelled || !mountedRef.current) return;
+        const reason = err instanceof Error ? `: ${err.message}` : '';
+        globalThis.console?.warn?.(
+          `brevwick: screenshot capture failed in FeedbackModal${reason}`,
+        );
+        setScreenshotNote(SCREENSHOT_FAILURE_NOTE);
       }
     })();
 
@@ -182,27 +228,67 @@ export function FeedbackModal({
 
   // Auto-dismiss + draft reset on success. Runs after the user has had a
   // moment to read the "Sent ✓" confirmation. The cleanup clears the timer
-  // if the user manually closes the modal in the gap, so we don't fire
-  // `onClose` on an already-closed sheet.
+  // if the status changes (rare edge: another submit kicks off before the
+  // dwell elapses); the manual-close path below clears it explicitly via
+  // `successDismissTimerRef` because tapping Cancel does NOT change
+  // `status` and would otherwise leave the timer to fire on a hidden modal.
   useEffect(() => {
     if (status !== 'success') return;
     const id = setTimeout(() => {
       if (!mountedRef.current) return;
+      successDismissTimerRef.current = null;
       setDescription('');
       setExpected('');
       setActual('');
       setIncludeScreenshot(true);
       setScreenshotBlob(null);
       setScreenshotUri(null);
+      setScreenshotNote(null);
       setDraftError(null);
       reset();
       onClose();
     }, SUCCESS_DISMISS_DELAY_MS);
-    return () => clearTimeout(id);
+    successDismissTimerRef.current = id;
+    return () => {
+      clearTimeout(id);
+      if (successDismissTimerRef.current === id) {
+        successDismissTimerRef.current = null;
+      }
+    };
   }, [status, onClose, reset]);
+
+  // Cancel / × / back-gesture — also clears any pending success-dismiss
+  // timer so it cannot fire on the now-hidden modal and double-invoke
+  // `onClose`.
+  const handleManualClose = useCallback(() => {
+    if (successDismissTimerRef.current !== null) {
+      clearTimeout(successDismissTimerRef.current);
+      successDismissTimerRef.current = null;
+    }
+    onClose();
+  }, [onClose]);
 
   const showAiToggle =
     config?.ai_enabled === true && config.ai_submitter_choice_allowed === true;
+
+  // Clear the inline draft-error as soon as the user resumes typing in
+  // any of the three text fields. Mirrors the web React adapter's
+  // composer behaviour where the "Please describe what happened." note
+  // disappears the moment the user starts addressing it. Wrapped per
+  // setter so the closure equality React uses for `onChangeText` props
+  // stays stable across renders that don't change the field.
+  const handleDescriptionChange = useCallback((next: string) => {
+    setDescription(next);
+    setDraftError(null);
+  }, []);
+  const handleExpectedChange = useCallback((next: string) => {
+    setExpected(next);
+    setDraftError(null);
+  }, []);
+  const handleActualChange = useCallback((next: string) => {
+    setActual(next);
+    setDraftError(null);
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     if (status === 'submitting' || status === 'success') return;
@@ -250,7 +336,7 @@ export function FeedbackModal({
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={handleManualClose}
     >
       <View
         style={styles.scrim}
@@ -266,7 +352,7 @@ export function FeedbackModal({
               Send feedback
             </Text>
             <Pressable
-              onPress={onClose}
+              onPress={handleManualClose}
               style={styles.closeButton}
               accessibilityLabel="Close feedback form"
               accessibilityRole="button"
@@ -278,7 +364,7 @@ export function FeedbackModal({
             <Text style={styles.fieldLabel}>What happened?</Text>
             <TextInput
               value={description}
-              onChangeText={setDescription}
+              onChangeText={handleDescriptionChange}
               multiline
               placeholder="Describe the bug or feedback…"
               placeholderTextColor={palette.fgMuted}
@@ -289,7 +375,7 @@ export function FeedbackModal({
             <Text style={styles.fieldLabel}>What did you expect?</Text>
             <TextInput
               value={expected}
-              onChangeText={setExpected}
+              onChangeText={handleExpectedChange}
               placeholder="Optional"
               placeholderTextColor={palette.fgMuted}
               style={styles.input}
@@ -299,7 +385,7 @@ export function FeedbackModal({
             <Text style={styles.fieldLabel}>What actually happened?</Text>
             <TextInput
               value={actual}
-              onChangeText={setActual}
+              onChangeText={handleActualChange}
               placeholder="Optional"
               placeholderTextColor={palette.fgMuted}
               style={styles.input}
@@ -328,7 +414,7 @@ export function FeedbackModal({
                   />
                 ) : (
                   <Text style={styles.screenshotPlaceholder}>
-                    Screenshot will be captured on send.
+                    {screenshotNote ?? 'Screenshot will be captured on send.'}
                   </Text>
                 )}
               </View>
@@ -356,7 +442,7 @@ export function FeedbackModal({
 
           <View style={styles.actionsRow}>
             <Pressable
-              onPress={onClose}
+              onPress={handleManualClose}
               style={styles.secondaryButton}
               accessibilityLabel="Cancel"
               accessibilityRole="button"
