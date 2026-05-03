@@ -1,5 +1,12 @@
 # @tatlacas/brevwick-svelte
 
+## 1.0.0-beta.10
+
+### Patch Changes
+
+- Updated dependencies [[`1d2cb82`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/1d2cb822e471bac4344c88703071f64815e05181)]:
+  - @tatlacas/brevwick-sdk@1.0.0-beta.10
+
 ## 1.0.0-beta.9
 
 ### Patch Changes
