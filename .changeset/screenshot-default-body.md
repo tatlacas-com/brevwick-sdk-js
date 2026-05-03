@@ -1,5 +1,5 @@
 ---
-'@tatlacas/brevwick-sdk': patch
+'@tatlacas/brevwick-sdk': minor
 ---
 
 fix(sdk): default `captureScreenshot()` to `document.body`
@@ -31,7 +31,7 @@ Behavioural notes for adopters:
 - Capture invoked before `<body>` parses (e.g. a `<head>` script) now
   yields the placeholder + warn entry instead of attempting to rasterize
   a `<body>`-less tree.
-- The `@tatlacas/brevwick-sdk` patch lockstep-bumps every adapter
+- The `@tatlacas/brevwick-sdk` bump lockstep-bumps every adapter
   (`-react`, `-vue`, `-solid`, `-svelte`, `-angular`, `-react-native`)
   per the changesets `linked` config; consumers of any adapter who call
   `bw.captureScreenshot()` (or top-level `captureScreenshot()`) inherit

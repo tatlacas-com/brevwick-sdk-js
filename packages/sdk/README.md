@@ -307,12 +307,12 @@ own README captures against `<body>`. The exact failure mode of the
 a behaviour-improving change rather than a verified upstream fix. Two
 behaviour changes worth knowing:
 
-- **`:root` CSS custom properties** (e.g. `--brw-accent` declared on
-  `html`) are still inherited by the cloned `<body>` subtree because
+- **CSS custom properties declared on `:root` (`html`) or `<body>`** are
+  still inherited by the cloned `<body>` subtree because
   `modern-screenshot` inlines computed styles before reparenting under
-  `<foreignObject>`. If your design system relies on a token that is
-  declared on `<body>` (rare) or on a `<head>`-level container outside
-  `<body>` (rarer still), pass `opts.element` to widen the capture root.
+  `<foreignObject>`, and `getComputedStyle(body)` already resolves
+  ancestor-declared tokens. No action needed for typical design-system
+  setups (Tailwind, CSS variables on `:root`, theme classes on `body`).
 - **Portals into `<html>`** (browser extensions, atypical portal
   libraries) are no longer inside the capture tree. Most React/Solid/Vue
   portals land in `document.body` and continue to be captured. To
