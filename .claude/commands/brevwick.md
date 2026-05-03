@@ -1,12 +1,13 @@
 ---
 description: brevwick-sdk-js — fetch, assess, and implement a tracker issue end-to-end (pnpm workspace) with full CI gauntlet (+pnpm size for bundle-budgeted code), worktree, and auto-PR.
-argument-hint: "<issue-url — GitHub, Jira, or Linear>"
+argument-hint: '<issue-url — GitHub, Jira, or Linear>'
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash(git:*), Bash(gh:*), Bash(curl:*), Bash(jq:*), Bash(make:*), Bash(pnpm:*), Bash(npm:*), Bash(flutter:*), Bash(dart:*), Bash(go:*), Bash(test:*), Bash(grep:*), Bash(cat:*), Task, WebFetch, WebSearch
 ---
 
 You are landing a single issue end-to-end. Parse `$ARGUMENTS` as an issue URL. If empty, ask the user for one and stop.
 
 **Hard rules — do not violate, ever:**
+
 - No `Co-Authored-By` trailer in commits. No Claude attribution anywhere.
 - Never `git add -A` or `git add .` — stage specific paths only.
 - Never remove a worktree. The user manages worktree lifecycle.
@@ -20,12 +21,12 @@ You are landing a single issue end-to-end. Parse `$ARGUMENTS` as an issue URL. I
 
 Detect the tracker from `$ARGUMENTS`:
 
-| URL contains | Tracker | Extract |
-|---|---|---|
-| `github.com/<owner>/<repo>/issues/<N>` | **github** | `OWNER`, `REPO`, `N` |
-| `*.atlassian.net/browse/<KEY>-<N>` or `/jira/...` | **jira** | `JIRA_KEY` (e.g. `ABC-123`) |
-| `linear.app/<workspace>/issue/<KEY>-<N>` | **linear** | `LINEAR_ID` (e.g. `ENG-456`) |
-| anything else | **generic** | full URL |
+| URL contains                                      | Tracker     | Extract                      |
+| ------------------------------------------------- | ----------- | ---------------------------- |
+| `github.com/<owner>/<repo>/issues/<N>`            | **github**  | `OWNER`, `REPO`, `N`         |
+| `*.atlassian.net/browse/<KEY>-<N>` or `/jira/...` | **jira**    | `JIRA_KEY` (e.g. `ABC-123`)  |
+| `linear.app/<workspace>/issue/<KEY>-<N>`          | **linear**  | `LINEAR_ID` (e.g. `ENG-456`) |
+| anything else                                     | **generic** | full URL                     |
 
 If the URL matches none of the above, abort and print: `Unsupported tracker. I support GitHub Issues, Jira, and Linear URLs.` Stop.
 
@@ -85,18 +86,19 @@ Read the current repo's `CLAUDE.md` (`git rev-parse --show-toplevel` → `CLAUDE
 
 Apply this decision matrix to the fetched issue:
 
-| Condition | Action |
-|---|---|
-| Issue body or comments name a **different** repo as the implementation site | Abort: `This issue belongs in <repo>, not here.` Stop. |
-| Issue is a question, support thread, or RFC discussion (no concrete change requested) | Abort: `This is a discussion, not an implementable change.` Stop. |
+| Condition                                                                                                                                                                                                   | Action                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Issue body or comments name a **different** repo as the implementation site                                                                                                                                 | Abort: `This issue belongs in <repo>, not here.` Stop.                                                                                |
+| Issue is a question, support thread, or RFC discussion (no concrete change requested)                                                                                                                       | Abort: `This is a discussion, not an implementable change.` Stop.                                                                     |
 | Issue body has < ~3 sentences AND no acceptance criteria, OR comments contradict the body, OR scope is undefined ("make it faster" with no metric), OR it references files/symbols not present in this repo | **Use AskUserQuestion** with 1–3 concrete scoping options. Append answers to `notes/issue-<N>-context.md`. Resume only after answers. |
-| Issue is real, scoped, clear | Proceed silently. |
+| Issue is real, scoped, clear                                                                                                                                                                                | Proceed silently.                                                                                                                     |
 
 Before any edit, print one paragraph: `Issue <id>: <title>. Plan: <2-3 sentences naming the files I will touch and the test approach>. Proceeding.`
 
 ## STEP 4 — Worktree + branch
 
 Determine the branch prefix from issue labels and `CLAUDE.md` conventional-commit rules:
+
 - Labels containing `bug` or `fix` → `fix/`
 - Labels containing `chore` → `chore/`
 - Labels containing `docs` → `docs/`
@@ -105,6 +107,7 @@ Determine the branch prefix from issue labels and `CLAUDE.md` conventional-commi
 Compute `SLUG` = first 5 words of the title, lowercased, kebab-cased, alphanumerics + hyphens only.
 
 Compute `ID`:
+
 - github → `${N}` (numeric)
 - jira → `${JIRA_KEY}` lowercased (e.g. `abc-123`)
 - linear → `${LINEAR_ID}` lowercased
@@ -132,13 +135,13 @@ Save any clarifications received in step 3 to `notes/issue-${ID}-context.md` so 
 
 Read the CI command from this repo's `CLAUDE.md`. Brevwick repos:
 
-| Repo | Command |
-|---|---|
-| `brevwick-api` | `make lint && make test` |
-| `brevwick-web` | `pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm type-check && pnpm test:cover && pnpm build` |
-| `brevwick-sdk-js` | same as `-web` (add `pnpm size` if change touches bundle-budgeted code per CLAUDE.md § bundle budgets) |
-| `brevwick-sdk-flutter` | `flutter pub get && dart format --set-exit-if-changed . && dart analyze && flutter test --coverage` |
-| `brevwick-ops` | `/voice-check` on changed markdown |
+| Repo                   | Command                                                                                                                |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `brevwick-api`         | `make lint && make test`                                                                                               |
+| `brevwick-web`         | `pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm type-check && pnpm test:cover && pnpm build` |
+| `brevwick-sdk-js`      | same as `-web` (add `pnpm size` if change touches bundle-budgeted code per CLAUDE.md § bundle budgets)                 |
+| `brevwick-sdk-flutter` | `flutter pub get && dart format --set-exit-if-changed . && dart analyze && flutter test --coverage`                    |
+| `brevwick-ops`         | `/voice-check` on changed markdown                                                                                     |
 
 For an unknown repo (customer install): `grep -E "CI gauntlet\|ci\.yml" CLAUDE.md`. If nothing usable, ask the user once via `AskUserQuestion`: which command mirrors `.github/workflows/ci.yml`? Save the answer to `notes/issue-${ID}-context.md` for future runs.
 
@@ -162,6 +165,7 @@ git push -u origin "${PREFIX}/issue-${ID}-${SLUG}"
 Open the PR. The body shape depends on tracker:
 
 **GitHub** (auto-close keyword fires):
+
 ```
 gh pr create --title "<commit subject>" --body "$(cat <<'PREOF'
 Closes #<N>
@@ -178,6 +182,7 @@ PREOF
 ```
 
 **Jira** (use Smart Commits keywords; branch name auto-links via Jira–GitHub integration):
+
 ```
 gh pr create --title "[<JIRA_KEY>] <commit subject>" --body "$(cat <<'PREOF'
 Refs <JIRA_KEY> — <JIRA_BASE_URL>/browse/<JIRA_KEY>
@@ -192,6 +197,7 @@ PREOF
 ```
 
 **Linear** (magic words `Closes <ID>` auto-close when PR merges):
+
 ```
 gh pr create --title "<commit subject>" --body "$(cat <<'PREOF'
 Closes <LINEAR_ID>
@@ -216,6 +222,7 @@ Do not remove the worktree. Do not switch back to the main checkout. Stop here.
 ## Ambiguity policy (governs step 3)
 
 Ask the user via `AskUserQuestion` **only** in step 3, **only** with concrete options (no free-form questions), and **only** if one of these holds:
+
 - Body has < 3 sentences and no acceptance criteria.
 - Body and comments contradict each other.
 - Scope is undefined ("improve performance" with no metric).
