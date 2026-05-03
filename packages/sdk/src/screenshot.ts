@@ -5,11 +5,15 @@ import type { BrevwickInternal } from './core/internal';
  */
 export interface CaptureScreenshotOpts {
   /**
-   * Sub-tree to capture. Defaults to `document.documentElement` (the full
-   * page). Only *descendants* marked with `[data-brevwick-skip]` are scrubbed
-   * before capture — a skip marker on the root element itself is ignored
-   * (hiding the capture target would produce an empty image). Skip markers
-   * outside the sub-tree are left untouched.
+   * Sub-tree to capture. Defaults to `document.body` (the visible page
+   * content). The default is `body` rather than `document.documentElement`
+   * because `modern-screenshot` rasterizes the target inside an SVG
+   * `<foreignObject>`, where `<html>` is not valid flow content and recent
+   * Chromium builds render it as a blank canvas (~2 KiB transparent encode).
+   * Only *descendants* marked with `[data-brevwick-skip]` are scrubbed before
+   * capture — a skip marker on the root element itself is ignored (hiding the
+   * capture target would produce an empty image). Skip markers outside the
+   * sub-tree are left untouched.
    */
   element?: HTMLElement;
   /**
@@ -156,7 +160,15 @@ async function capture(
     return placeholderBlob();
   }
 
-  const element = opts?.element ?? document.documentElement;
+  // Default to `document.body`, not `document.documentElement`: putting
+  // `<html>` inside an SVG `<foreignObject>` is malformed flow content and
+  // produces a blank canvas in recent Chromium. See JSDoc on
+  // `CaptureScreenshotOpts.element` for the full rationale.
+  const element = opts?.element ?? document.body;
+  if (!element) {
+    logFailure(internal, new Error('document.body is not available'));
+    return placeholderBlob();
+  }
   const quality = opts?.quality ?? DEFAULT_QUALITY;
   // Declared outside the try so `finally` can always run, even if the
   // initial scrub throws (malformed selector / host-env quirks on a

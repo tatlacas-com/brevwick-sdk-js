@@ -293,10 +293,10 @@ const blob = await bw.captureScreenshot({
 
 **Options:**
 
-| Field     | Type           | Default                    | Description                                                                                                                     |
-| --------- | -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `element` | `HTMLElement`  | `document.documentElement` | Sub-tree to capture. Only _descendants_ with `[data-brevwick-skip]` are scrubbed — a skip marker on the root itself is ignored. |
-| `quality` | `number` (0–1) | `0.85`                     | WebP encoder quality, forwarded to `modern-screenshot`'s `domToBlob`.                                                           |
+| Field     | Type           | Default         | Description                                                                                                                     |
+| --------- | -------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `element` | `HTMLElement`  | `document.body` | Sub-tree to capture. Only _descendants_ with `[data-brevwick-skip]` are scrubbed — a skip marker on the root itself is ignored. |
+| `quality` | `number` (0–1) | `0.85`          | WebP encoder quality, forwarded to `modern-screenshot`'s `domToBlob`.                                                           |
 
 **Screenshot privacy:** any element marked `data-brevwick-skip` is hidden before capture and restored afterwards, even on failure. Use it on password fields, PII, card numbers, anything that should never land in a bug report:
 

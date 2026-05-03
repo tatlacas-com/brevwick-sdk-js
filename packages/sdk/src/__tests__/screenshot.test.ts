@@ -131,9 +131,26 @@ describe('captureScreenshot', () => {
     const { captureScreenshot } = await import('../screenshot');
     await captureScreenshot({ quality: 0.5 });
     expect(spy).toHaveBeenCalledWith(
-      document.documentElement,
+      document.body,
       expect.objectContaining({ quality: 0.5, type: 'image/webp' }),
     );
+  });
+
+  it('defaults capture target to document.body, not document.documentElement', async () => {
+    // Regression: putting `<html>` inside an SVG `<foreignObject>` is malformed
+    // flow content and produces a blank canvas in recent Chromium builds, so
+    // the implicit target must be `body`. (tatlacas-com/brevwick-web#254)
+    const spy = vi
+      .fn()
+      .mockResolvedValue(
+        new Blob([new Uint8Array([1])], { type: 'image/webp' }),
+      );
+    vi.doMock('modern-screenshot', () => ({ domToBlob: spy }));
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0]?.[0]).toBe(document.body);
+    expect(spy.mock.calls[0]?.[0]).not.toBe(document.documentElement);
   });
 
   it('restores [data-brevwick-skip] visibility after concurrent captures that overlap', async () => {
@@ -214,9 +231,40 @@ describe('captureScreenshot', () => {
     const { captureScreenshot } = await import('../screenshot');
     await captureScreenshot();
     expect(spy).toHaveBeenCalledWith(
-      document.documentElement,
+      document.body,
       expect.objectContaining({ quality: 0.85, type: 'image/webp' }),
     );
+  });
+
+  it('returns a placeholder without invoking modern-screenshot when document.body is null', async () => {
+    // Defends the `document.body ?? null` fallback: capture invoked before
+    // body parsing finishes (or against a stub document with no body) must
+    // yield the placeholder rather than throwing.
+    const domToBlob = vi.fn();
+    vi.doMock('modern-screenshot', () => ({ domToBlob }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const originalBody = document.body;
+    Object.defineProperty(document, 'body', {
+      configurable: true,
+      get: () => null,
+    });
+    try {
+      const { captureScreenshot } = await import('../screenshot');
+      const blob = await captureScreenshot();
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe('image/webp');
+      expect(domToBlob).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+      const msg = String(warn.mock.calls[0]?.[0] ?? '');
+      expect(msg).toMatch(/document\.body is not available/);
+    } finally {
+      Object.defineProperty(document, 'body', {
+        configurable: true,
+        value: originalBody,
+        writable: true,
+      });
+      warn.mockRestore();
+    }
   });
 
   it('returns a placeholder without invoking modern-screenshot when document is undefined (SSR)', async () => {
