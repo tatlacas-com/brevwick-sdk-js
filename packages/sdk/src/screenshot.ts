@@ -34,6 +34,12 @@ export interface CaptureScreenshotOpts {
    *   before capture — a skip marker on the root element itself is
    *   ignored (hiding the capture target would produce an empty image).
    *   Skip markers outside the sub-tree are left untouched.
+   *
+   * Real-browser test coverage: rasterized-output regressions can only
+   * be caught by a real browser canvas (the SDK test suite runs under
+   * happy-dom, which has no functional 2D context). Tracked in
+   * https://github.com/tatlacas-com/brevwick-sdk-js/issues/104 — link
+   * any new "blank screenshot" report there before opening a duplicate.
    */
   element?: HTMLElement;
   /**
