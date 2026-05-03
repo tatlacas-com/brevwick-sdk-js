@@ -4,7 +4,7 @@
 
 ### Minor Changes
 
-- [#103](https://github.com/tatlacas-com/brevwick-sdk-js/pull/103) [`1d2cb82`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/1d2cb822e471bac4344c88703071f64815e05181) Thanks [@tatlacas](https://github.com/tatlacas)! - fix(sdk): default `captureScreenshot()` to `document.body`
+- [#103](https://github.com/tatlacas-com/brevwick-sdk-js/pull/103) [`1d2cb82`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/1d2cb822e471bac4344c88703071f64815e05181) Thanks [@tatlacas](https://github.com/tatlacas)! - fix(sdk): default `captureScreenshot()` to `document.body`.
 
   `captureScreenshot()` previously defaulted its capture root to
   `document.documentElement` (`<html>`). Empirically, the `<body>` default
