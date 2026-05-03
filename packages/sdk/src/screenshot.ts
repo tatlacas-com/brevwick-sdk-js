@@ -7,13 +7,33 @@ export interface CaptureScreenshotOpts {
   /**
    * Sub-tree to capture. Defaults to `document.body` (the visible page
    * content). The default is `body` rather than `document.documentElement`
-   * because `modern-screenshot` rasterizes the target inside an SVG
-   * `<foreignObject>`, where `<html>` is not valid flow content and recent
-   * Chromium builds render it as a blank canvas (~2 KiB transparent encode).
-   * Only *descendants* marked with `[data-brevwick-skip]` are scrubbed before
-   * capture — a skip marker on the root element itself is ignored (hiding the
-   * capture target would produce an empty image). Skip markers outside the
-   * sub-tree are left untouched.
+   * because `modern-screenshot`'s own README examples capture against
+   * `document.body`, and empirically the `body` default produces a
+   * non-blank capture in the brevwick-web reproduction reported in
+   * tatlacas-com/brevwick-web#254 where the prior `documentElement`
+   * default returned a ~2 KiB image with no visible content. The exact
+   * failure mode of `documentElement` has not yet been root-caused —
+   * the leading hypothesis is that `<html>` inside an SVG
+   * `<foreignObject>` is not valid flow content and rasterizes blank
+   * in some Chromium builds, but that hypothesis has not been pinned to
+   * a specific Chromium issue or upstream `modern-screenshot` bug, so
+   * treat this default as a behaviour-improving change rather than a
+   * verified upstream fix.
+   *
+   * Edge cases worth knowing:
+   * - Capture invoked before `<body>` parses (a `<head>` script with no
+   *   `defer`, or `document.body === null`) hits the placeholder path
+   *   instead of throwing — strictly more correct than the previous
+   *   `documentElement` default, which would have rasterized a
+   *   `<body>`-less tree.
+   * - Nodes portalled outside `<body>` (browser extensions injecting
+   *   into `<html>`, atypical portal libraries) are no longer inside
+   *   the capture tree. Most React/Solid/Vue portals land in
+   *   `document.body` and are unaffected.
+   * - Only *descendants* marked with `[data-brevwick-skip]` are scrubbed
+   *   before capture — a skip marker on the root element itself is
+   *   ignored (hiding the capture target would produce an empty image).
+   *   Skip markers outside the sub-tree are left untouched.
    */
   element?: HTMLElement;
   /**
@@ -160,10 +180,14 @@ async function capture(
     return placeholderBlob();
   }
 
-  // Default to `document.body`, not `document.documentElement`: putting
-  // `<html>` inside an SVG `<foreignObject>` is malformed flow content and
-  // produces a blank canvas in recent Chromium. See JSDoc on
-  // `CaptureScreenshotOpts.element` for the full rationale.
+  // Default to `document.body`, not `document.documentElement`. The
+  // brevwick-web reproduction in tatlacas-com/brevwick-web#254 yielded a
+  // ~2 KiB blank image with the `documentElement` default; switching to
+  // `body` fixes the symptom there and matches `modern-screenshot`'s
+  // README examples. Hypothesis (unverified): `<html>` inside an SVG
+  // `<foreignObject>` is not flow content and rasterizes blank in some
+  // Chromium builds. See JSDoc on `CaptureScreenshotOpts.element` for
+  // the provisional reasoning.
   const element = opts?.element ?? document.body;
   if (!element) {
     logFailure(internal, new Error('document.body is not available'));

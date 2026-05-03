@@ -298,6 +298,27 @@ const blob = await bw.captureScreenshot({
 | `element` | `HTMLElement`  | `document.body` | Sub-tree to capture. Only _descendants_ with `[data-brevwick-skip]` are scrubbed — a skip marker on the root itself is ignored. |
 | `quality` | `number` (0–1) | `0.85`          | WebP encoder quality, forwarded to `modern-screenshot`'s `domToBlob`.                                                           |
 
+**About the `document.body` default:** prior to this version the default
+was `document.documentElement`. We changed it because the
+`documentElement` default reproduced as a ~2 KiB blank image in at least
+one consumer (tatlacas-com/brevwick-web#254) and `modern-screenshot`'s
+own README captures against `<body>`. The exact failure mode of the
+`documentElement` path is not yet root-caused — treat the new default as
+a behaviour-improving change rather than a verified upstream fix. Two
+behaviour changes worth knowing:
+
+- **`:root` CSS custom properties** (e.g. `--brw-accent` declared on
+  `html`) are still inherited by the cloned `<body>` subtree because
+  `modern-screenshot` inlines computed styles before reparenting under
+  `<foreignObject>`. If your design system relies on a token that is
+  declared on `<body>` (rare) or on a `<head>`-level container outside
+  `<body>` (rarer still), pass `opts.element` to widen the capture root.
+- **Portals into `<html>`** (browser extensions, atypical portal
+  libraries) are no longer inside the capture tree. Most React/Solid/Vue
+  portals land in `document.body` and continue to be captured. To
+  preserve the previous behaviour, pass
+  `opts.element: document.documentElement` explicitly.
+
 **Screenshot privacy:** any element marked `data-brevwick-skip` is hidden before capture and restored afterwards, even on failure. Use it on password fields, PII, card numbers, anything that should never land in a bug report:
 
 ```html

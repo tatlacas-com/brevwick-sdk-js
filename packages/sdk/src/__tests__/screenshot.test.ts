@@ -136,10 +136,22 @@ describe('captureScreenshot', () => {
     );
   });
 
-  it('defaults capture target to document.body, not document.documentElement', async () => {
-    // Regression: putting `<html>` inside an SVG `<foreignObject>` is malformed
-    // flow content and produces a blank canvas in recent Chromium builds, so
-    // the implicit target must be `body`. (tatlacas-com/brevwick-web#254)
+  it('defaults the capture target to document.body so calls match modern-screenshot README usage', async () => {
+    // Asserts the public contract. The body-default fixes the symptom
+    // reported in tatlacas-com/brevwick-web#254 (a ~2 KiB blank image
+    // when called with no args).
+    //
+    // hypothesis (unverified, do NOT rely on this in test naming):
+    // `<html>` inside an SVG `<foreignObject>` is not flow content and
+    // rasterizes blank in some Chromium builds. The hypothesis has not
+    // been pinned to a Chromium issue and is not what this test asserts;
+    // this test asserts only the observable contract (default = body).
+    //
+    // NOTE: `modern-screenshot` is mocked in this suite, so this test
+    // proves the SDK *passes* `document.body` to `domToBlob` — it does
+    // NOT prove rendering improves. Real-DOM coverage of the rasterized
+    // output is out of scope for jsdom; track follow-up Playwright
+    // coverage if regression recurs.
     const spy = vi
       .fn()
       .mockResolvedValue(
@@ -222,6 +234,11 @@ describe('captureScreenshot', () => {
   });
 
   it('defaults quality to 0.85', async () => {
+    // Note: this test references `document.body` only because `body` is
+    // the default capture target (asserted by the dedicated body-default
+    // test above). Do NOT collapse this test into that one — they cover
+    // separate contracts (quality default vs target default) and the
+    // body reference here is incidental.
     const spy = vi
       .fn()
       .mockResolvedValue(
@@ -285,6 +302,64 @@ describe('captureScreenshot', () => {
       vi.unstubAllGlobals();
       warn.mockRestore();
     }
+  });
+
+  it('preserves :root CSS custom properties on body subtree at capture time', async () => {
+    // Regression guard for the CSS-variable inheritance concern raised
+    // in PR #103 review: brevwick-web defines `--brw-*` design tokens on
+    // `:root` (i.e. `<html>`). When the capture root is `document.body`
+    // (the new default), a body descendant must STILL be able to resolve
+    // those tokens via `getComputedStyle` at the moment `domToBlob` is
+    // invoked — otherwise the rasterized subtree would render with
+    // unresolved `var()` colours.
+    //
+    // jsdom does not actually rasterize, so this test cannot assert
+    // pixel output. What it CAN assert is the consumer-side invariant
+    // that `modern-screenshot` relies on: the live element passed to
+    // `domToBlob` already resolves :root tokens via `getComputedStyle`,
+    // which is what `modern-screenshot` inlines into its cloned tree
+    // before reparenting under `<foreignObject>`. If this invariant
+    // ever broke (e.g. because we started passing a detached clone
+    // instead of the live body) the rasterized output would lose the
+    // tokens.
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+      :root {
+        --brw-test-token: rgb(7, 13, 29);
+      }
+      .brw-uses-token {
+        color: var(--brw-test-token);
+      }
+    `;
+    document.head.appendChild(styleEl);
+    const sample = document.createElement('div');
+    sample.className = 'brw-uses-token';
+    document.body.appendChild(sample);
+
+    let observedColor = '';
+    let receivedTarget: unknown;
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async (target: HTMLElement) => {
+        receivedTarget = target;
+        // At capture time, the body descendant must resolve the
+        // :root-scoped token. If this returns the empty string or the
+        // literal `var(--brw-test-token)`, modern-screenshot would
+        // inline a broken style.
+        observedColor = window.getComputedStyle(sample).color;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    expect(receivedTarget).toBe(document.body);
+    // jsdom's CSS engine resolves the var; assert the computed value
+    // matches the :root declaration.
+    expect(observedColor).toBe('rgb(7, 13, 29)');
+
+    sample.remove();
+    styleEl.remove();
   });
 
   it('does not hide the root element itself when the root carries data-brevwick-skip', async () => {
