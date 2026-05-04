@@ -394,3 +394,376 @@ describe('captureScreenshot', () => {
     root.remove();
   });
 });
+
+describe('captureScreenshot — inner-scroll compensation', () => {
+  // Happy-dom does not lay out content, so `scrollWidth`/`scrollHeight`/
+  // `clientWidth`/`clientHeight` are all 0 by default and `scrollTop`
+  // assignments only stick when the container is actually scrollable.
+  // We override those properties with `Object.defineProperty` so the
+  // SDK's `isScrollableContainer` heuristic sees a "real" scrollable
+  // box. The shape mirrors the live-page console snapshot from the
+  // brevwick-web reproduction (a Tailwind `<main class="overflow-y-auto">`
+  // with `clientHeight: 693`, `scrollHeight: 2144`, `scrollTop: 193.5`).
+  function makeScrollable(opts: {
+    overflow?: string;
+    scrollTop?: number;
+    scrollLeft?: number;
+    clientWidth?: number;
+    clientHeight?: number;
+    scrollWidth?: number;
+    scrollHeight?: number;
+  }): HTMLElement {
+    const el = document.createElement('div');
+    el.style.overflow = opts.overflow ?? 'auto';
+    Object.defineProperty(el, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: opts.scrollTop ?? 0,
+    });
+    Object.defineProperty(el, 'scrollLeft', {
+      configurable: true,
+      writable: true,
+      value: opts.scrollLeft ?? 0,
+    });
+    Object.defineProperty(el, 'clientWidth', {
+      configurable: true,
+      value: opts.clientWidth ?? 100,
+    });
+    Object.defineProperty(el, 'clientHeight', {
+      configurable: true,
+      value: opts.clientHeight ?? 100,
+    });
+    Object.defineProperty(el, 'scrollWidth', {
+      configurable: true,
+      value: opts.scrollWidth ?? 100,
+    });
+    Object.defineProperty(el, 'scrollHeight', {
+      configurable: true,
+      value: opts.scrollHeight ?? 100,
+    });
+    return el;
+  }
+
+  it('translates direct children of inner overflow:auto containers by -scrollLeft/-scrollTop during capture', async () => {
+    // Mirrors the brevwick-web repro: a Tailwind <main overflow-y-auto>
+    // scrolled mid-way down. Without this pass, modern-screenshot would
+    // rasterize the TOP of the container's scroll extent.
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 193.5,
+      scrollLeft: 0,
+      clientHeight: 693,
+      scrollHeight: 2144,
+    });
+    const child = document.createElement('div');
+    child.textContent = 'visible content';
+    main.appendChild(child);
+    document.body.appendChild(main);
+
+    let observedTransform = '';
+    let observedOrigin = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        observedTransform = child.style.transform;
+        observedOrigin = child.style.transformOrigin;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    // At capture-time the child is translated to compensate for the
+    // container's live scrollTop. The translate goes from (0, -193.5)
+    // because dx = -scrollLeft, dy = -scrollTop.
+    expect(observedTransform).toBe('translate(0px, -193.5px)');
+    expect(observedOrigin).toBe('0 0');
+    // Post-capture: original empty values restored.
+    expect(child.style.transform).toBe('');
+    expect(child.style.transformOrigin).toBe('');
+
+    main.remove();
+  });
+
+  it('also compensates horizontal scroll (scrollLeft)', async () => {
+    const horiz = makeScrollable({
+      overflow: 'auto',
+      scrollLeft: 50,
+      scrollTop: 0,
+      clientWidth: 200,
+      scrollWidth: 800,
+    });
+    const child = document.createElement('div');
+    horiz.appendChild(child);
+    document.body.appendChild(horiz);
+
+    let observedTransform = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        observedTransform = child.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    expect(observedTransform).toBe('translate(-50px, 0px)');
+    expect(child.style.transform).toBe('');
+
+    horiz.remove();
+  });
+
+  it('does not touch containers with overflow:visible even if scrollTop is non-zero', async () => {
+    // Defensive: an element can have a scrollTop value set programmatically
+    // without overflow:auto/scroll. Such an element is not actually a
+    // scroll container in the live tree (browsers ignore scrollTop on
+    // overflow:visible) and must not be translated.
+    const visible = makeScrollable({
+      overflow: 'visible',
+      scrollTop: 100,
+      clientHeight: 100,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    visible.appendChild(child);
+    document.body.appendChild(visible);
+
+    let observedTransform = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        observedTransform = child.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    expect(observedTransform).toBe('');
+
+    visible.remove();
+  });
+
+  it('does not touch containers whose scrollWidth/scrollHeight do not exceed clientWidth/clientHeight', async () => {
+    // Defensive: an overflow:auto element with no actual overflow is not
+    // a scroll container. scrollTop > 0 on such an element is a stale
+    // value and should not trigger compensation.
+    const noOverflow = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 50,
+      clientHeight: 1000,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    noOverflow.appendChild(child);
+    document.body.appendChild(noOverflow);
+
+    let observedTransform = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        observedTransform = child.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    expect(observedTransform).toBe('');
+
+    noOverflow.remove();
+  });
+
+  it('composes with an existing inline transform by prepending the translate', async () => {
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 100,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    // Pre-existing transform (e.g. a CSS animation handle, a UI lib's
+    // hover-scale). Compensation must preserve it.
+    child.style.transform = 'rotate(45deg)';
+    child.style.transformOrigin = 'center center';
+    main.appendChild(child);
+    document.body.appendChild(main);
+
+    let observedTransform = '';
+    let observedOrigin = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        observedTransform = child.style.transform;
+        observedOrigin = child.style.transformOrigin;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    // Translate prepended (so it's applied in the parent's frame),
+    // existing rotate preserved.
+    expect(observedTransform).toBe('translate(0px, -100px) rotate(45deg)');
+    // transform-origin overridden to 0 0 during capture.
+    expect(observedOrigin).toBe('0 0');
+    // Original values restored verbatim post-capture.
+    expect(child.style.transform).toBe('rotate(45deg)');
+    expect(child.style.transformOrigin).toBe('center center');
+
+    main.remove();
+  });
+
+  it('restores the original transform even when capture rejects', async () => {
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 100,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    child.style.transform = 'scale(2)';
+    child.style.transformOrigin = '10px 20px';
+    main.appendChild(child);
+    document.body.appendChild(main);
+
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockRejectedValue(new Error('boom')),
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const { captureScreenshot } = await import('../screenshot');
+    const blob = await captureScreenshot();
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('image/webp');
+
+    // Original values restored after the rejection — no leaked
+    // translate, no leaked transform-origin: 0 0.
+    expect(child.style.transform).toBe('scale(2)');
+    expect(child.style.transformOrigin).toBe('10px 20px');
+
+    warn.mockRestore();
+    main.remove();
+  });
+
+  it('translates every direct element child, not just the first', async () => {
+    // The SDK's compensation pass walks all direct children, not just
+    // firstElementChild. A Tailwind <main> typically holds a header,
+    // a content area, and a footer as siblings — all need the same
+    // translate to render at their visible offsets.
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 50,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const a = document.createElement('header');
+    const b = document.createElement('section');
+    const c = document.createElement('footer');
+    main.append(a, b, c);
+    document.body.appendChild(main);
+
+    let observed: string[] = [];
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        observed = [a.style.transform, b.style.transform, c.style.transform];
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    expect(observed).toEqual([
+      'translate(0px, -50px)',
+      'translate(0px, -50px)',
+      'translate(0px, -50px)',
+    ]);
+    expect(a.style.transform).toBe('');
+    expect(b.style.transform).toBe('');
+    expect(c.style.transform).toBe('');
+
+    main.remove();
+  });
+
+  it('keeps original transforms restored after concurrent captures release their refs', async () => {
+    // Mirrors the skip-scrub concurrency test: two overlapping captures
+    // against the same scrollable container must not leak transforms.
+    // Without ref-counting, the second capture's stash would record the
+    // already-mutated `translate(...)` string and the original transform
+    // would never come back.
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 200,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    child.style.transform = 'rotate(10deg)';
+    main.appendChild(child);
+    document.body.appendChild(main);
+
+    let callNum = 0;
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>((r) => {
+      releaseSecond = r;
+    });
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn(async () => {
+        callNum += 1;
+        if (callNum === 2) await secondGate;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    const a = captureScreenshot();
+    const b = captureScreenshot();
+    // Synchronous compensation pass ran for both — transform composed.
+    expect(child.style.transform).toBe('translate(0px, -200px) rotate(10deg)');
+    await a;
+    // Second capture still holds its ref → the transform stays composed.
+    expect(child.style.transform).toBe('translate(0px, -200px) rotate(10deg)');
+
+    releaseSecond();
+    await b;
+    // Last ref released → original restored, not the already-mutated
+    // composed string.
+    expect(child.style.transform).toBe('rotate(10deg)');
+
+    main.remove();
+  });
+
+  it('skips non-element children (text nodes, comments) without breaking iteration', async () => {
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 50,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    // Mix element and non-element children. firstElementChild iteration
+    // should naturally skip non-elements; this test pins that behaviour.
+    main.appendChild(document.createTextNode('lead text'));
+    const child = document.createElement('div');
+    main.appendChild(child);
+    main.appendChild(document.createComment('a comment'));
+    document.body.appendChild(main);
+
+    let observed = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        observed = child.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    expect(observed).toBe('translate(0px, -50px)');
+    expect(child.style.transform).toBe('');
+
+    main.remove();
+  });
+});
