@@ -51,8 +51,9 @@ import {
 // previous mock factory still bound. The first test in the file does
 // not need a pre-test reset because nothing in the integration setup
 // imports `modern-screenshot`. Cross-link: the static-graph counterpart
-// is `chunk-split.test.ts::eager ESM chunk is under the 2.2 kB gzip
-// budget` — do not delete one thinking it covers the other.
+// is `chunk-split.test.ts::eager ESM chunk + statically-imported siblings
+// stay under the 8 kB gzip budget` — do not delete one thinking it covers
+// the other.
 
 const server = createIntegrationServer();
 

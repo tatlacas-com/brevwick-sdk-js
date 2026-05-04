@@ -360,10 +360,11 @@ Server-side sanitisation runs as defence-in-depth, but **the client redactor is 
 
 Enforced in CI via `size-limit` and asserted in tests:
 
-- **Initial chunk (`createBrevwick` + ring config validation):** ≤ 2.85 kB gzip.
+- **Eager core (`createBrevwick` + console ring + network ring + ring config validation):** ≤ 8 kB gzip. The console + network rings ride the eager path on purpose — they have to be live before the first user error or fetch fires, otherwise the issue you're trying to file arrives missing the very evidence you opened the widget to report.
 - **On first `captureScreenshot()` call:** `modern-screenshot` dynamic-imports and adds up to ≤ 25 kB gzip.
+- **On first `submit()` call:** the submit pipeline (presign / upload / ingest / retry) dynamic-imports.
 
-Everything heavy is dynamic-imported on demand — importing this package does not pull in the screenshot encoder until a capture actually runs.
+The screenshot encoder, the submit pipeline, and the project-config fetch are all dynamic-imported — importing this package does not pull them in until you actually call them.
 
 ## `sideEffects: false`
 

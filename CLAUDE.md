@@ -114,12 +114,12 @@ pnpm --filter @tatlacas/brevwick-react test
 
 ## Bundle Budget — DO NOT EXCEED
 
-- Core `@tatlacas/brevwick-sdk` initial chunk: **< 2.85 kB gzip** (bumped from 2.2 kB in the landing-parity bundle — #75/#76/#77 — to absorb the ring-config + redact validation expansion in `core/validate.ts`; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and mirrored in SDD § 12)
+- Core `@tatlacas/brevwick-sdk` eager total (`index.js` + every chunk it pulls in via static `import` / `export … from`): **< 8 kB gzip** (bumped from 2.85 kB when the console + network rings moved into the eager registry to close the install-time capture race; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and `.size-limit.js`, mirrored in SDD § 12)
 - On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
 - React adapter `@tatlacas/brevwick-react`: **< 25 kB gzip**
 - Solid adapter `@tatlacas/brevwick-solid`: **< 5 kB gzip** (Solid runtime is small + the V1 FAB ships a strict subset of the React widget UI)
 
-Anything heavy must be dynamic-imported (`await import('modern-screenshot')`) so it doesn't ship until the user clicks the FAB.
+The console + network rings sit on the eager path on purpose: they have to be live before the first user error or fetch fires, otherwise the submitted issue is missing the very evidence the user opened the widget to report. Anything heavy that does NOT need to capture pre-submit (`modern-screenshot`, the submit pipeline, the project-config fetch) stays behind `await import('…')` so it doesn't ship until needed.
 
 ## Redaction Is Mandatory
 

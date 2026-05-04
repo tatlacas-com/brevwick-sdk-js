@@ -200,7 +200,7 @@ Full API → [packages/sdk/README.md](./packages/sdk/README.md).
 
 ## Why Brevwick
 
-- **Zero-cost until engaged.** Core bundle is **< 2.2 kB gzip**. The screenshot encoder (`modern-screenshot`) is dynamic-imported and only loads when the user opens the widget — on-open budget is **< 25 kB gzip**.
+- **Capture-first.** Core eager bundle is **< 8 kB gzip** and includes the console + network rings — they're live the instant `install()` returns so any error or failing fetch from app bootstrap onwards lands in the buffer, ready to ride along when the user files the issue. The screenshot encoder (`modern-screenshot`) and the submit pipeline are dynamic-imported on demand — on-widget-open budget is **< 25 kB gzip**.
 - **Privacy-first.** Every payload is redacted client-side before it leaves the device — common secrets (Bearer tokens, cookies, email addresses, credit-card patterns) are stripped from console output, network bodies, and routes before anything is sent. Elements tagged with `data-brevwick-skip` are hidden in screenshots.
 - **Typed end-to-end.** Full TypeScript types for config, submit input, results, and errors. `submit()` never throws — it resolves to a tagged `{ ok: true, issue_id }` / `{ ok: false, error }` so you handle failures explicitly.
 - **SSR-safe.** All browser APIs are behind `typeof window` / `typeof document` guards; SSR renders cleanly and rings activate on first client mount.

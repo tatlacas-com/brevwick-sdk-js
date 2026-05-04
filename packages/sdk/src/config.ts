@@ -1,10 +1,11 @@
 /**
  * Project-config fetcher for `GET /v1/ingest/config`.
  *
- * Loaded lazily from `core/client.ts` so the eager bundle stays under the
- * 2.2 kB gzip budget (see `CLAUDE.md` + SDD § 12). Never throws — failure
- * modes all resolve to `null` so the widget degrades to "no toggle" without
- * bubbling errors through the caller.
+ * Loaded lazily from `core/client.ts` so the eager bundle stays off the
+ * project-config network round-trip (`getConfig()` only fires on widget
+ * open, not on import). Never throws — failure modes all resolve to `null`
+ * so the widget degrades to "no toggle" without bubbling errors through
+ * the caller.
  */
 import type { ProjectConfig } from './types';
 import { SDK_USER_AGENT } from './core/internal/sdk-version';

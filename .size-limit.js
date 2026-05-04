@@ -33,24 +33,40 @@ const FILE_MODE = {
 const fileEntry = (name, path, limit) => ({ name, path, limit, ...FILE_MODE });
 
 export default [
-  // ── Core eager chunk (≤ 2.85 kB gzip) ────────────────────────────────────
-  // Bumped from 2.2 kB → 2.85 kB in the landing-parity bundle (issues
-  // #75 / #76 / #77). The new ring-config parsers (console levels + max
-  // bounds, network captureSuccess + max bounds) and the redact disable/
-  // custom validator all live in `core/validate.ts`, which is eagerly
-  // imported by `createBrevwick`. The accumulated cost (~+570 B gzip) is
-  // well within the +650 B target documented in the parent PR; the
-  // expanded redact patterns + Luhn helper themselves stay in the
-  // dynamic-imported chunks (rings + submit) and do NOT show up here.
+  // ── Core eager total (≤ 8 kB gzip) ───────────────────────────────────────
+  // File-mode glob: gzip `index.js` plus every shared chunk it pulls in
+  // via static `import` / `export … from`. tsup hoists shared symbols
+  // (the redact module, the console + network ring code) into
+  // `chunk-*.js` files; those land on the same eager turn as `index.js`
+  // and must be counted, while the *lazy* chunks live under explicit
+  // prefixes (`submit-*`, `screenshot-*`, `config-*`) and stay outside
+  // this glob.
+  //
+  // Bundled-import mode (`import: '{ createBrevwick }'`) was tried and
+  // rejected: esbuild bundles dynamic `import()` graphs too, so it
+  // measured the eager + lazy total (~19 kB) and conflated the two
+  // budgets. The companion in-suite assertion in
+  // `packages/sdk/src/__tests__/chunk-split.test.ts` walks the *static*
+  // import graph to enforce the precise eager total; this entry is the
+  // CI gate and uses the same 8 kB ceiling.
+  //
+  // Bumped from 2.85 kB → 8 kB when the console + network rings moved
+  // out of dynamic-import thunks and into the eager registry. The
+  // earlier shape opened a capture race (errors / fetches fired after
+  // `install()` but before the ring chunks landed went unrecorded —
+  // the headline "missing console + network info on submitted issues"
+  // bug). Reliable capture is the SDK's product guarantee, so the
+  // budget moved up rather than the rings moving back behind a network
+  // round-trip.
   fileEntry(
     '@tatlacas/brevwick-sdk core eager (ESM)',
-    'packages/sdk/dist/index.js',
-    '2.85 kB',
+    'packages/sdk/dist/{index,chunk-*}.js',
+    '8 kB',
   ),
   fileEntry(
     '@tatlacas/brevwick-sdk core eager (CJS)',
-    'packages/sdk/dist/index.cjs',
-    '2.85 kB',
+    'packages/sdk/dist/{index,chunk-*}.cjs',
+    '8 kB',
   ),
 
   // ── Screenshot wrapper chunk (≤ 1.5 kB gzip) ─────────────────────────────

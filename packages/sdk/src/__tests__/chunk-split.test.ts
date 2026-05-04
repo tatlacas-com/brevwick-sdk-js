@@ -80,22 +80,64 @@ describe('bundle chunk split', () => {
     );
 
     /**
-     * Hard ceiling: the eager gzipped chunk must stay under the budget
-     * declared in CLAUDE.md and SDD § 12. Bumped from 2200 to 2850 bytes in
-     * the landing-parity bundle (issues #75 / #76 / #77): `core/validate.ts`
-     * gained the console-levels / network-captureSuccess / redact disable+
-     * custom config parsers, which the eager `createBrevwick` path pulls in.
-     * The expanded redact patterns + Luhn helper stay in the dynamic-
-     * imported ring + submit chunks and do not contribute here. CI also
-     * enforces this budget end-to-end via the `size-check` job
-     * (`.size-limit.js`); this in-suite assertion is kept as a fast-feedback
-     * guard during local `pnpm test`.
+     * Hard ceiling: the **true** eager gzipped weight (`index.js` plus every
+     * sibling chunk it pulls in via static `import` / `export ... from`)
+     * must stay under the budget declared in CLAUDE.md and SDD § 12.
+     *
+     * Measuring `index.js` alone was misleading — tsup hoists shared symbols
+     * into chunk files that the entry statically imports, so the gzipped
+     * size of `index.js` does not reflect what the consumer's bundler
+     * actually inlines on the eager path. The walker below follows static
+     * specifiers only (it deliberately ignores `import('…')` dynamic
+     * specifiers, which are the submit / config / screenshot lazy chunks).
+     *
+     * Bumped from 2.85 kB → 8 kB when the console + network rings moved
+     * out of dynamic-import thunks and into the eager registry. The
+     * earlier dynamic-load shape opened a capture race (errors / fetches
+     * fired after `install()` but before the chunks landed went unrecorded
+     * — the headline "missing console + network info on submitted issues"
+     * bug). Reliable capture is the SDK's product guarantee, so the budget
+     * moved up rather than the rings moving back behind a network round-
+     * trip. CI also enforces this end-to-end via `.size-limit.js`; this
+     * in-suite assertion is the fast-feedback guard during local
+     * `pnpm test`.
      */
-    it('eager ESM chunk is under the 2.85 kB gzip budget', async () => {
+    it('eager ESM chunk + statically-imported siblings stay under the 8 kB gzip budget', async () => {
       const { gzipSync } = await import('node:zlib');
-      const raw = readFileSync(baseEsm);
-      const gzipped = gzipSync(raw).length;
-      expect(gzipped).toBeLessThan(2850);
+
+      // Static-only specifier: `import x from './foo'`, `export … from
+      // './foo'`, or the bare side-effect form `import './foo'`. Excludes
+      // `import('…')` (that pair of parens is what makes the lazy chunks
+      // lazy) and substring matches inside identifiers (the `[^.\w]`
+      // boundary). Tolerates the minifier's "no whitespace before `{`"
+      // shape, e.g. `export{x}from'./foo'`.
+      const STATIC_SPEC =
+        /(?:^|[^.\w])(?:import|export)\b[^'"`(]*?['"](\.\/[^'"]+)['"]/g;
+
+      const visited = new Set<string>();
+      const walk = (file: string): void => {
+        if (visited.has(file)) return;
+        visited.add(file);
+        const src = readFileSync(join(dist, file), 'utf8');
+        for (const m of src.matchAll(STATIC_SPEC)) {
+          walk(m[1]!.replace(/^\.\//, ''));
+        }
+      };
+      walk('index.js');
+
+      let total = 0;
+      const breakdown: Array<[string, number]> = [];
+      for (const file of visited) {
+        const size = gzipSync(readFileSync(join(dist, file))).length;
+        total += size;
+        breakdown.push([file, size]);
+      }
+      // Surface the breakdown in failure output so a regression points at
+      // which chunk grew.
+      expect({ total, breakdown }).toEqual(
+        expect.objectContaining({ total: expect.any(Number) }),
+      );
+      expect(total).toBeLessThan(8 * 1024);
     });
   });
 });

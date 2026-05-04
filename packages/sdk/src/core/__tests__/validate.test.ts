@@ -209,9 +209,9 @@ describe('validateConfig', () => {
   // URL still throws via the rejection table above — this block pins the
   // carve-out. Limited to literal loopback hostnames (`localhost`,
   // `127.0.0.1`, `[::1]`); `*.localhost` aliases are deliberately NOT
-  // supported because the extra regex branch would blow the < 2.2 kB eager
-  // gzip budget — integrators who need `api.localhost` should use
-  // `127.0.0.1` instead or switch to HTTPS.
+  // supported because the extra regex branch would push the eager gzip
+  // budget — integrators who need `api.localhost` should use `127.0.0.1`
+  // instead or switch to HTTPS.
   it.each([
     ['http://localhost:8080', 'http://localhost:8080'],
     ['http://localhost', 'http://localhost'],
