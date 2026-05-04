@@ -137,21 +137,15 @@ describe('captureScreenshot', () => {
   });
 
   it('defaults the capture target to document.body so calls match modern-screenshot README usage', async () => {
-    // Asserts the public contract. The body-default fixes the symptom
-    // reported in tatlacas-com/brevwick-web#254 (a ~2 KiB blank image
-    // when called with no args).
-    //
-    // hypothesis (unverified, do NOT rely on this in test naming):
-    // `<html>` inside an SVG `<foreignObject>` is not flow content and
-    // rasterizes blank in some Chromium builds. The hypothesis has not
-    // been pinned to a Chromium issue and is not what this test asserts;
-    // this test asserts only the observable contract (default = body).
+    // Asserts the public contract. The body-default partially mitigated
+    // the symptom reported in tatlacas-com/brevwick-web#254 (a ~2 KiB
+    // blank image when called with no args); the actual root cause is
+    // documented in the `compensateInnerScrolls` JSDoc in screenshot.ts.
     //
     // NOTE: `modern-screenshot` is mocked in this suite, so this test
     // proves the SDK *passes* `document.body` to `domToBlob` — it does
     // NOT prove rendering improves. Real-DOM coverage of the rasterized
-    // output is out of scope for jsdom; track follow-up Playwright
-    // coverage if regression recurs.
+    // output is out of scope for happy-dom; tracked in #104.
     const spy = vi
       .fn()
       .mockResolvedValue(
@@ -763,6 +757,229 @@ describe('captureScreenshot — inner-scroll compensation', () => {
 
     expect(observed).toBe('translate(0px, -50px)');
     expect(child.style.transform).toBe('');
+
+    main.remove();
+  });
+
+  it('does NOT translate position:sticky direct children', async () => {
+    // Sticky-header dashboards (the exact class of app this PR is
+    // meant to fix) would regress without this skip: translating a
+    // `top:0`-stuck header by `-scrollTop` rasterizes it off the top
+    // of the captured frame entirely. The compensation pass must
+    // leave sticky direct children alone.
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 193.5,
+      clientHeight: 693,
+      scrollHeight: 2144,
+    });
+    const stickyHeader = document.createElement('header');
+    stickyHeader.style.position = 'sticky';
+    stickyHeader.style.top = '0px';
+    const content = document.createElement('section');
+    main.append(stickyHeader, content);
+    document.body.appendChild(main);
+
+    let stickyDuring = '';
+    let stickyOriginDuring = '';
+    let contentDuring = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        stickyDuring = stickyHeader.style.transform;
+        stickyOriginDuring = stickyHeader.style.transformOrigin;
+        contentDuring = content.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    // Sticky child untouched — no translate, no transform-origin override.
+    expect(stickyDuring).toBe('');
+    expect(stickyOriginDuring).toBe('');
+    // Sibling non-sticky content child still gets compensated.
+    expect(contentDuring).toBe('translate(0px, -193.5px)');
+    // Post-capture: still untouched (nothing to restore).
+    expect(stickyHeader.style.transform).toBe('');
+    expect(content.style.transform).toBe('');
+
+    main.remove();
+  });
+
+  it('does NOT translate position:fixed direct children', async () => {
+    // A `position: fixed` child of a scrollable container is anchored
+    // to the viewport, not the container. Translating it by
+    // `-scrollTop` would shift the captured frame's pinned UI off
+    // the top of the rasterized output.
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 100,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const fixedBar = document.createElement('div');
+    fixedBar.style.position = 'fixed';
+    fixedBar.style.top = '0px';
+    const content = document.createElement('section');
+    main.append(fixedBar, content);
+    document.body.appendChild(main);
+
+    let fixedDuring = '';
+    let contentDuring = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        fixedDuring = fixedBar.style.transform;
+        contentDuring = content.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    expect(fixedDuring).toBe('');
+    expect(contentDuring).toBe('translate(0px, -100px)');
+    expect(fixedBar.style.transform).toBe('');
+
+    main.remove();
+  });
+
+  it('composes nested scroll containers without double-applying the outer translate', async () => {
+    // Two overflow:auto ancestors, each with non-zero scrollTop. The
+    // outer's first child is the inner; the inner's first child is
+    // some content. The algorithm walks descendants and translates
+    // direct children of each scroller independently, so:
+    //  - the inner container itself receives the OUTER's translate
+    //    (because it's a direct child of the outer);
+    //  - the inner's content child receives the INNER's translate.
+    // The inner content child must NOT receive the outer's translate
+    // composed on top — only its immediate parent's compensation.
+    const outer = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 50,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const inner = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 80,
+      clientHeight: 100,
+      scrollHeight: 800,
+    });
+    const content = document.createElement('div');
+    inner.appendChild(content);
+    outer.appendChild(inner);
+    document.body.appendChild(outer);
+
+    let innerDuring = '';
+    let contentDuring = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        innerDuring = inner.style.transform;
+        contentDuring = content.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    // Inner is the outer's direct child → compensated for outer's
+    // scrollTop (50px).
+    expect(innerDuring).toBe('translate(0px, -50px)');
+    // Content is the inner's direct child → compensated for inner's
+    // scrollTop (80px) only. No double-application.
+    expect(contentDuring).toBe('translate(0px, -80px)');
+    // Both restored after capture.
+    expect(inner.style.transform).toBe('');
+    expect(content.style.transform).toBe('');
+
+    outer.remove();
+  });
+
+  it('does NOT translate the capture root itself when the root is a scrollable container', async () => {
+    // Documented limitation: the root is the camera frame and the
+    // walk uses `querySelectorAll('*')` which returns descendants
+    // only. Passing a scrollable element as `opts.element` leaves
+    // its own scroll uncompensated; the root must not be mutated by
+    // the compensation pass under any circumstances.
+    const root = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 120,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    root.appendChild(child);
+    document.body.appendChild(root);
+
+    let rootDuring = '';
+    let childDuring = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        rootDuring = root.style.transform;
+        childDuring = child.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot({ element: root });
+
+    // Root is never translated — it's the camera frame.
+    expect(rootDuring).toBe('');
+    // The child is also not translated, because the root is not in
+    // the descendant walk: `root.querySelectorAll('*')` returns
+    // nodes nested inside `root`, but the scrollable container we
+    // are checking against is the root itself. The child stays at
+    // the top of the scroll extent — this is the documented
+    // foot-gun. Pin the behaviour here.
+    expect(childDuring).toBe('');
+    expect(root.style.transform).toBe('');
+
+    root.remove();
+  });
+
+  it('coexists with [data-brevwick-skip]: a scrolled container with a skip child gets both passes applied and both restored', async () => {
+    // A direct child of a scrollable container that ALSO carries
+    // [data-brevwick-skip] must end up:
+    //  - hidden by the scrub pass (visibility: hidden);
+    //  - translated by the compensation pass (transform: translate(...));
+    // and after the capture both must be restored to their original
+    // values. Restore order is LIFO: comp first, then skip.
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 75,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const skipChild = document.createElement('div');
+    skipChild.setAttribute('data-brevwick-skip', '');
+    skipChild.style.visibility = 'visible';
+    skipChild.style.transform = 'rotate(5deg)';
+    main.appendChild(skipChild);
+    document.body.appendChild(main);
+
+    let visibilityDuring = '';
+    let transformDuring = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        visibilityDuring = skipChild.style.visibility;
+        transformDuring = skipChild.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot();
+
+    // BOTH mutations applied during capture.
+    expect(visibilityDuring).toBe('hidden');
+    expect(transformDuring).toBe('translate(0px, -75px) rotate(5deg)');
+    // BOTH restored after capture.
+    expect(skipChild.style.visibility).toBe('visible');
+    expect(skipChild.style.transform).toBe('rotate(5deg)');
 
     main.remove();
   });

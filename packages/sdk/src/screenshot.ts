@@ -17,16 +17,19 @@ export interface CaptureScreenshotOpts {
    * "blank capture" reports against this code path
    * (brevwick-web#254 → this repo's PR #103) was originally hypothesised
    * to be an `<html>`-inside-`<foreignObject>` flow-content interaction.
-   * That hypothesis was wrong. The actual cause is that
-   * `modern-screenshot` resets `scrollTop`/`scrollLeft` to (0, 0) on
-   * every overflow:auto/scroll descendant when it clones into the
-   * `<foreignObject>`, so a Tailwind-style `<main class="overflow-y-auto">`
-   * shell rasterizes the *top* of its scroll extent rather than what
-   * the user is looking at. Flipping the default root from
-   * `documentElement` to `body` in PR #103 incidentally exposed a
-   * different (sometimes acceptable) slice of the page but did not
-   * address the underlying reset; that is what the compensation pass
-   * does.
+   * That hypothesis was wrong. The empirically observed cloning
+   * behaviour of `modern-screenshot` is that `scrollTop`/`scrollLeft`
+   * land at (0, 0) on every overflow:auto/scroll descendant once the
+   * subtree has been cloned into the `<foreignObject>` — so a
+   * Tailwind-style `<main class="overflow-y-auto">` shell rasterizes
+   * the *top* of its scroll extent rather than what the user is
+   * looking at. (We have not pinned this to a Chromium issue or a
+   * specific `modern-screenshot` source line; it is the observable
+   * outcome the compensation pass below corrects for.) Flipping the
+   * default root from `documentElement` to `body` in PR #103
+   * incidentally exposed a different (sometimes acceptable) slice of
+   * the page but did not address the underlying reset; that is what
+   * the compensation pass does.
    *
    * Edge cases worth knowing:
    * - Capture invoked before `<body>` parses (a `<head>` script with no
@@ -42,9 +45,13 @@ export interface CaptureScreenshotOpts {
    *   Skip markers outside the sub-tree are left untouched.
    * - Inner overflow:auto/scroll containers are compensated for their
    *   live `scrollTop`/`scrollLeft` so the capture matches what the
-   *   user sees. `position: sticky` direct children of those containers
-   *   are translated like any other child and lose their sticky-binding
-   *   in the rasterized output — see the `compensateInnerScrolls`
+   *   user sees. `position: sticky` and `position: fixed` direct
+   *   children of those containers are explicitly skipped by the
+   *   compensation pass — translating a pinned element by
+   *   `-scrollTop` would rasterize it off the top of the captured
+   *   frame; leaving them un-translated lets them render at their
+   *   intrinsic flow position in the clone (roughly where the user
+   *   sees a `top:0`-stuck header). See the `compensateInnerScrolls`
    *   JSDoc for the full limitation list.
    *
    * Real-browser test coverage: rasterized-output regressions can only
@@ -162,16 +169,20 @@ function restoreSkippedNodes(nodes: SkippedNode[]): void {
 
 /**
  * Inner-scroll compensation. `modern-screenshot` clones the capture
- * subtree into an SVG `<foreignObject>`; the clone resets
- * `scrollTop`/`scrollLeft` on every overflow:auto/scroll descendant
- * to (0, 0), so a page whose visible content lives inside a Tailwind
+ * subtree into an SVG `<foreignObject>`; the empirically observed
+ * clone-time outcome is that `scrollTop`/`scrollLeft` land at (0, 0)
+ * on every overflow:auto/scroll descendant of the capture root. A
+ * page whose visible content lives inside a Tailwind
  * `<main class="overflow-y-auto">` (or any in-app scroll container)
- * rasterizes the TOP of that container's scroll extent instead of what
- * the user is looking at. That manifests as a mostly-blank or
- * partial-content WebP — the failure mode reported repeatedly against
- * the React SDK (brevwick-web#254 lineage; PR #103 in this repo flipped
- * the default capture root from `documentElement` to `body` in response
- * but did not address the underlying inner-scroll reset).
+ * therefore rasterizes the TOP of that container's scroll extent
+ * instead of what the user is looking at. That manifests as a
+ * mostly-blank or partial-content WebP — the failure mode reported
+ * repeatedly against the React SDK (brevwick-web#254 lineage; PR #103
+ * in this repo flipped the default capture root from `documentElement`
+ * to `body` in response but did not address the underlying
+ * inner-scroll reset). We have not pinned this to a Chromium issue
+ * or a specific `modern-screenshot` source line; the compensation
+ * pass corrects the observable symptom rather than the upstream cause.
  *
  * Approach: walk overflow:auto/scroll descendants of the capture root
  * with non-zero `scrollTop`/`scrollLeft`, leave their `overflow` clip
@@ -187,57 +198,78 @@ function restoreSkippedNodes(nodes: SkippedNode[]): void {
  * children, and the original transform is only restored when the last
  * concurrent capture releases its ref.
  *
- * Known limitations (called out for future iteration):
- *  - `position: sticky` direct children are translated like any other,
- *    losing their sticky-binding. The cloned tree has no scroll, so
- *    even leaving them un-translated would not preserve the stuck
- *    position. Faithful sticky reconstruction needs per-child geometry
- *    computation; deferred.
+ * Known limitations:
+ *  - `position: sticky` and `position: fixed` direct children are
+ *    explicitly skipped. Translating a `top:0`-stuck header by
+ *    `-scrollTop` would rasterize it off the top of the captured
+ *    frame entirely (re-introducing the partial-blank symptom this
+ *    pass is here to fix). Skipping leaves them at their intrinsic
+ *    flow position in the clone — not pixel-perfect, but strictly
+ *    better than translating off-screen. Faithful sticky/fixed
+ *    reconstruction needs per-child geometry computation.
  *  - Existing inline `style.transform` on a direct child is composed
  *    by *prepending* the translate. Composition with a non-default
  *    `transform-origin` on the child can shift slightly versus the
  *    live tree — rare in practice, would surface as a small visual
  *    offset on transformed widgets, never as the blank-capture bug.
+ *  - The capture root itself is not walked. `root.querySelectorAll('*')`
+ *    returns descendants only, so passing a scrollable element as
+ *    `opts.element` will not compensate that element's own scroll —
+ *    the root is the camera frame, and translating it would shift
+ *    the entire capture. Pass an outer wrapper if the visible
+ *    viewport is the element you want to capture.
+ *  - RTL writing modes: browsers historically disagreed on
+ *    `scrollLeft` semantics in RTL containers (negative-anchored vs
+ *    positive-from-right vs positive-from-left). Modern Chromium
+ *    normalises to negative-from-right, but mixed-mode pages can
+ *    still see the wrong direction of compensation.
  *  - Window scroll (`html.scrollTop`/`body.scrollTop`) is left to
  *    `modern-screenshot`'s own viewport handling — only inner
  *    overflow containers are compensated here.
  */
-interface ScrollCompensation {
-  child: HTMLElement;
-}
-
 const scrollStashedTransform = new WeakMap<HTMLElement, string>();
 const scrollStashedOrigin = new WeakMap<HTMLElement, string>();
 const scrollCompRefCount = new WeakMap<HTMLElement, number>();
 
 function isScrollableContainer(el: HTMLElement): boolean {
+  // Load-bearing early-out: this short-circuit keeps `getComputedStyle`
+  // off the hot path for the typical 5k-node dashboard where only a
+  // handful of containers have non-zero scroll offsets.
   if (el.scrollTop === 0 && el.scrollLeft === 0) return false;
   const view = el.ownerDocument?.defaultView;
   if (!view) return false;
   const cs = view.getComputedStyle(el);
   const overflow = `${cs.overflow} ${cs.overflowX} ${cs.overflowY}`;
   if (!/auto|scroll/.test(overflow)) return false;
+  // `+ 1` epsilon: layout subpixel rounding noise. An element whose
+  // content overflows by less than a pixel is not meaningfully
+  // scrollable and should not trigger compensation.
   return (
     el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1
   );
 }
 
-function compensateInnerScrolls(
-  root: Document | HTMLElement,
-): ScrollCompensation[] {
+function compensateInnerScrolls(root: Document | HTMLElement): HTMLElement[] {
   const candidates = root.querySelectorAll<HTMLElement>('*');
-  const records: ScrollCompensation[] = [];
+  const records: HTMLElement[] = [];
   candidates.forEach((el) => {
     if (!isScrollableContainer(el)) return;
     const dx = -el.scrollLeft;
     const dy = -el.scrollTop;
     if (dx === 0 && dy === 0) return;
+    const view = el.ownerDocument?.defaultView;
+    if (!view) return;
     for (
       let child = el.firstElementChild;
       child;
       child = child.nextElementSibling
     ) {
       if (!(child instanceof HTMLElement)) continue;
+      // Skip sticky/fixed direct children: translating a pinned
+      // element by -scrollTop would rasterize it off the top of the
+      // frame (the failure mode this pass is meant to prevent).
+      const childPos = view.getComputedStyle(child).position;
+      if (childPos === 'sticky' || childPos === 'fixed') continue;
       const count = scrollCompRefCount.get(child) ?? 0;
       if (count === 0) {
         scrollStashedTransform.set(child, child.style.transform);
@@ -249,14 +281,14 @@ function compensateInnerScrolls(
         child.style.transformOrigin = '0 0';
       }
       scrollCompRefCount.set(child, count + 1);
-      records.push({ child });
+      records.push(child);
     }
   });
   return records;
 }
 
-function restoreInnerScrolls(records: ScrollCompensation[]): void {
-  for (const { child } of records) {
+function restoreInnerScrolls(records: HTMLElement[]): void {
+  for (const child of records) {
     const count = (scrollCompRefCount.get(child) ?? 1) - 1;
     if (count <= 0) {
       child.style.transform = scrollStashedTransform.get(child) ?? '';
@@ -309,13 +341,9 @@ async function capture(
   }
 
   // Default to `document.body`, not `document.documentElement`. The
-  // brevwick-web reproduction in tatlacas-com/brevwick-web#254 yielded a
-  // ~2 KiB blank image with the `documentElement` default; switching to
-  // `body` fixes the symptom there and matches `modern-screenshot`'s
-  // README examples. Hypothesis (unverified): `<html>` inside an SVG
-  // `<foreignObject>` is not flow content and rasterizes blank in some
-  // Chromium builds. See JSDoc on `CaptureScreenshotOpts.element` for
-  // the provisional reasoning.
+  // previous `documentElement` default exposed the inner-scroll-reset
+  // bug — see the `compensateInnerScrolls` JSDoc for the actual root
+  // cause and `CaptureScreenshotOpts.element` for the contract.
   const element = opts?.element ?? document.body;
   if (!element) {
     logFailure(internal, new Error('document.body is not available'));
@@ -326,7 +354,7 @@ async function capture(
   // initial scrub or scroll-compensation pass throws (malformed
   // selector / host-env quirks on a non-standard root).
   let skipped: SkippedNode[] = [];
-  let scrollComps: ScrollCompensation[] = [];
+  let scrollComps: HTMLElement[] = [];
 
   try {
     skipped = scrubSkippedNodes(element);

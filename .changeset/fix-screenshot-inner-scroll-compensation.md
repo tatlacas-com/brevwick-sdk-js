@@ -1,6 +1,7 @@
 ---
 '@tatlacas/brevwick-angular': patch
 '@tatlacas/brevwick-react': patch
+'@tatlacas/brevwick-react-native': patch
 '@tatlacas/brevwick-sdk': patch
 '@tatlacas/brevwick-solid': patch
 '@tatlacas/brevwick-svelte': patch
@@ -40,13 +41,21 @@ Restored unconditionally in the same `try/finally` block as the
 `[data-brevwick-skip]` scrub, ref-counted via WeakMap so concurrent
 captures do not leak transforms.
 
-Limitations called out in JSDoc: `position: sticky` direct children of
-inner scrollables lose their sticky-binding (faithful sticky
-reconstruction needs per-child geometry computation, deferred); inline
-`style.transform` on a direct child composes by _prepending_ the
-translate; window scroll continues to be handled by `modern-screenshot`
-itself. Real-browser pixel coverage of the rasterized output remains
-tracked separately via #104.
+Sticky/fixed handling: `position: sticky` and `position: fixed` direct
+children are explicitly skipped by the compensation pass — translating
+them by `-scrollTop` would rasterize the pinned element off the top of
+the captured frame, re-introducing the partial-blank symptom this PR
+fixes for sticky-header dashboards. Skipped children render at their
+intrinsic flow position in the clone, which is roughly where the user
+sees a `top:0`-stuck header. Not pixel-perfect (faithful reconstruction
+needs per-child geometry), but strictly better than translating
+off-screen.
+
+Other limitations called out in JSDoc: inline `style.transform` on a
+direct child composes by _prepending_ the translate; RTL `scrollLeft`
+semantics are not normalised; window scroll continues to be handled by
+`modern-screenshot` itself. Real-browser pixel coverage of the
+rasterized output remains tracked separately via #104.
 
 The non-SDK adapter packages get a no-op patch bump to stay in
 lockstep per the repo's pre-1.0 versioning policy.
