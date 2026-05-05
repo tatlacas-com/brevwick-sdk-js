@@ -15,13 +15,18 @@ import type { BrevwickConfig } from '@tatlacas/brevwick-sdk';
 const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
 const PLACEHOLDER_KEY = 'pk_test_replace_me';
 
-interface ConfigState {
+export type ConfigErrorKind =
+  | 'missing-key'
+  | 'invalid-key'
+  | 'missing-endpoint';
+
+export interface ConfigState {
   readonly projectKey: string;
   readonly endpoint: string;
-  readonly error?: 'missing-key' | 'invalid-key' | 'missing-endpoint';
+  readonly error?: ConfigErrorKind;
 }
 
-function readConfig(): ConfigState {
+export function readConfig(): ConfigState {
   const rawKey = import.meta.env.VITE_BREVWICK_PROJECT_KEY ?? '';
   const rawEndpoint = import.meta.env.VITE_BREVWICK_ENDPOINT ?? '';
 
@@ -45,12 +50,7 @@ export function ConfiguredWidget({ children }: Props): ReactElement {
   const { projectKey, endpoint, error } = readConfig();
 
   if (error || !projectKey || !endpoint) {
-    return (
-      <>
-        {children}
-        <ConfigErrorBanner error={error} />
-      </>
-    );
+    return <>{children}</>;
   }
 
   return (
@@ -80,40 +80,6 @@ function ConfiguredProvider({
       {children}
       <FeedbackButton position="bottom-right" />
     </BrevwickProvider>
-  );
-}
-
-function ConfigErrorBanner({
-  error,
-}: {
-  error: ConfigState['error'];
-}): ReactElement | null {
-  if (!error) return null;
-  const text =
-    error === 'missing-key'
-      ? 'Missing VITE_BREVWICK_PROJECT_KEY. Copy .env.example to .env.local, seed a real test key, and reload.'
-      : error === 'invalid-key'
-        ? 'VITE_BREVWICK_PROJECT_KEY is malformed. Must match pk_(live|test)_[A-Za-z0-9]{16,}.'
-        : 'Missing VITE_BREVWICK_ENDPOINT. Point it at your local brevwick-api (e.g. http://localhost:8080).';
-  return (
-    <div
-      role="alert"
-      style={{
-        position: 'fixed',
-        bottom: '1rem',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        maxWidth: '32rem',
-        padding: '0.75rem 1rem',
-        background: '#fef2f2',
-        color: '#b42318',
-        border: '1px solid #fecaca',
-        borderRadius: '0.5rem',
-        fontSize: '0.875rem',
-      }}
-    >
-      {text}
-    </div>
   );
 }
 

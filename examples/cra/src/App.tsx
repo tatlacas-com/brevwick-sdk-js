@@ -50,6 +50,7 @@ export function App(): ReactElement {
           padding: '2rem',
           border: '1px solid rgba(0,0,0,0.1)',
           borderRadius: '0.75rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
           textAlign: 'center',
         }}
       >
