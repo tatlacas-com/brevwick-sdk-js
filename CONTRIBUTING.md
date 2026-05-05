@@ -36,12 +36,13 @@ pnpm --filter @tatlacas/brevwick-react test
 
 Hard limits enforced by `size-limit` and unit tests. **Do not exceed.**
 
-| Scope                                       | Budget (gzip) |
-| ------------------------------------------- | ------------- |
-| `@tatlacas/brevwick-sdk` initial chunk      | ≤ 2.2 kB      |
-| On widget open (`modern-screenshot` loaded) | ≤ 25 kB       |
+| Scope                                                                            | Budget (gzip) |
+| -------------------------------------------------------------------------------- | ------------- |
+| `@tatlacas/brevwick-sdk` eager core (`createBrevwick` + console + network rings) | ≤ 8 kB        |
+| On widget open (`modern-screenshot` loaded)                                      | ≤ 25 kB       |
+| On first `submit()` (presign + upload + ingest pipeline)                         | dynamic       |
 
-Anything heavy must be dynamic-imported (`await import('modern-screenshot')`) so it stays out of the initial bundle.
+The console + network rings sit on the eager path on purpose — they have to be live before the first user error or fetch fires, otherwise the issue you're trying to file arrives missing the very evidence the user opened the widget to report. Anything heavy that does NOT need to capture pre-submit (`modern-screenshot`, the submit pipeline, the project-config fetch) must be dynamic-imported (`await import('…')`) so it stays out of the initial bundle.
 
 ## Redaction is mandatory
 

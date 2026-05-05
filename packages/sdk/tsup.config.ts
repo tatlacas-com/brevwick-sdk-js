@@ -8,9 +8,12 @@ const pkg = JSON.parse(
 
 /**
  * Core SDK build. Code-splitting is enabled for both ESM and CJS so the
- * dynamic `import()`s of the network ring, screenshot, and submit modules
- * land in their own async chunks — keeping the eager base bundle under the
- * 2.2 kB gzip budget mandated by `CLAUDE.md` and enforced by `size-limit`.
+ * dynamic `import()`s of the screenshot, submit, and project-config
+ * modules land in their own async chunks. The console + network rings are
+ * eagerly imported by `core/registry.ts` on purpose — see CLAUDE.md
+ * "Bundle Budget" + `core/registry.ts` for the install-time capture-race
+ * reasoning. The eager total is enforced by `size-limit` and asserted in
+ * `__tests__/chunk-split.test.ts`.
  */
 export default defineConfig({
   entry: ['src/index.ts', 'src/testing.ts'],

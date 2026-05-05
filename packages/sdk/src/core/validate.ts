@@ -25,9 +25,8 @@ export class BrevwickConfigError extends Error {
  * here and every consumer picks up the change automatically.
  *
  * The regex is the only export — a `boolean`-returning helper would have
- * cost ~25 B gzipped on top of the eager bundle (we are 30 B from the
- * 2.85 kB ceiling), and `PROJECT_KEY_PATTERN.test(value)` is a one-line
- * call for consumers anyway.
+ * cost ~25 B gzipped on the eager path, and `PROJECT_KEY_PATTERN.test(value)`
+ * is a one-line call for consumers anyway.
  */
 export const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
 const DEFAULT_ENDPOINT = 'https://api.brevwick.com';

@@ -1,8 +1,9 @@
 /**
  * Project-config fetcher for `GET /v1/ingest/config`.
  *
- * Loaded lazily from `core/client.ts` so the eager bundle stays under the
- * 2.2 kB gzip budget (see `CLAUDE.md` + SDD § 12). Never throws — failure
+ * Loaded lazily from `core/client.ts` so this module's code stays off the
+ * eager path — `getConfig()` only fires on widget open, so paying for the
+ * fetcher on every page view would be wasted weight. Never throws — failure
  * modes all resolve to `null` so the widget degrades to "no toggle" without
  * bubbling errors through the caller.
  */

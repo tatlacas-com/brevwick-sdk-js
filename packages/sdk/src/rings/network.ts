@@ -9,9 +9,11 @@
  * own ingest endpoint (or carrying the `X-Brevwick-SDK` marker) are skipped to
  * avoid feedback loops when `submit()` itself posts a failing response.
  *
- * This module is deliberately lazy-imported from `client.install()` so the
- * core eager chunk stays under the 2 kB gzip budget — none of the wrapping
- * code ships until the SDK is actually installed.
+ * Imported eagerly by `core/registry.ts` so the fetch + XHR patches are
+ * live the instant `install()` returns — anything that fires on the very
+ * next synchronous turn (a failing fetch from app bootstrap, a console.error
+ * from a hydration mismatch) has to land in the buffer or the submitted
+ * issue is missing the evidence the user opened the widget to report.
  */
 import type { NetworkEntry } from '../types';
 import type { RingContext, RingDefinition } from '../core/internal';

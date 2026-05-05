@@ -184,14 +184,16 @@ function build(
     install,
     uninstall,
     submit: (input: FeedbackInput): Promise<SubmitResult> =>
-      // Lazy-load so the submit pipeline (plus redaction + version helpers)
-      // lives in its own chunk and the eager core bundle stays under the
-      // 2 kB gzip budget. `dispatchSubmit` owns both the happy path and
-      // the never-throws fallback for any unexpected pipeline rejection,
-      // so no error-code literals leak into the eager surface. A chunk-
-      // load failure here (deploy mismatch / offline) rejects the
-      // returned promise — that is the only environmental escape from
-      // the never-throws contract and is unreachable in a healthy build.
+      // Lazy-load so the submit pipeline (presign + upload + ingest + retry
+      // plus the version helpers) lives in its own chunk and stays off the
+      // eager path — submit only ever fires on user intent (widget submit
+      // button), so paying for it on every page view is wasted weight.
+      // `dispatchSubmit` owns both the happy path and the never-throws
+      // fallback for any unexpected pipeline rejection, so no error-code
+      // literals leak into the eager surface. A chunk-load failure here
+      // (deploy mismatch / offline) rejects the returned promise — that is
+      // the only environmental escape from the never-throws contract and
+      // is unreachable in a healthy build.
       import('../submit').then((m) => m.dispatchSubmit(internal, input)),
     captureScreenshot: (): Promise<Blob> =>
       import('../screenshot').then((m) =>
