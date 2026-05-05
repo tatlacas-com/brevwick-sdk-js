@@ -26,11 +26,10 @@
   /** Fired with the SDK's `SubmitResult` after every submit (success or failure). */
   export let onSubmit: ((result: SubmitResult) => void) | undefined = undefined;
 
-  // Combined screenshot + file cap. Keep in sync with MAX_ATTACHMENT_COUNT
-  // in packages/sdk/src/submit.ts (not exported on the SDK's frozen public
-  // surface) and the matching constant in packages/react/src/feedback-button.tsx.
-  // Enforced in the UI so the user can't queue an attachment the SDK would
-  // reject downstream.
+  // File attachment cap. Keep in sync with MAX_ATTACHMENT_COUNT in
+  // packages/sdk/src/submit.ts (not exported on the SDK's frozen public
+  // surface). Enforced in the UI so the user can't queue an attachment the
+  // SDK would reject downstream.
   const MAX_ATTACHMENTS = 5;
 
   // Resolved during component init so getContext() finds the parent layout's
@@ -42,24 +41,17 @@
   let mounted = false;
   let open = false;
   let draft = '';
-  let screenshots: { id: number; blob: Blob; url: string }[] = [];
   let files: { id: number; file: File }[] = [];
-  let capturing = false;
   let submitError: string | null = null;
   let successAt: number | null = null;
-  let screenshotId = 0;
   let fileId = 0;
 
-  $: attachmentCount = screenshots.length + files.length;
-  $: attachmentsAtCap = attachmentCount >= MAX_ATTACHMENTS;
-  $: canSend = draft.trim().length > 0 && $status !== 'submitting' && !capturing;
+  $: attachmentsAtCap = files.length >= MAX_ATTACHMENTS;
+  $: canSend = draft.trim().length > 0 && $status !== 'submitting';
 
   onMount(() => {
     mounted = true;
     return () => {
-      // Revoke any object URLs left behind on unmount so a HMR cycle doesn't
-      // leak previews between renders.
-      for (const s of screenshots) URL.revokeObjectURL(s.url);
       // Defence-in-depth: ensure the Escape keydown listener is detached
       // even if the component unmounts while the panel is still open.
       if (typeof window !== 'undefined') {
@@ -99,38 +91,11 @@
     }
   }
 
-  async function handleScreenshot(): Promise<void> {
-    if (capturing || attachmentsAtCap) return;
-    submitError = null;
-    capturing = true;
-    try {
-      const blob = await feedback.captureScreenshot();
-      // Defence-in-depth: a long-running capture started before files were
-      // attached can still land after the combined total reached the cap.
-      if (screenshots.length + files.length >= MAX_ATTACHMENTS) {
-        submitError = `Maximum ${MAX_ATTACHMENTS} attachments reached`;
-        return;
-      }
-      screenshots = [
-        ...screenshots,
-        {
-          id: ++screenshotId,
-          blob,
-          url: URL.createObjectURL(blob),
-        },
-      ];
-    } catch (err) {
-      submitError = err instanceof Error ? err.message : 'Screenshot failed';
-    } finally {
-      capturing = false;
-    }
-  }
-
   function handleFiles(event: Event): void {
     const input = event.target as HTMLInputElement;
     const list = input.files;
     if (!list || list.length === 0) return;
-    const remaining = MAX_ATTACHMENTS - (files.length + screenshots.length);
+    const remaining = MAX_ATTACHMENTS - files.length;
     if (remaining <= 0) {
       input.value = '';
       return;
@@ -146,12 +111,6 @@
     input.value = '';
   }
 
-  function removeScreenshot(id: number): void {
-    const target = screenshots.find((s) => s.id === id);
-    if (target) URL.revokeObjectURL(target.url);
-    screenshots = screenshots.filter((s) => s.id !== id);
-  }
-
   function removeFile(id: number): void {
     files = files.filter((f) => f.id !== id);
   }
@@ -165,14 +124,6 @@
     submitError = null;
 
     const attachments: Array<Blob | FeedbackAttachment> = [];
-    screenshots.forEach((s, idx) => {
-      const ext = s.blob.type.split('/')[1]?.split('+')[0] || 'webp';
-      const filename =
-        screenshots.length === 1
-          ? `screenshot.${ext}`
-          : `screenshot-${idx + 1}.${ext}`;
-      attachments.push({ blob: s.blob, filename });
-    });
     for (const { file } of files)
       attachments.push({ blob: file, filename: file.name });
 
@@ -183,12 +134,6 @@
       attachments: attachments.length ? attachments : undefined,
     };
 
-    // Snapshot the in-flight set so we only revoke / drop screenshots that
-    // were actually submitted. The composer's screenshot button is disabled
-    // while $status === 'submitting', but a defence-in-depth diff keeps any
-    // screenshot that somehow lands mid-flight from being silently dropped
-    // along with its Object URL.
-    const submittedScreenshotIds = new Set(screenshots.map((s) => s.id));
     const submittedFileIds = new Set(files.map((f) => f.id));
     try {
       const result = await feedback.submit(input);
@@ -196,12 +141,6 @@
       if (result.ok) {
         successAt = Date.now();
         draft = '';
-        for (const s of screenshots) {
-          if (submittedScreenshotIds.has(s.id)) URL.revokeObjectURL(s.url);
-        }
-        screenshots = screenshots.filter(
-          (s) => !submittedScreenshotIds.has(s.id),
-        );
         files = files.filter((f) => !submittedFileIds.has(f.id));
       } else {
         submitError = result.error.message;
@@ -265,32 +204,8 @@
 
         <div class="brw-svelte-thread" role="log" aria-live="polite">
           <div class="brw-svelte-bubble brw-svelte-bubble--assistant">
-            Hi! Tell us what's happening. A screenshot helps if you have one.
+            Hi! Tell us what's happening.
           </div>
-
-          {#each screenshots as shot, idx (shot.id)}
-            <div class="brw-svelte-chip">
-              <img
-                src={shot.url}
-                alt=""
-                class="brw-svelte-chip-thumb"
-              />
-              <span class="brw-svelte-chip-name"
-                >{screenshots.length === 1
-                  ? 'screenshot'
-                  : `screenshot ${idx + 1}`}</span
-              >
-              <span class="brw-svelte-chip-size">{formatSize(shot.blob.size)}</span>
-              <button
-                type="button"
-                class="brw-svelte-chip-remove"
-                aria-label={`Remove screenshot ${idx + 1}`}
-                on:click={() => removeScreenshot(shot.id)}
-              >
-                ×
-              </button>
-            </div>
-          {/each}
 
           {#each files as f (f.id)}
             <div class="brw-svelte-chip">
@@ -306,12 +221,6 @@
               </button>
             </div>
           {/each}
-
-          {#if capturing}
-            <div class="brw-svelte-bubble brw-svelte-bubble--assistant">
-              Capturing screenshot…
-            </div>
-          {/if}
 
           {#if submitError}
             <div class="brw-svelte-error" role="alert">{submitError}</div>
@@ -334,41 +243,6 @@
         </div>
 
         <div class="brw-svelte-composer">
-          <button
-            type="button"
-            class="brw-svelte-icon-btn"
-            aria-label={attachmentsAtCap
-              ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
-              : capturing
-                ? 'Capturing screenshot…'
-                : 'Capture screenshot of this page'}
-            on:click={handleScreenshot}
-            disabled={capturing ||
-              attachmentsAtCap ||
-              $status === 'submitting'}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="3" y="5" width="18" height="12" rx="2" />
-              <rect
-                x="7"
-                y="8"
-                width="10"
-                height="6"
-                rx="1"
-                stroke-dasharray="2 2"
-              />
-            </svg>
-          </button>
           <label class="brw-svelte-icon-btn" aria-label="Attach file">
             <svg
               viewBox="0 0 24 24"
@@ -657,12 +531,6 @@
     align-self: flex-start;
     max-width: 100%;
   }
-  .brw-svelte-chip-thumb {
-    width: 24px;
-    height: 24px;
-    object-fit: cover;
-    border-radius: 4px;
-  }
   .brw-svelte-chip-name {
     font-size: 13px;
     overflow: hidden;
@@ -695,7 +563,7 @@
 
   .brw-svelte-composer {
     display: grid;
-    grid-template-columns: auto auto 1fr auto;
+    grid-template-columns: auto 1fr auto;
     gap: 6px;
     align-items: end;
     padding: 10px 12px;

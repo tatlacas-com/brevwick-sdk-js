@@ -273,7 +273,6 @@ Top-level provider. Creates a single SDK instance, installs rings on mount, unin
 A floating action button + chat-style feedback dialog. Opens to a composer with:
 
 - **Textarea** with Enter-to-send (Shift+Enter for newline).
-- **Screenshot** capture with region-select overlay (drag a rectangle, or "Capture full page").
 - **File attachments** via paperclip icon.
 - **Optional "Expected vs Actual"** disclosure.
 - **Optional AI-format toggle** (only visible when the project allows per-submitter choice).
@@ -340,14 +339,14 @@ Example:
 
 ### Hiding sensitive content from screenshots
 
-The widget captures the page via `@tatlacas/brevwick-sdk`'s `captureScreenshot()`. Any element tagged `data-brevwick-skip` is hidden before capture and restored after:
+If you call `useFeedback().captureScreenshot()` directly to build a custom screenshot flow, mark sensitive elements with `data-brevwick-skip` so they are hidden before capture and restored after:
 
 ```tsx
 <input data-brevwick-skip type="password" />
 <div data-brevwick-skip>{customerEmail}</div>
 ```
 
-The FAB, dialog, and region overlay all carry `data-brevwick-skip` themselves, so they never appear in the screenshots they capture.
+The FAB and dialog themselves already carry `data-brevwick-skip`, so they never appear in the screenshots they capture.
 
 ## `useFeedback`
 
