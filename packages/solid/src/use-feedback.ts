@@ -1,6 +1,17 @@
-import { createSignal, useContext, type Accessor } from 'solid-js';
-import type { FeedbackInput, SubmitResult } from '@tatlacas/brevwick-sdk';
+import {
+  createSignal,
+  onCleanup,
+  onMount,
+  useContext,
+  type Accessor,
+} from 'solid-js';
+import type {
+  FeedbackInput,
+  SubmitError,
+  SubmitResult,
+} from '@tatlacas/brevwick-sdk';
 import { BrevwickContext } from './provider';
+import { getPhaseBus, type PhaseEvent } from './internal-bridge';
 
 /**
  * Submission lifecycle surfaced by {@link useFeedback}.
@@ -13,9 +24,30 @@ import { BrevwickContext } from './provider';
 export type FeedbackStatus = 'idle' | 'submitting' | 'success' | 'error';
 
 /**
+ * Submit-pipeline phase the UI can render staged status against. Driven
+ * by the SDK's internal `phase` bus event:
+ *
+ * - `idle` — initial state and after `reset()`.
+ * - `capturing` — `submit()` has been called but no phase event has fired yet.
+ * - `sanitising` — `capturing-done` event arrived (payload composed).
+ * - `formatting` — `sanitising-done` event arrived (redact complete; the
+ *   ingest POST is in flight). UIs gate any "Formatting with AI" affordance
+ *   on this phase plus the project's `ai_enabled` flag.
+ * - `sent` — `sent` event arrived after a 2xx ingest response.
+ * - `error` — `submit()` resolved with `{ ok: false }` or rejected.
+ */
+export type FeedbackPhase =
+  | 'idle'
+  | 'capturing'
+  | 'sanitising'
+  | 'formatting'
+  | 'sent'
+  | 'error';
+
+/**
  * Return value of {@link useFeedback}. Mirrors the React adapter: `submit` is
- * a plain async function; `status` is a Solid `Accessor` so consumers wire it
- * straight into JSX (`{status() === 'submitting' && ...}`).
+ * a plain async function; `status`/`phase`/`error` are Solid `Accessor`s so
+ * consumers wire them straight into JSX (`{status() === 'submitting' && ...}`).
  */
 export interface UseFeedbackResult {
   /** Submit feedback. Returns the same tagged union the core SDK returns. */
@@ -32,9 +64,34 @@ export interface UseFeedbackResult {
    * across the app is required.
    */
   status: Accessor<FeedbackStatus>;
-  /** Reset `status` back to `'idle'`. Does not cancel an in-flight submit. */
+  /**
+   * Current submit-pipeline phase. Advances on the SDK's internal phase
+   * bus event so adapter UIs can render staged-status rows in step with
+   * the actual pipeline boundaries (compose → redact → ingest).
+   */
+  phase: Accessor<FeedbackPhase>;
+  /**
+   * Tagged error from the last failed `submit()`. `null` until a submit
+   * resolves with `{ ok: false }` or rejects (chunk-load failure surfaces
+   * as `{ code: 'INGEST_RETRY_EXHAUSTED', message: <Error.message> }`).
+   * Cleared back to `null` on the next `submit()` or `reset()`.
+   */
+  error: Accessor<SubmitError | null>;
+  /**
+   * Re-run the most recent `submit()` with the same input. No-op when no
+   * submit has been attempted yet. Returns the same tagged-union result
+   * the underlying `submit()` would.
+   */
+  retry: () => Promise<SubmitResult | undefined>;
+  /** Reset `status` + `phase` back to `'idle'` and clear `error`. */
   reset: () => void;
 }
+
+const PHASE_EVENT_TO_NEXT_PHASE: Record<PhaseEvent['phase'], FeedbackPhase> = {
+  'capturing-done': 'sanitising',
+  'sanitising-done': 'formatting',
+  sent: 'sent',
+};
 
 /**
  * Solid hook that exposes the Brevwick submission primitives against the
@@ -56,6 +113,39 @@ export function useFeedback(): UseFeedbackResult {
   }
 
   const [status, setStatus] = createSignal<FeedbackStatus>('idle');
+  const [phase, setPhase] = createSignal<FeedbackPhase>('idle');
+  const [error, setError] = createSignal<SubmitError | null>(null);
+  // Snapshot of the input passed to the most recent `submit()` so `retry()`
+  // can re-run the exact same payload without forcing the caller to hold
+  // it for us. Cleared on `reset()`.
+  let lastInput: FeedbackInput | null = null;
+  // Whether the bus listener should write into state. Flipped to false on
+  // unmount so an in-flight submit that resolves after teardown can't
+  // setState on a stale tree.
+  let alive = true;
+
+  // Subscribe to the SDK's phase bus once the provider has hydrated. The
+  // Solid context's `brevwick` accessor flips from `null` → SDK on the
+  // client mount; we register / unregister inside `onMount` + `onCleanup`
+  // so the listener never fires post-teardown.
+  onMount(() => {
+    const sdk = ctx.brevwick();
+    if (!sdk) return;
+    const bus = getPhaseBus(sdk);
+    if (!bus) return;
+    const onPhase = (event: PhaseEvent): void => {
+      if (!alive) return;
+      setPhase(PHASE_EVENT_TO_NEXT_PHASE[event.phase]);
+    };
+    bus.on('phase', onPhase);
+    onCleanup(() => {
+      bus.off('phase', onPhase);
+    });
+  });
+
+  onCleanup(() => {
+    alive = false;
+  });
 
   // Resolve the SDK lazily on each call. Callers can mount `<FeedbackButton>`
   // unconditionally — the button's onClick handler runs only after hydration,
@@ -70,32 +160,53 @@ export function useFeedback(): UseFeedbackResult {
     return sdk;
   };
 
-  const submit = async (input: FeedbackInput): Promise<SubmitResult> => {
-    // Resolve the SDK before flipping status so a pre-hydration call still
-    // surfaces an `'error'` end state rather than getting stuck on
-    // `'submitting'`. The status transition lands inside the same async
-    // boundary as the await, keeping `(input) => Promise<SubmitResult>` the
-    // single observable surface.
+  const runSubmit = async (input: FeedbackInput): Promise<SubmitResult> => {
     let sdk;
     try {
       sdk = requireSdk();
-    } catch (error) {
+    } catch (err) {
       setStatus('error');
-      throw error;
+      setPhase('error');
+      throw err;
     }
+    lastInput = input;
     setStatus('submitting');
+    setPhase('capturing');
+    setError(null);
     try {
       const result = await sdk.submit(input);
-      setStatus(result.ok ? 'success' : 'error');
+      if (!alive) return result;
+      if (result.ok) {
+        setStatus('success');
+      } else {
+        setStatus('error');
+        setPhase('error');
+        setError(result.error);
+      }
       return result;
-    } catch (error) {
+    } catch (err) {
       // `sdk.submit` only rejects when the lazy submit chunk itself fails to
       // load (deploy mismatch / offline). Flip to 'error' so the UI is not
       // wedged on 'submitting', then rethrow so callers can distinguish an
       // environmental failure from an ingest-level one.
-      setStatus('error');
-      throw error;
+      if (alive) {
+        setStatus('error');
+        setPhase('error');
+        setError({
+          code: 'INGEST_RETRY_EXHAUSTED',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+      throw err;
     }
+  };
+
+  const submit = (input: FeedbackInput): Promise<SubmitResult> =>
+    runSubmit(input);
+
+  const retry = async (): Promise<SubmitResult | undefined> => {
+    if (!lastInput) return undefined;
+    return runSubmit(lastInput);
   };
 
   // Try/catch so a missing-SDK throw from `requireSdk()` surfaces as a
@@ -107,14 +218,25 @@ export function useFeedback(): UseFeedbackResult {
   const captureScreenshot = (): Promise<Blob> => {
     try {
       return requireSdk().captureScreenshot();
-    } catch (error) {
-      return Promise.reject(error);
+    } catch (err) {
+      return Promise.reject(err);
     }
   };
 
   const reset = (): void => {
     setStatus('idle');
+    setPhase('idle');
+    setError(null);
+    lastInput = null;
   };
 
-  return { submit, captureScreenshot, status, reset };
+  return {
+    submit,
+    captureScreenshot,
+    status,
+    phase,
+    error,
+    retry,
+    reset,
+  };
 }
