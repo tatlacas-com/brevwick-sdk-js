@@ -99,14 +99,14 @@ export default [
 
   // ── Solid bundle (≤ 12 kB gzip) ──────────────────────────────────────────
   // Bumped from 5 kB → 12 kB when the Solid widget reached UX parity with
-  // the React adapter (issue #113). The widget now ships the full chat-
-  // thread panel: greeting + user/assistant bubbles, autogrow composer,
-  // expected/actual disclosure, attachment chips, AI toggle, staged-status
-  // rows driven by the SDK's phase bus, retry CTA, and the panel footer
-  // — i.e. the same surfaces the React adapter renders, minus the Radix-
-  // backed region-capture overlay and screenshot preview Dialog (both
-  // out-of-scope for Solid V1 per the issue). Current sizes ESM 9.49 /
-  // CJS 9.81 kB; 12 kB leaves headroom for incremental UX work without
+  // the React adapter (issue #113). The widget ships the chat-thread
+  // panel: greeting + user/assistant bubbles, autogrow composer,
+  // expected/actual disclosure, file attachment chips, AI toggle, staged-
+  // status rows driven by the SDK's phase bus, retry CTA, and the panel
+  // footer. Screenshot UI is intentionally absent in v1 (see PR #111);
+  // callers that need a screenshot capture path invoke
+  // `useFeedback().captureScreenshot()` directly. Current sizes ESM 8.79
+  // / CJS 9.11 kB; 12 kB leaves headroom for incremental UX work without
   // dragging the package over the React adapter (25 kB) or unbalancing
   // the budget vs Vue (5 kB; Vue ships a thinner surface, no AI toggle /
   // disclosure / staged-status rows).

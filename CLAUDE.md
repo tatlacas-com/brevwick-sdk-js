@@ -117,7 +117,7 @@ pnpm --filter @tatlacas/brevwick-react test
 - Core `@tatlacas/brevwick-sdk` eager total (`index.js` + every chunk it pulls in via static `import` / `export … from`): **< 8 kB gzip** (bumped from 2.85 kB when the console + network rings moved into the eager registry to close the install-time capture race; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and `.size-limit.js`, mirrored in SDD § 12)
 - On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
 - React adapter `@tatlacas/brevwick-react`: **< 25 kB gzip**
-- Solid adapter `@tatlacas/brevwick-solid`: **< 12 kB gzip** (bumped from 5 kB in issue #113 when the Solid widget reached UX parity with the React adapter — chat-thread panel, AI toggle, staged-status rows, retry CTA. The Radix region-capture overlay + screenshot preview Dialog stay React-only, which keeps Solid well below the React 25 kB ceiling.)
+- Solid adapter `@tatlacas/brevwick-solid`: **< 12 kB gzip** (bumped from 5 kB in issue #113 when the Solid widget reached UX parity with the React adapter — chat-thread panel, AI toggle, staged-status rows, retry CTA. Screenshot UI is intentionally absent in v1 per PR #111; callers that need it invoke `useFeedback().captureScreenshot()` directly. The Solid surface stays well below the React 25 kB ceiling.)
 
 The console + network rings sit on the eager path on purpose: they have to be live before the first user error or fetch fires, otherwise the submitted issue is missing the very evidence the user opened the widget to report. Anything heavy that does NOT need to capture pre-submit (`modern-screenshot`, the submit pipeline, the project-config fetch) stays behind `await import('…')` so it doesn't ship until needed.
 

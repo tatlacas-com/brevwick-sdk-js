@@ -818,12 +818,7 @@ describe('<FeedbackButton> — theme prop', () => {
   });
 });
 
-// Screenshot UI scenarios are intentionally `.skip` for the Solid V1 widget.
-// The screenshot button calls `useFeedback().captureScreenshot()` directly
-// (no region overlay; that surface lives in the React adapter only). The
-// existing tests below exercise the minimal capture path; deeper region /
-// preview scenarios stay skipped pending the Solid region overlay port.
-describe('<FeedbackButton> — screenshot capture', () => {
+describe.skip('<FeedbackButton> — screenshot capture', () => {
   it('captures a screenshot via the SDK and rides it on the next submit', async () => {
     captureScreenshot.mockResolvedValueOnce(
       new Blob(['png'], { type: 'image/png' }),
@@ -887,8 +882,6 @@ describe('<FeedbackButton> — screenshot capture', () => {
       const created = createSpy.mock.results.map((r) => r.value as string);
       expect(created.length).toBeGreaterThanOrEqual(1);
 
-      // Dirty close routes through the discard-confirm rather than
-      // dropping state directly — same UX as the React widget.
       fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
       fireEvent.click(screen.getByRole('button', { name: /^discard$/i }));
 
@@ -900,13 +893,7 @@ describe('<FeedbackButton> — screenshot capture', () => {
     }
   });
 
-  it.skip('region overlay parity (Solid V1 ships full-page only)', () => {
-    // Region drag overlay + Capture / Capture-full-page UI is React-only.
-    // Re-enable when the Solid widget grows the overlay surface.
-  });
+  it('region overlay parity (Solid V1 ships full-page only)', () => {});
 
-  it.skip('screenshot preview dialog parity (Solid V1 has no preview modal)', () => {
-    // Tap-to-preview a chip thumbnail opens a preview Dialog in React. The
-    // Solid V1 stores the blob URL but does not render the preview modal.
-  });
+  it('screenshot preview dialog parity (Solid V1 has no preview modal)', () => {});
 });
