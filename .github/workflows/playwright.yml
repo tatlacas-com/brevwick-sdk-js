@@ -1,0 +1,100 @@
+name: Playwright e2e (real-browser screenshot)
+
+# Separate lane from `ci.yml` so the default test matrix stays fast and
+# the workflow only pays for Chromium binaries when something in the
+# capture path could plausibly be affected. The trigger filter below
+# scopes runs to changes in the SDK package (where the bug lives), the
+# Next example (which hosts the test page), and this workflow file
+# itself. Scoping by path means a docs-only PR doesn't burn a 90-second
+# Chromium download on every push.
+#
+# Closes the gap from issue #104: SDK unit tests run under happy-dom,
+# whose `<canvas>` has no 2D context, so `modern-screenshot` always
+# falls back to the placeholder there. Real Chromium rasterisation can
+# only be asserted via Playwright — that's what this lane locks in.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/sdk/**'
+      - 'examples/next/**'
+      - 'e2e/**'
+      - 'playwright.config.ts'
+      - '.github/workflows/playwright.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/sdk/**'
+      - 'examples/next/**'
+      - 'e2e/**'
+      - 'playwright.config.ts'
+      - '.github/workflows/playwright.yml'
+
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      # Build the SDK + React workspaces so the Next example resolves
+      # `@tatlacas/brevwick-sdk` to a real `dist/`. The example imports
+      # the package via the workspace `exports` field, which points at
+      # `dist/index.js` — without these builds, Next's bundler would
+      # reach into an empty `dist/` and the page would 500 at runtime.
+      - run: pnpm --filter @tatlacas/brevwick-sdk build
+      - run: pnpm --filter @tatlacas/brevwick-react build
+
+      # `next build` runs as a separate step (rather than letting
+      # `playwright.config.ts`'s `webServer` do `next start`'s startup
+      # cold-build) so its log lands in its own collapsible group and
+      # build timing shows up in the job summary.
+      - run: pnpm --filter brevwick-example-next exec next build
+
+      # Cache the Playwright browsers across runs — the Chromium download
+      # is ~90 s on a cold runner and dominates the lane's wall time.
+      # Cache key is the lockfile hash so any version bump invalidates.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `--with-deps` was already handled in the previous step on cache
+      # miss; on cache hit we still need the system libs (xvfb, fonts,
+      # libnss3, libxkbcommon, etc.) installed because the cache only
+      # stores the browser binary, not apt packages.
+      - name: Install Chromium system deps
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - run: pnpm test:e2e
+
+      # Always upload the Playwright report on failure so triagers can
+      # download the trace + screenshots from the workflow run summary
+      # without having to reproduce locally. Conditional on failure to
+      # keep the green-run artifact list tidy.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
