@@ -15,6 +15,7 @@ import type { Brevwick, BrevwickConfig } from '@tatlacas/brevwick-sdk';
 
 const sdkSubmit = vi.fn();
 const captureScreenshot = vi.fn();
+const getConfig = vi.fn().mockResolvedValue(null);
 const install = vi.fn();
 const uninstall = vi.fn();
 
@@ -30,6 +31,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
         uninstall,
         submit: sdkSubmit,
         captureScreenshot,
+        getConfig,
       }) as unknown as Brevwick,
   };
 });
@@ -58,13 +60,11 @@ describe('adapter does not bypass core redaction', () => {
     });
 
     await wrapper.find('button.brw-fab').trigger('click');
+    await flushPromises();
     await wrapper
-      .find('textarea.brw-textarea')
+      .find('textarea.brw-composer-input')
       .setValue('Bearer abc.def — token in body');
-    const sendBtn = wrapper
-      .findAll('button.brw-btn')
-      .find((b) => b.text().toLowerCase().includes('send'));
-    await sendBtn!.trigger('click');
+    await wrapper.find('button.brw-send-btn').trigger('click');
     await flushPromises();
 
     expect(sdkSubmit).toHaveBeenCalledTimes(1);

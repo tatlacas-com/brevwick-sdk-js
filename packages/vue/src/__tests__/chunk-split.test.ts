@@ -3,9 +3,12 @@ import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 /**
- * Local fast-feedback guard for the Vue bundle ceiling. The Vue adapter is
- * thinner than React (no Radix dialog, no AI toggle, no region overlay) so
- * the eager budget is tighter — 5 kB gzip per the §12 budget envelope.
+ * Local fast-feedback guard for the Vue bundle ceiling. Mirrors the
+ * `.size-limit.js` Vue entry — bumped from 5 kB → 10 kB when the adapter's
+ * `<FeedbackButton>` reached UX parity with the React widget (issue #112,
+ * see PR body for the bundle delta). Region capture and the screenshot
+ * preview dialog stay behind a future-flag in v1, so the eager artefact
+ * still sits ~2 kB below the React adapter's 25 kB ceiling.
  *
  * Runs only when `dist/` exists so plain `pnpm test` (no prior build) still
  * passes; CI's `size-check` job is the end-to-end enforcement via
@@ -20,14 +23,14 @@ describe('@tatlacas/brevwick-vue bundle ceiling', () => {
   const hasDist = existsSync(baseEsm) && existsSync(baseCjs);
   const suite = hasDist ? describe : describe.skip;
 
-  // 5 kB gzip ceiling, expressed in bytes the way size-limit interprets it.
-  const LIMIT_BYTES = 5_000;
+  // 10 kB gzip ceiling, expressed in bytes the way size-limit interprets it.
+  const LIMIT_BYTES = 10_000;
 
   suite('dist/ exists', () => {
     it.each([
       ['ESM', baseEsm],
       ['CJS', baseCjs],
-    ])('%s bundle is under the 5 kB gzip budget', async (_label, path) => {
+    ])('%s bundle is under the 10 kB gzip budget', async (_label, path) => {
       const { gzipSync } = await import('node:zlib');
       const raw = readFileSync(path);
       const gzipped = gzipSync(raw).length;

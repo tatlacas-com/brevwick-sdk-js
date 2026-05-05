@@ -11,6 +11,26 @@ const captureScreenshot = vi.fn<() => Promise<Blob>>();
 const install = vi.fn();
 const uninstall = vi.fn();
 
+type PhaseEventPayload =
+  | { phase: 'capturing-done' }
+  | { phase: 'sanitising-done' }
+  | { phase: 'sent'; aiEnabled: boolean };
+const phaseListeners = new Set<(p: PhaseEventPayload) => void>();
+const phaseBus = {
+  on: (event: 'phase', listener: (p: PhaseEventPayload) => void) => {
+    void event;
+    phaseListeners.add(listener);
+  },
+  off: (event: 'phase', listener: (p: PhaseEventPayload) => void) => {
+    void event;
+    phaseListeners.delete(listener);
+  },
+  emit: (event: 'phase', payload: PhaseEventPayload) => {
+    void event;
+    for (const listener of [...phaseListeners]) listener(payload);
+  },
+};
+
 vi.mock('@tatlacas/brevwick-sdk', async () => {
   const actual = await vi.importActual<typeof import('@tatlacas/brevwick-sdk')>(
     '@tatlacas/brevwick-sdk',
@@ -23,6 +43,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
         uninstall,
         submit,
         captureScreenshot,
+        _internal: { bus: phaseBus },
       }) as unknown as Brevwick,
   };
 });
@@ -33,6 +54,7 @@ import { useFeedback } from '../composables/use-feedback';
 afterEach(() => {
   vi.clearAllMocks();
   document.body.innerHTML = '';
+  phaseListeners.clear();
 });
 
 const mountWithPlugin = (
@@ -100,6 +122,94 @@ describe('useFeedback', () => {
     const { api, app } = mountWithPlugin(() => undefined);
     await expect(api.captureScreenshot()).resolves.toBe(blob);
     expect(captureScreenshot).toHaveBeenCalledTimes(1);
+    app.unmount();
+  });
+
+  it('phase advances on bus events from idle → capturing → sanitising → formatting', async () => {
+    submit.mockReturnValueOnce(new Promise<SubmitResult>(() => undefined));
+    const { api, app } = mountWithPlugin(() => undefined);
+    expect(api.phase.value).toBe('idle');
+    void api.submit({ description: 'phase-walk' });
+    // submit() flips phase to 'capturing' synchronously.
+    expect(api.phase.value).toBe('capturing');
+
+    phaseBus.emit('phase', { phase: 'capturing-done' });
+    expect(api.phase.value).toBe('sanitising');
+    phaseBus.emit('phase', { phase: 'sanitising-done' });
+    expect(api.phase.value).toBe('formatting');
+    phaseBus.emit('phase', { phase: 'sent', aiEnabled: false });
+    expect(api.phase.value).toBe('sent');
+
+    app.unmount();
+  });
+
+  it('records the SubmitError when submit returns ok: false', async () => {
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'project disabled' },
+    });
+    const { api, app } = mountWithPlugin(() => undefined);
+    await api.submit({ description: 'fail' });
+    expect(api.phase.value).toBe('error');
+    expect(api.error.value).toEqual({
+      code: 'INGEST_REJECTED',
+      message: 'project disabled',
+    });
+    app.unmount();
+  });
+
+  it('records a synthetic SubmitError on chunk-load failure', async () => {
+    submit.mockRejectedValueOnce(new Error('chunk load failed'));
+    const { api, app } = mountWithPlugin(() => undefined);
+    await expect(api.submit({ description: 'x' })).rejects.toThrow(
+      /chunk load/,
+    );
+    expect(api.error.value).toEqual({
+      code: 'INGEST_RETRY_EXHAUSTED',
+      message: 'chunk load failed',
+    });
+    app.unmount();
+  });
+
+  it('retry replays the last submitted input', async () => {
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'first try' },
+    });
+    const { api, app } = mountWithPlugin(() => undefined);
+    await api.submit({ description: 'will retry', title: 'will retry' });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_retry' });
+    const result = await api.retry();
+    expect(result).toEqual({ ok: true, issue_id: 'rep_retry' });
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(submit.mock.calls[1]![0]).toEqual({
+      description: 'will retry',
+      title: 'will retry',
+    });
+    app.unmount();
+  });
+
+  it('retry resolves to undefined when no submit has been attempted', async () => {
+    const { api, app } = mountWithPlugin(() => undefined);
+    await expect(api.retry()).resolves.toBeUndefined();
+    expect(submit).not.toHaveBeenCalled();
+    app.unmount();
+  });
+
+  it('reset clears phase + error and forgets the last input', async () => {
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'nope' },
+    });
+    const { api, app } = mountWithPlugin(() => undefined);
+    await api.submit({ description: 'x' });
+    expect(api.phase.value).toBe('error');
+    expect(api.error.value).not.toBeNull();
+    api.reset();
+    expect(api.phase.value).toBe('idle');
+    expect(api.error.value).toBeNull();
+    expect(api.status.value).toBe('idle');
+    await expect(api.retry()).resolves.toBeUndefined();
     app.unmount();
   });
 
