@@ -260,17 +260,20 @@ export class BwFeedbackButtonComponent {
    * already use to seed protected signals).
    */
   protected async onSubmitClick(): Promise<void> {
-    const description = this.draft().trim();
-    if (description.length === 0) return;
+    const raw = this.draft();
+    if (raw.trim().length === 0) return;
 
     this.errorMessage.set(null);
 
-    const title = description.split('\n', 1)[0]!.slice(0, 120);
+    // Title from the trimmed first line so leading whitespace doesn't
+    // pollute the issue title; description sent raw to preserve the
+    // user's intentional whitespace + newlines (parity with React).
+    const title = raw.trim().split('\n', 1)[0]!.slice(0, 120);
 
     try {
       const result: SubmitResult = await this.brevwick.submit({
         title,
-        description,
+        description: raw,
       });
       if (this.destroyed) return;
       this.submit.emit(result);

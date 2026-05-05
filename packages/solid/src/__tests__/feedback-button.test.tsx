@@ -294,7 +294,7 @@ describe('FeedbackButton', () => {
     }
   });
 
-  it('trims leading/trailing whitespace from the submitted description', async () => {
+  it('derives a trimmed title from the first line but submits the description raw', async () => {
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_trim' });
     mount();
     openPanel();
@@ -305,6 +305,8 @@ describe('FeedbackButton', () => {
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     const [input] = submit.mock.calls[0]!;
     expect(input.title).toBe('hi there');
-    expect(input.description).toBe('hi there');
+    // Description preserves the user's whitespace verbatim — title-derivation
+    // trimming must not leak into the wire payload (parity with React).
+    expect(input.description).toBe('   hi there   \n');
   });
 });

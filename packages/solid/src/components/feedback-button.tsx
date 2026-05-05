@@ -83,17 +83,20 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
 
   const handleSubmit = async (): Promise<void> => {
     if (status() === 'submitting') return;
-    const text = draft().trim();
-    if (!text) {
+    const raw = draft();
+    if (!raw.trim()) {
       setErrorMsg('Please describe what happened.');
       return;
     }
     setErrorMsg(null);
 
-    const derivedTitle = text.split('\n', 1)[0]!.slice(0, 120);
+    // Title from the trimmed first line so leading whitespace doesn't
+    // pollute the issue title; description sent raw to preserve the
+    // user's intentional whitespace + newlines (parity with React).
+    const derivedTitle = raw.trim().split('\n', 1)[0]!.slice(0, 120);
     const input: FeedbackInput = {
       title: derivedTitle,
-      description: text,
+      description: raw,
     };
 
     try {
