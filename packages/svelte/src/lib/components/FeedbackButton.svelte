@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import type {
     FeedbackAttachment,
     FeedbackInput,
+    ProjectConfig,
     SubmitResult,
   } from '@tatlacas/brevwick-sdk';
-  import { getFeedback, type FeedbackStatus } from '../context';
+  import { getFeedback } from '../context';
   import { BREVWICK_SVELTE_VERSION } from '../internal/version';
 
   // Props use Svelte's `export let` (legacy mode under Svelte 5) rather
@@ -28,58 +30,223 @@
 
   // File attachment cap. Keep in sync with MAX_ATTACHMENT_COUNT in
   // packages/sdk/src/submit.ts (not exported on the SDK's frozen public
-  // surface). Enforced in the UI so the user can't queue an attachment the
-  // SDK would reject downstream.
+  // surface) and the matching constant in packages/react/src/feedback-button.tsx.
+  // Enforced in the UI so the user can't queue an attachment the SDK would
+  // reject downstream.
   const MAX_ATTACHMENTS = 5;
+
+  // Stagger between staged-status rows in milliseconds. Mirrors the React
+  // adapter (#74). Honoured only when the user has not requested reduced
+  // motion — see `prefersReducedMotion` below.
+  const STATUS_ROW_STAGGER_MS = 200;
+
+  // Phase ordinal mirrored from the React adapter (#74). Row 1 ("Captured")
+  // shows from `'sanitising'` onwards, row 2 ("Sanitised") from
+  // `'formatting'` onwards. Row 3 ("Formatting with AI") has its own
+  // exact-match rule and does not consult this table.
+  const PHASE_RANK: Record<string, number> = {
+    idle: 0,
+    capturing: 1,
+    sanitising: 2,
+    formatting: 3,
+    sent: 4,
+    error: -1,
+  };
 
   // Resolved during component init so getContext() finds the parent layout's
   // setBrevwickContext call — Svelte requires getContext to run on the
   // initialisation call stack, not from inside onMount.
   const feedback = getFeedback();
   const status = feedback.status;
+  const phase = feedback.phase;
+  const submitErrorTagged = feedback.error;
+
+  /**
+   * One bubble in the conversation thread. The greeting and submitted-issue
+   * receipt are `assistant` messages; submitted drafts become `user`
+   * messages. Mirrors the React adapter's Message shape.
+   */
+  type Message = {
+    id: string;
+    role: 'assistant' | 'user';
+    text: string;
+    sentAt?: number;
+    issueSent?: boolean;
+  };
+
+  const GREETING: Message = {
+    id: 'greeting',
+    role: 'assistant',
+    text: "Hi! Tell us what's happening.",
+  };
+  const ASSISTANT_RECEIPT_TEXT = 'Thanks — your issue is on its way.';
 
   let mounted = false;
   let open = false;
   let draft = '';
+  let expected = '';
+  let actual = '';
+  let showExtras = false;
+  let confirmClose = false;
+  let useAi = true;
+  let messages: Message[] = [GREETING];
   let files: { id: number; file: File }[] = [];
   let submitError: string | null = null;
-  let successAt: number | null = null;
   let fileId = 0;
+  let messageId = 0;
+  let prefersReducedMotion = false;
+
+  // Project-config render-policy state. Mirrors React's `useProjectConfig`:
+  // lazy fetch on first panel open, cache the result for the lifetime of the
+  // component. The fetch is gated behind the open-state to preserve the
+  // widget's "zero-cost until opened" property.
+  type ProjectConfigStatus = 'idle' | 'loading' | 'ready' | 'error';
+  let projectConfigStatus: ProjectConfigStatus = 'idle';
+  let projectConfig: ProjectConfig | null = null;
+  let projectConfigTriggered = false;
+
+  // Render-policy matrix, parity with React (#65). The toggle is visible
+  // exactly when the config has loaded successfully, AI is enabled for the
+  // project, AND the admin has opted submitters into the choice. Any other
+  // state hides the toggle and the payload omits `use_ai`.
+  $: showAiToggle =
+    projectConfigStatus === 'ready' &&
+    projectConfig?.ai_enabled === true &&
+    projectConfig?.ai_submitter_choice_allowed === true;
+
+  // Last submitted FeedbackInput so the retry path can re-run the exact same
+  // payload without forcing the user to re-type the draft we cleared
+  // synchronously on Send.
+  let lastSubmittedInput: FeedbackInput | null = null;
+
+  // Receipt timestamps live in a writable so the relative-time formatter
+  // re-runs reactively without coupling to the message identity. Mirrors
+  // the React `formatRelativeTime` reading `Date.now()` once at render.
+  const nowStore = writable<number>(Date.now());
 
   $: attachmentsAtCap = files.length >= MAX_ATTACHMENTS;
+  $: hasContent =
+    draft.trim().length > 0 ||
+    expected.length > 0 ||
+    actual.length > 0 ||
+    files.length > 0;
   $: canSend = draft.trim().length > 0 && $status !== 'submitting';
+
+  // Phase-driven row visibility. Parity with the React adapter — row 1
+  // shows from `sanitising` onwards, row 2 from `formatting` onwards, row
+  // 3 only during the exact `formatting` phase (and only when the project
+  // has AI enabled). The retry row owns the `error` phase exclusively.
+  $: phaseRank = PHASE_RANK[$phase] ?? 0;
+  $: showCaptured = phaseRank >= PHASE_RANK.sanitising;
+  $: showSanitised = phaseRank >= PHASE_RANK.formatting;
+  $: showFormatting = $phase === 'formatting' && projectConfig?.ai_enabled === true;
+  $: showRetryRow = $phase === 'error' && $submitErrorTagged !== null;
 
   onMount(() => {
     mounted = true;
-    return () => {
-      // Defence-in-depth: ensure the Escape keydown listener is detached
-      // even if the component unmounts while the panel is still open.
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('keydown', handleWindowKeydown);
-      }
-    };
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      prefersReducedMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)',
+      ).matches;
+    }
   });
+
+  onDestroy(() => {
+    // Defence-in-depth: ensure the Escape keydown listener is detached
+    // even if the component unmounts while the panel is still open.
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('keydown', handleWindowKeydown);
+    }
+  });
+
+  // Lazy project-config fetch on first panel open. Subsequent opens reuse
+  // the cached result. Mirrors the React adapter's useProjectConfig — the
+  // SDK itself caches per session, so the second call would no-op anyway,
+  // but tracking here avoids an extra awaited microtask on every open.
+  $: if (open && !projectConfigTriggered) {
+    projectConfigTriggered = true;
+    projectConfigStatus = 'loading';
+    feedback
+      .getConfig()
+      .then((cfg) => {
+        projectConfigStatus = 'ready';
+        projectConfig = cfg;
+      })
+      .catch(() => {
+        // getConfig never rejects in the documented contract, but stay
+        // defensive so a future regression cannot wedge the widget in
+        // 'loading' forever.
+        projectConfigStatus = 'error';
+        projectConfig = null;
+      });
+  }
+
+  function newMessageId(): string {
+    messageId += 1;
+    return `msg-${messageId}`;
+  }
+
+  function resetAll(): void {
+    draft = '';
+    expected = '';
+    actual = '';
+    showExtras = false;
+    files = [];
+    confirmClose = false;
+    submitError = null;
+    messages = [GREETING];
+    useAi = true;
+    lastSubmittedInput = null;
+    feedback.reset();
+  }
 
   function toggleOpen(): void {
     if (disabled) return;
     open = !open;
     if (open) {
-      successAt = null;
       submitError = null;
     }
   }
 
-  function closePanel(): void {
+  /**
+   * Minimize: hide the panel but preserve every piece of composer state
+   * (draft, expected/actual, attachments, AI toggle, in-flight phase). The
+   * × button handles the dirty-confirm flow; this is the Esc / minimize
+   * affordance equivalent to React's handleMinimize.
+   */
+  function minimizePanel(): void {
     open = false;
+    confirmClose = false;
+    submitError = null;
+  }
+
+  /**
+   * Full close: clears every piece of state and resets the thread back to
+   * the greeting. Routed through here from the × button (when clean) and
+   * from "Discard" inside the discard-confirm.
+   */
+  function fullClose(): void {
+    open = false;
+    resetAll();
+  }
+
+  function handleCloseClick(): void {
+    if ($status === 'submitting') return;
+    if (hasContent) {
+      confirmClose = true;
+      return;
+    }
+    fullClose();
   }
 
   // Escape-to-close: parity with the React adapter (Radix Dialog ships this
   // for free). Listener is attached only while the panel is open and is
-  // detached the moment it closes or the component unmounts.
+  // detached the moment it closes or the component unmounts. Esc maps to
+  // minimize so the user's draft survives an accidental keypress.
   function handleWindowKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape' && open) {
       event.preventDefault();
-      closePanel();
+      minimizePanel();
     }
   }
 
@@ -105,7 +272,10 @@
       // Indexed access works on both real FileList and happy-dom's stub;
       // `list.item(i)` would fail under happy-dom which omits the method.
       const file = list[i];
-      if (file) next.push({ id: ++fileId, file });
+      if (file) {
+        fileId += 1;
+        next.push({ id: fileId, file });
+      }
     }
     files = [...files, ...next];
     input.value = '';
@@ -127,29 +297,113 @@
     for (const { file } of files)
       attachments.push({ blob: file, filename: file.name });
 
+    // Submit what the user actually sees in their bubble — trimming would
+    // drop the user's intentional whitespace/newlines on the wire. The
+    // `canSend` check above already rejects whitespace-only drafts; for
+    // title derivation we still want the first non-empty line trimmed.
     const derivedTitle = (draft.trim().split('\n', 1)[0] ?? '').slice(0, 120);
     const input: FeedbackInput = {
       title: derivedTitle,
       description: draft,
+      expected: expected.trim() || undefined,
+      actual: actual.trim() || undefined,
       attachments: attachments.length ? attachments : undefined,
+      // use_ai rides the payload only when the submitter has been given
+      // the choice; in every other render state we leave the server-side
+      // default alone.
+      ...(showAiToggle ? { use_ai: useAi } : {}),
     };
 
+    // Push the user's draft into the conversation immediately and clear
+    // the composer BEFORE awaiting submit(). The visual progression is
+    // what makes the wait feel fast — a synchronous bubble + cleared
+    // input lets the staged-status rows below carry the rest of the
+    // animation while the network round-trip is in flight (#74).
+    const userBubble: Message = {
+      id: newMessageId(),
+      role: 'user',
+      text: draft,
+    };
+    messages = [...messages, userBubble];
+
     const submittedFileIds = new Set(files.map((f) => f.id));
+
+    draft = '';
+    expected = '';
+    actual = '';
+    showExtras = false;
+    lastSubmittedInput = input;
+
     try {
       const result = await feedback.submit(input);
       onSubmit?.(result);
       if (result.ok) {
-        successAt = Date.now();
-        draft = '';
+        const assistant: Message = {
+          id: newMessageId(),
+          role: 'assistant',
+          text: ASSISTANT_RECEIPT_TEXT,
+          issueSent: true,
+          sentAt: Date.now(),
+        };
+        messages = [...messages, assistant];
+        // If the user minimized mid-submit, pop the panel back open so the
+        // success confirmation is actually seen.
+        open = true;
+        // Drop the live composer attachments now they have ridden along
+        // with the submit.
         files = files.filter((f) => !submittedFileIds.has(f.id));
+        // Refresh the relative-time anchor so the receipt's "just now"
+        // is computed against the same Date.now we just stamped.
+        nowStore.set(Date.now());
       } else {
-        submitError = result.error.message;
+        // Failure: the user bubble is already in the thread; the staged
+        // rows collapse into a red retry row driven by `phase === 'error'`
+        // + the `error` store carrying the SubmitError. Pop the panel
+        // back open so the user sees the retry CTA. The inline `submitError`
+        // alert is reserved for validation / capture errors raised
+        // synchronously by the widget itself (matches React's split).
+        open = true;
       }
-    } catch (err) {
-      submitError =
-        err instanceof Error && err.message
-          ? err.message
-          : 'We could not submit your feedback. Please try again.';
+    } catch {
+      // Chunk-load failure path — context.ts has already flipped phase to
+      // `'error'` and stored a synthetic SubmitError. Pop the panel back
+      // open so the retry row is visible. Same split as the ok:false path:
+      // the retry row owns the message, `submitError` stays reserved for
+      // synchronous validation / capture errors.
+      open = true;
+    }
+  }
+
+  /**
+   * Re-run the most recent submit with the original `FeedbackInput`. The
+   * user bubble is already in the thread (pushed on the first Send), so
+   * the retry path only needs to re-fire `submit()` and append the
+   * assistant receipt on success — no duplicate bubble for the retry.
+   */
+  async function handleRetry(): Promise<void> {
+    if (!lastSubmittedInput) return;
+    if ($status === 'submitting') return;
+    submitError = null;
+    try {
+      const result = await feedback.retry();
+      if (!result) return;
+      onSubmit?.(result);
+      if (result.ok) {
+        const assistant: Message = {
+          id: newMessageId(),
+          role: 'assistant',
+          text: ASSISTANT_RECEIPT_TEXT,
+          issueSent: true,
+          sentAt: Date.now(),
+        };
+        messages = [...messages, assistant];
+        nowStore.set(Date.now());
+        open = true;
+      } else {
+        open = true;
+      }
+    } catch {
+      open = true;
     }
   }
 
@@ -167,16 +421,60 @@
     }
   }
 
+  function toggleExtras(): void {
+    showExtras = !showExtras;
+  }
+
+  function toggleAi(): void {
+    if ($status === 'submitting') return;
+    useAi = !useAi;
+  }
+
+  function handleAiKeydown(event: KeyboardEvent): void {
+    // Space toggles when focused (default browser behaviour on
+    // role="button" is Enter and Space, but Space carries fewer collisions
+    // with the composer's Enter-to-send shortcut).
+    if (event.key === ' ') {
+      event.preventDefault();
+      toggleAi();
+    }
+  }
+
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  /**
+   * Cheap relative-time formatter for the issue-sent receipt. Parity with
+   * the React adapter — the bubble doesn't auto-refresh; once rendered the
+   * timestamp captures the moment the issue was queued. Intentionally does
+   * not pull in `Intl.RelativeTimeFormat` or `date-fns` so the SFC gzip
+   * stays inside the §12 budget.
+   */
+  function formatRelativeTime(ms: number | undefined, now: number): string {
+    if (ms === undefined) return 'just now';
+    const diffMs = now - ms;
+    if (diffMs < 60_000) return 'just now';
+    const minutes = Math.floor(diffMs / 60_000);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hr ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} d ago`;
+  }
+
   // Reactive so the FAB / panel CSS classes re-derive when `position` changes.
   $: fabPosClass = position === 'bottom-left' ? 'brw-fab-bl' : 'brw-fab-br';
   $: panelPosClass =
     position === 'bottom-left' ? 'brw-panel-bl' : 'brw-panel-br';
+
+  // Per-instance ID for the disclosure aria-controls relationship. Stays
+  // stable across re-renders so AT focus tracking doesn't churn. Uses a
+  // module-scoped counter so two FeedbackButtons on the same page don't
+  // collide on a shared DOM id.
+  const disclosureId = `brw-svelte-disclosure-${++disclosureSeq}`;
 </script>
 
 {#if !hidden && mounted}
@@ -195,17 +493,76 @@
           <button
             type="button"
             class="brw-svelte-icon-btn"
-            aria-label="Close"
-            on:click={closePanel}
+            aria-label="Minimize"
+            on:click={minimizePanel}
           >
-            ×
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M5 14h14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="brw-svelte-icon-btn"
+            aria-label="Close"
+            on:click={handleCloseClick}
+            disabled={$status === 'submitting'}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
           </button>
         </header>
 
         <div class="brw-svelte-thread" role="log" aria-live="polite">
-          <div class="brw-svelte-bubble brw-svelte-bubble--assistant">
-            Hi! Tell us what's happening.
-          </div>
+          {#each messages as message (message.id)}
+            {#if message.role === 'assistant'}
+              <div class="brw-svelte-bubble brw-svelte-bubble--assistant">
+                {message.text}
+                {#if message.issueSent}
+                  <div class="brw-svelte-bubble--receipt">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                    Issue sent · {formatRelativeTime(message.sentAt, $nowStore)}
+                  </div>
+                {/if}
+              </div>
+            {:else}
+              <div class="brw-svelte-bubble brw-svelte-bubble--user">
+                {message.text}
+              </div>
+            {/if}
+          {/each}
 
           {#each files as f (f.id)}
             <div class="brw-svelte-chip">
@@ -222,22 +579,145 @@
             </div>
           {/each}
 
+          <button
+            type="button"
+            class="brw-svelte-disclosure"
+            aria-expanded={showExtras}
+            aria-controls={disclosureId}
+            on:click={toggleExtras}
+          >
+            {showExtras ? 'Hide expected vs actual' : 'Add expected vs actual'}
+          </button>
+          {#if showExtras}
+            <div id={disclosureId} class="brw-svelte-disclosure-panel">
+              <label>
+                <span class="brw-svelte-disclosure-label">Expected</span>
+                <textarea
+                  class="brw-svelte-disclosure-input"
+                  rows={2}
+                  bind:value={expected}
+                ></textarea>
+              </label>
+              <label>
+                <span class="brw-svelte-disclosure-label">Actual</span>
+                <textarea
+                  class="brw-svelte-disclosure-input"
+                  rows={2}
+                  bind:value={actual}
+                ></textarea>
+              </label>
+            </div>
+          {/if}
+
           {#if submitError}
             <div class="brw-svelte-error" role="alert">{submitError}</div>
           {/if}
 
-          {#if $status === 'submitting'}
-            <div class="brw-svelte-bubble brw-svelte-bubble--assistant">
-              Sending…
+          {#if showCaptured}
+            <div
+              class="brw-svelte-status-row"
+              data-brw-row="captured"
+              style="transition-delay: 0ms; animation-delay: 0ms;"
+            >
+              <span class="brw-svelte-status-row-check" aria-hidden="true">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M5 12l5 5L20 7" />
+                </svg>
+              </span>
+              <span class="brw-svelte-status-row-label"
+                >Captured route, console, network, device</span
+              >
+            </div>
+          {/if}
+          {#if showSanitised}
+            <div
+              class="brw-svelte-status-row"
+              data-brw-row="sanitised"
+              style="transition-delay: {prefersReducedMotion
+                ? 0
+                : STATUS_ROW_STAGGER_MS}ms; animation-delay: {prefersReducedMotion
+                ? 0
+                : STATUS_ROW_STAGGER_MS}ms;"
+            >
+              <span class="brw-svelte-status-row-check" aria-hidden="true">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M5 12l5 5L20 7" />
+                </svg>
+              </span>
+              <span class="brw-svelte-status-row-label">PII-sanitised, packaged</span>
+            </div>
+          {/if}
+          {#if showFormatting}
+            <div
+              class="brw-svelte-status-row"
+              data-brw-row="formatting"
+              style="transition-delay: {prefersReducedMotion
+                ? 0
+                : STATUS_ROW_STAGGER_MS * 2}ms; animation-delay: {prefersReducedMotion
+                ? 0
+                : STATUS_ROW_STAGGER_MS * 2}ms;"
+            >
+              <span class="brw-svelte-spinner" aria-hidden="true"></span>
+              <span class="brw-svelte-status-row-label">Formatting with AI…</span>
+            </div>
+          {/if}
+          {#if showRetryRow && $submitErrorTagged}
+            <div
+              class="brw-svelte-status-row brw-svelte-status-row--error"
+              role="alert"
+              data-brw-error-code={$submitErrorTagged.code}
+              data-brw-row="error"
+            >
+              {$submitErrorTagged.message}
+              <button
+                type="button"
+                class="brw-svelte-btn brw-svelte-status-row-retry"
+                on:click={handleRetry}
+              >
+                Retry
+              </button>
             </div>
           {/if}
 
-          {#if successAt !== null}
+          {#if confirmClose}
             <div
-              class="brw-svelte-bubble brw-svelte-bubble--assistant brw-svelte-bubble--receipt"
-              role="status"
+              class="brw-svelte-confirm"
+              role="alert"
+              aria-label="Discard draft?"
             >
-              Thanks — your issue is on its way.
+              <span class="brw-svelte-confirm-msg">Discard your feedback?</span>
+              <button
+                type="button"
+                class="brw-svelte-btn"
+                on:click={() => (confirmClose = false)}
+              >
+                Keep
+              </button>
+              <button
+                type="button"
+                class="brw-svelte-btn brw-svelte-btn-primary"
+                on:click={fullClose}
+              >
+                Discard
+              </button>
             </div>
           {/if}
         </div>
@@ -279,6 +759,26 @@
             aria-label="Feedback message"
             disabled={$status === 'submitting'}
           ></textarea>
+          {#if showAiToggle}
+            <span class="brw-svelte-aitoggle-wrap">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={useAi}
+                aria-label="Format with AI"
+                class="brw-svelte-aitoggle{useAi
+                  ? ' brw-svelte-aitoggle--on'
+                  : ''}"
+                disabled={$status === 'submitting'}
+                on:click={toggleAi}
+                on:keydown={handleAiKeydown}
+              >
+                <span class="brw-svelte-aitoggle-thumb" aria-hidden="true"
+                ></span>
+              </button>
+              <span class="brw-svelte-aitoggle-text" aria-hidden="true">AI</span>
+            </span>
+          {/if}
           <button
             type="button"
             class="brw-svelte-send"
@@ -343,6 +843,13 @@
   </div>
 {/if}
 
+<script lang="ts" context="module">
+  // Module-scoped counter for the disclosure id. Resets per page-load,
+  // collisions across multiple <FeedbackButton> instances are impossible
+  // because each `++` produces a fresh integer for that page lifetime.
+  let disclosureSeq = 0;
+</script>
+
 <style>
   /* Public theme tokens, mirrored from the React adapter so the same
      `--brw-*` overrides re-skin both widgets. Defaults are scoped to the
@@ -353,6 +860,8 @@
     --brw-bg: #ffffff;
     --brw-panel-bg: var(--brw-bg);
     --brw-bubble-assistant-bg: #f3f4f6;
+    --brw-bubble-user-bg: #0f172a;
+    --brw-bubble-user-fg: #ffffff;
     --brw-chip-bg: #f3f4f6;
     --brw-composer-bg: #ffffff;
     --brw-border: #e5e7eb;
@@ -360,6 +869,7 @@
     --brw-divider: #e5e7eb;
     --brw-accent: #4f46e5;
     --brw-accent-fg: #ffffff;
+    --brw-error: #b91c1c;
     --brw-shadow:
       0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.12);
     color: var(--brw-fg);
@@ -380,6 +890,8 @@
     --brw-bg: #0b0b0c;
     --brw-panel-bg: #111113;
     --brw-bubble-assistant-bg: #1f2024;
+    --brw-bubble-user-bg: #f8fafc;
+    --brw-bubble-user-fg: #0f172a;
     --brw-chip-bg: #1f2024;
     --brw-composer-bg: #111113;
     --brw-border: #2a2b30;
@@ -395,6 +907,8 @@
       --brw-bg: #0b0b0c;
       --brw-panel-bg: #111113;
       --brw-bubble-assistant-bg: #1f2024;
+      --brw-bubble-user-bg: #f8fafc;
+      --brw-bubble-user-fg: #0f172a;
       --brw-chip-bg: #1f2024;
       --brw-composer-bg: #111113;
       --brw-border: #2a2b30;
@@ -512,13 +1026,30 @@
     border-radius: 12px;
     max-width: 100%;
     line-height: 1.4;
+    word-wrap: break-word;
+    white-space: pre-wrap;
   }
   .brw-svelte-bubble--assistant {
     background: var(--brw-bubble-assistant-bg);
     align-self: flex-start;
+    border-bottom-left-radius: 4px;
+  }
+  .brw-svelte-bubble--user {
+    align-self: flex-end;
+    background: var(--brw-bubble-user-bg);
+    color: var(--brw-bubble-user-fg);
+    border-bottom-right-radius: 4px;
   }
   .brw-svelte-bubble--receipt {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    font-size: 11px;
     color: var(--brw-fg-muted);
+  }
+  .brw-svelte-bubble--receipt svg {
+    flex-shrink: 0;
   }
 
   .brw-svelte-chip {
@@ -553,7 +1084,7 @@
   }
 
   .brw-svelte-error {
-    color: #b91c1c;
+    color: var(--brw-error);
     background: #fef2f2;
     border: 1px solid #fecaca;
     border-radius: 8px;
@@ -561,9 +1092,171 @@
     font-size: 13px;
   }
 
+  .brw-svelte-disclosure {
+    align-self: flex-start;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--brw-fg-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .brw-svelte-disclosure:hover {
+    color: var(--brw-fg);
+  }
+  .brw-svelte-disclosure-panel {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--brw-chip-bg);
+    border: 1px solid var(--brw-border);
+    border-radius: 10px;
+  }
+  .brw-svelte-disclosure-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--brw-fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .brw-svelte-disclosure-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--brw-fg);
+    background: var(--brw-panel-bg);
+    border: 1px solid var(--brw-border);
+    border-radius: 6px;
+    resize: vertical;
+    min-height: 34px;
+  }
+
+  /* Staged-status rows (#74). Visually mirrors the assistant bubble
+     surface (background, padding, radius) but lives outside the bubble
+     class family so it does not count as a conversation bubble for queries
+     that count messages — the rows are progress indicators, not messages.
+     The transition-delay / animation-delay are set inline per row so the
+     three rows fade in sequentially even when the underlying SDK phase
+     events fire microseconds apart. */
+  .brw-svelte-status-row {
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border-bottom-left-radius: 4px;
+    background: var(--brw-bubble-assistant-bg);
+    color: var(--brw-fg);
+    font-size: 13px;
+    line-height: 1.45;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: brw-svelte-status-row-in 220ms ease-out both;
+  }
+  .brw-svelte-status-row-check {
+    display: inline-flex;
+    width: 14px;
+    height: 14px;
+    align-items: center;
+    justify-content: center;
+    color: var(--brw-accent);
+  }
+  .brw-svelte-status-row-label {
+    flex: 1;
+  }
+  .brw-svelte-status-row--error {
+    color: var(--brw-error);
+    border: 1px solid var(--brw-error);
+    background: var(--brw-bubble-assistant-bg);
+  }
+  .brw-svelte-status-row-retry {
+    margin-left: auto;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  @keyframes brw-svelte-status-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brw-svelte-status-row {
+      animation: none;
+    }
+  }
+
+  /* Inline `role="alert"` confirm — not a true modal dialog. Same shape
+     as the React DiscardConfirm; "Keep" is the non-destructive default. */
+  .brw-svelte-confirm {
+    align-self: stretch;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    background: var(--brw-chip-bg);
+    border: 1px solid var(--brw-border);
+    border-radius: 10px;
+    font-size: 12px;
+  }
+  .brw-svelte-confirm-msg {
+    flex: 1;
+  }
+  .brw-svelte-btn {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--brw-border);
+    background: var(--brw-panel-bg);
+    color: var(--brw-fg);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .brw-svelte-btn:hover:not(:disabled) {
+    background: var(--brw-chip-bg);
+  }
+  .brw-svelte-btn-primary {
+    background: var(--brw-accent);
+    color: var(--brw-accent-fg);
+    border-color: var(--brw-accent);
+  }
+
+  /* Spinner for the AI formatting status row. Matches React's brw-spinner
+     shape. */
+  .brw-svelte-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 999px;
+    animation: brw-svelte-spin 0.7s linear infinite;
+  }
+  @keyframes brw-svelte-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brw-svelte-spinner {
+      animation-duration: 1.6s;
+    }
+  }
+
   .brw-svelte-composer {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr auto auto;
     gap: 6px;
     align-items: end;
     padding: 10px 12px;
@@ -610,6 +1303,76 @@
     height: 1px;
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* AI toggle — track-and-thumb switch, parity with the React adapter's
+     iOS-style toggle (#65). The "AI" text sits outside the button so the
+     switch itself is an unambiguous track, not a pressed-button state. */
+  .brw-svelte-aitoggle-wrap {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 4px;
+  }
+  .brw-svelte-aitoggle-text {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--brw-fg-muted);
+    line-height: 1;
+    user-select: none;
+    transition: color 120ms ease-out;
+  }
+  .brw-svelte-aitoggle-wrap:has(.brw-svelte-aitoggle--on)
+    .brw-svelte-aitoggle-text {
+    color: var(--brw-fg);
+  }
+  .brw-svelte-aitoggle {
+    position: relative;
+    flex-shrink: 0;
+    width: 30px;
+    height: 18px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--brw-border);
+    background: var(--brw-chip-bg);
+    cursor: pointer;
+    transition:
+      background-color 120ms ease-out,
+      border-color 120ms ease-out;
+  }
+  .brw-svelte-aitoggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .brw-svelte-aitoggle-thumb {
+    position: absolute;
+    top: 50%;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--brw-fg-muted);
+    transform: translateY(-50%);
+    transition:
+      left 140ms ease-out,
+      background-color 120ms ease-out;
+  }
+  .brw-svelte-aitoggle--on {
+    background: var(--brw-accent);
+    border-color: var(--brw-accent);
+  }
+  .brw-svelte-aitoggle--on .brw-svelte-aitoggle-thumb {
+    left: calc(100% - 14px);
+    background: var(--brw-accent-fg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brw-svelte-aitoggle,
+    .brw-svelte-aitoggle-thumb,
+    .brw-svelte-aitoggle-text {
+      transition: none;
+    }
   }
 
   .brw-svelte-footer {
