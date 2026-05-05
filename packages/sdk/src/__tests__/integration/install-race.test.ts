@@ -16,6 +16,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { createBrevwick } from '../../core/client';
+import type { Brevwick } from '../../types';
 import { __resetBrevwickRegistry, __setRingsForTesting } from '../../testing';
 import {
   createIntegrationServer,
@@ -26,8 +27,22 @@ import {
 
 const server = createIntegrationServer();
 
+// Track the live instance per-test so `afterEach` can always uninstall it,
+// even when an assertion in the test body throws. Without this, a failing
+// assertion would skip the inline `uninstall()` and leave `globalThis.fetch`
+// + `console.*` patched, leaking into every subsequent test in the run.
+let activeInstance: Brevwick | null = null;
+
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
+  if (activeInstance) {
+    try {
+      activeInstance.uninstall();
+    } catch {
+      // Uninstall failure must not mask the original test failure.
+    }
+    activeInstance = null;
+  }
   server.resetHandlers();
   __resetBrevwickRegistry();
   __setRingsForTesting();
@@ -38,19 +53,19 @@ describe('integration — install-time capture race', () => {
   it('captures console.error fired immediately after install() without awaiting ready()', async () => {
     const captured = installIngestHandlers(server, () => 'issue_race_console');
 
-    const instance = createBrevwick({
+    activeInstance = createBrevwick({
       projectKey: KEY,
       endpoint: ENDPOINT,
       environment: 'stg',
     });
-    instance.install();
+    activeInstance.install();
 
     // SYNCHRONOUS turn after install() — no `await internal.ready()`. This
     // is the production path (Provider's useEffect → install() → user code
     // continues running, errors fire, eventually submit happens).
     console.error('race: synthetic console error fired pre-ready');
 
-    const result = await instance.submit({ description: 'race repro' });
+    const result = await activeInstance.submit({ description: 'race repro' });
     expect(result).toEqual({ ok: true, issue_id: 'issue_race_console' });
 
     const body = captured.json();
@@ -65,8 +80,6 @@ describe('integration — install-time capture race', () => {
     expect(consoleErrors[0]?.message).toMatch(
       /race: synthetic console error fired pre-ready/,
     );
-
-    instance.uninstall();
   });
 
   it('captures a failing fetch fired immediately after install() without awaiting ready()', async () => {
@@ -78,18 +91,20 @@ describe('integration — install-time capture race', () => {
     );
     const captured = installIngestHandlers(server, () => 'issue_race_network');
 
-    const instance = createBrevwick({
+    activeInstance = createBrevwick({
       projectKey: KEY,
       endpoint: ENDPOINT,
       environment: 'stg',
     });
-    instance.install();
+    activeInstance.install();
 
     // No `await internal.ready()`. The fetch patch must already be in place.
     const userRes = await fetch(USER_API);
     expect(userRes.status).toBe(500);
 
-    const result = await instance.submit({ description: 'race repro net' });
+    const result = await activeInstance.submit({
+      description: 'race repro net',
+    });
     expect(result).toEqual({ ok: true, issue_id: 'issue_race_network' });
 
     const body = captured.json();
@@ -101,7 +116,5 @@ describe('integration — install-time capture race', () => {
       url: USER_API,
       status: 500,
     });
-
-    instance.uninstall();
   });
 });

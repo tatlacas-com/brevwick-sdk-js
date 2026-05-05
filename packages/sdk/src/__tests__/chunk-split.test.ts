@@ -125,19 +125,29 @@ describe('bundle chunk split', () => {
       };
       walk('index.js');
 
-      let total = 0;
       const breakdown: Array<[string, number]> = [];
+      let total = 0;
       for (const file of visited) {
         const size = gzipSync(readFileSync(join(dist, file))).length;
         total += size;
         breakdown.push([file, size]);
       }
-      // Surface the breakdown in failure output so a regression points at
-      // which chunk grew.
-      expect({ total, breakdown }).toEqual(
-        expect.objectContaining({ total: expect.any(Number) }),
-      );
-      expect(total).toBeLessThan(8 * 1024);
+
+      const BUDGET = 8 * 1024;
+      // Embed the per-chunk breakdown in the failure message so a budget
+      // regression points at which chunk grew, not just the total. Sorted
+      // descending so the worst offender lands first in the diff. Using
+      // `assert(condition, message)` instead of `expect(...).toBeLessThan`
+      // because vitest's matcher only prints the actual/expected pair.
+      if (total >= BUDGET) {
+        breakdown.sort((a, b) => b[1] - a[1]);
+        const lines = breakdown.map(
+          ([f, b]) => `  ${f.padEnd(28)} ${b.toString().padStart(5)} B`,
+        );
+        throw new Error(
+          `eager gzip total ${total} B exceeds budget ${BUDGET} B\n${lines.join('\n')}`,
+        );
+      }
     });
   });
 });
