@@ -13,3 +13,9 @@ build/
 
 # Local-only consumer sync scripts (tarball build + install into a sibling app).
 scripts/sync-*.sh
+
+# Playwright run artefacts — `test-results/` is per-spec failure dumps,
+# `playwright-report/` is the HTML reporter output. Both are reproducible
+# from a re-run and would just inflate diffs / repo size if committed.
+test-results/
+playwright-report/
