@@ -23,6 +23,7 @@ import type { JSX } from 'solid-js';
 
 const submit = vi.fn<(input: FeedbackInput) => Promise<SubmitResult>>();
 const captureScreenshot = vi.fn<() => Promise<Blob>>();
+const getConfig = vi.fn<() => Promise<null>>();
 const install = vi.fn();
 const uninstall = vi.fn();
 
@@ -38,6 +39,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
         uninstall,
         submit,
         captureScreenshot,
+        getConfig,
       }) as unknown as Brevwick,
   };
 });
@@ -57,6 +59,9 @@ beforeEach(() => {
       URL as unknown as { revokeObjectURL: (u: string) => void }
     ).revokeObjectURL = () => undefined;
   }
+  // Lazy project-config fetch fires on first panel open; mocking null
+  // keeps the AI toggle hidden, which is the simplest legal config.
+  getConfig.mockResolvedValue(null);
 });
 
 afterEach(() => {

@@ -97,19 +97,28 @@ export default [
     '25 kB',
   ),
 
-  // ── Solid bundle (≤ 5 kB gzip) ───────────────────────────────────────────
-  // Solid runtime is small and the V1 FAB ships a strict subset of the
-  // React widget UI, so the eager artefact stays well under the React budget.
-  // 5 kB is the issue-66 SDD ceiling.
+  // ── Solid bundle (≤ 12 kB gzip) ──────────────────────────────────────────
+  // Bumped from 5 kB → 12 kB when the Solid widget reached UX parity with
+  // the React adapter (issue #113). The widget ships the chat-thread
+  // panel: greeting + user/assistant bubbles, autogrow composer,
+  // expected/actual disclosure, file attachment chips, AI toggle, staged-
+  // status rows driven by the SDK's phase bus, retry CTA, and the panel
+  // footer. Screenshot UI is intentionally absent in v1 (see PR #111);
+  // callers that need a screenshot capture path invoke
+  // `useFeedback().captureScreenshot()` directly. Current sizes ESM 8.79
+  // / CJS 9.11 kB; 12 kB leaves headroom for incremental UX work without
+  // dragging the package over the React adapter (25 kB) or unbalancing
+  // the budget vs Vue (5 kB; Vue ships a thinner surface, no AI toggle /
+  // disclosure / staged-status rows).
   fileEntry(
     '@tatlacas/brevwick-solid (ESM)',
     'packages/solid/dist/index.js',
-    '5 kB',
+    '12 kB',
   ),
   fileEntry(
     '@tatlacas/brevwick-solid (CJS)',
     'packages/solid/dist/index.cjs',
-    '5 kB',
+    '12 kB',
   ),
 
   // ── Vue bundle (≤ 5 kB gzip eager) ───────────────────────────────────────
