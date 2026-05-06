@@ -2,7 +2,6 @@ import {
   computed,
   defineComponent,
   h,
-  onBeforeUnmount,
   onMounted,
   ref,
   type PropType,
@@ -18,9 +17,7 @@ export type BrevwickTheme = 'light' | 'dark' | 'system';
 /**
  * Props accepted by `<FeedbackButton>`. Mirrors the React adapter's
  * `FeedbackButtonProps` so consumers porting between frameworks find the
- * same names. The Vue surface is intentionally trimmed compared to React
- * (no AI toggle, no region overlay) — those land in follow-up issues now
- * that the package shape is established.
+ * same names.
  */
 export const FeedbackButton = defineComponent({
   name: 'BrevwickFeedbackButton',
@@ -43,14 +40,11 @@ export const FeedbackButton = defineComponent({
     },
   },
   setup(props) {
-    const { submit, captureScreenshot, status } = useFeedback();
+    const { submit, status } = useFeedback();
     const open = ref(false);
     const draft = ref('');
-    const screenshotBlob = ref<Blob | null>(null);
-    const screenshotUrl = ref<string | null>(null);
     const submitError = ref<string | null>(null);
     const successMessage = ref<string | null>(null);
-    const capturing = ref(false);
 
     onMounted(() => {
       // Inject the bundled <style> once per document. The DOM probe by id
@@ -63,10 +57,6 @@ export const FeedbackButton = defineComponent({
       el.id = BREVWICK_STYLE_ID;
       el.textContent = BREVWICK_CSS;
       document.head.appendChild(el);
-    });
-
-    onBeforeUnmount(() => {
-      if (screenshotUrl.value) URL.revokeObjectURL(screenshotUrl.value);
     });
 
     const fabClass = computed(() => [
@@ -93,28 +83,6 @@ export const FeedbackButton = defineComponent({
       open.value = false;
     };
 
-    const handleCapture = async (): Promise<void> => {
-      capturing.value = true;
-      submitError.value = null;
-      try {
-        const blob = await captureScreenshot();
-        if (screenshotUrl.value) URL.revokeObjectURL(screenshotUrl.value);
-        screenshotBlob.value = blob;
-        screenshotUrl.value = URL.createObjectURL(blob);
-      } catch (err) {
-        submitError.value =
-          err instanceof Error ? err.message : 'Screenshot capture failed';
-      } finally {
-        capturing.value = false;
-      }
-    };
-
-    const handleRemoveScreenshot = (): void => {
-      if (screenshotUrl.value) URL.revokeObjectURL(screenshotUrl.value);
-      screenshotBlob.value = null;
-      screenshotUrl.value = null;
-    };
-
     const handleSubmit = async (): Promise<void> => {
       if (status.value === 'submitting') return;
       const text = draft.value.trim();
@@ -127,20 +95,12 @@ export const FeedbackButton = defineComponent({
         title: (text.split('\n', 1)[0] ?? text).slice(0, 120),
         description: draft.value,
       };
-      if (screenshotBlob.value) {
-        const ext =
-          screenshotBlob.value.type.split('/')[1]?.split('+')[0] || 'webp';
-        input.attachments = [
-          { blob: screenshotBlob.value, filename: `screenshot.${ext}` },
-        ];
-      }
       try {
         const result = await submit(input);
         props.onSubmit?.(result);
         if (result.ok) {
           successMessage.value = 'Thanks — your feedback is on its way.';
           draft.value = '';
-          handleRemoveScreenshot();
         } else {
           submitError.value = result.error.message;
         }
@@ -177,8 +137,7 @@ export const FeedbackButton = defineComponent({
 
     function renderPanel(): VNode {
       const submitting = status.value === 'submitting';
-      const sendDisabled =
-        submitting || capturing.value || draft.value.trim().length === 0;
+      const sendDisabled = submitting || draft.value.trim().length === 0;
       return h(
         'div',
         {
@@ -219,25 +178,6 @@ export const FeedbackButton = defineComponent({
                   draft.value = (event.target as HTMLTextAreaElement).value;
                 },
               }),
-              screenshotUrl.value
-                ? h('div', { class: 'brw-chip' }, [
-                    h('img', {
-                      src: screenshotUrl.value,
-                      alt: 'Captured screenshot',
-                    }),
-                    h('span', 'screenshot'),
-                    h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: 'brw-chip-remove',
-                        'aria-label': 'Remove screenshot',
-                        onClick: handleRemoveScreenshot,
-                      },
-                      '×',
-                    ),
-                  ])
-                : null,
               submitError.value
                 ? h(
                     'div',
@@ -250,17 +190,6 @@ export const FeedbackButton = defineComponent({
                 : null,
             ]),
             h('div', { class: 'brw-actions' }, [
-              h(
-                'button',
-                {
-                  type: 'button',
-                  class: 'brw-btn',
-                  'aria-label': 'Capture screenshot of this page',
-                  disabled: capturing.value || submitting,
-                  onClick: handleCapture,
-                },
-                capturing.value ? 'Capturing…' : 'Screenshot',
-              ),
               h('span', { class: 'brw-spacer' }),
               h(
                 'button',

@@ -1,22 +1,10 @@
 import type { MetaFunction } from '@remix-run/node';
-import { useFeedback } from '@tatlacas/brevwick-react';
+import { readConfig } from '../configured-widget';
 
 export const meta: MetaFunction = () => [{ title: 'Brevwick — Remix example' }];
 
 export default function Index() {
-  // `useFeedback` only works inside a `<BrevwickProvider>` (mounted in
-  // `root.tsx` via `ConfiguredWidget`). It throws synchronously if the
-  // provider is missing.
-  const { submit, status } = useFeedback();
-
-  async function handleManualSubmit() {
-    const result = await submit({
-      description: 'Manual submit from the Remix example index route.',
-    });
-    if (!result.ok) {
-      console.error('[brevwick]', result.error.code, result.error.message);
-    }
-  }
+  const { error } = readConfig();
 
   return (
     <main
@@ -33,30 +21,38 @@ export default function Index() {
           padding: '2rem',
           border: '1px solid rgba(0,0,0,0.1)',
           borderRadius: '0.75rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
           textAlign: 'center',
         }}
       >
         <h1 style={{ marginTop: 0 }}>Brevwick — Remix example</h1>
         <p>
           The floating <strong>Feedback</strong> button is rendered from{' '}
-          <code>app/root.tsx</code>. The button below demonstrates a manual
-          submit via <code>useFeedback()</code>.
+          <code>app/root.tsx</code> by <code>&lt;FeedbackButton /&gt;</code>{' '}
+          from <code>@tatlacas/brevwick-react</code>. Click it, fill the dialog,
+          submit, and check your project inbox at{' '}
+          <a href="https://brevwick.dev">brevwick.dev</a>.
         </p>
-        <button
-          type="button"
-          onClick={handleManualSubmit}
-          disabled={status === 'submitting'}
-          style={{
-            padding: '0.75rem 1.25rem',
-            fontSize: '1rem',
-            borderRadius: '0.5rem',
-            border: '1px solid currentColor',
-            background: 'transparent',
-            cursor: status === 'submitting' ? 'progress' : 'pointer',
-          }}
-        >
-          {status === 'submitting' ? 'Sending…' : 'Submit manual feedback'}
-        </button>
+        {error === 'missing-key' && (
+          <p style={{ color: '#b42318' }}>
+            Missing <code>VITE_BREVWICK_PROJECT_KEY</code>. Copy{' '}
+            <code>.env.example</code> to <code>.env.local</code>, seed a real
+            test key, and reload this page.
+          </p>
+        )}
+        {error === 'invalid-key' && (
+          <p style={{ color: '#b42318' }}>
+            <code>VITE_BREVWICK_PROJECT_KEY</code> is malformed. It must match{' '}
+            <code>pk_(live|test)_[A-Za-z0-9]{'{16,}'}</code>.
+          </p>
+        )}
+        {error === 'missing-endpoint' && (
+          <p style={{ color: '#b42318' }}>
+            Missing <code>VITE_BREVWICK_ENDPOINT</code>. Point it at your local{' '}
+            <code>brevwick-api</code> (e.g. <code>http://localhost:8080</code>)
+            in <code>.env.local</code>.
+          </p>
+        )}
       </section>
     </main>
   );

@@ -278,10 +278,7 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     expect(arg.description).toBe('login button does nothing');
     expect(arg.expected).toBe('opens the dashboard');
     expect(arg.actual).toBeUndefined();
-    // Screenshot is on by default — attachments should include the captured
-    // blob with the canonical filename.
-    expect(arg.attachments).toHaveLength(1);
-    expect(arg.attachments![0]).toMatchObject({ filename: 'screenshot.png' });
+    expect(arg.attachments).toBeUndefined();
   });
 
   it('blocks submit and surfaces an inline error when the description is empty', async () => {
@@ -546,7 +543,7 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     expect(aiSwitches).toHaveLength(0);
   });
 
-  it('omits the screenshot attachment when the user toggles screenshots off', async () => {
+  it.skip('omits the screenshot attachment when the user toggles screenshots off', async () => {
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_no_shot' });
     const renderer = await renderTree(<FeedbackButton />);
     await openModal(renderer);
@@ -626,7 +623,7 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     expect(findFab(renderer)!.props.accessibilityLabel).toBe('Send feedback');
   });
 
-  it('clears a stale screenshot when a later capture attempt fails', async () => {
+  it.skip('clears a stale screenshot when a later capture attempt fails', async () => {
     // First open: capture succeeds → blob + uri populate.
     captureScreenshot.mockReset();
     captureScreenshot.mockResolvedValueOnce(
@@ -732,7 +729,7 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     expect(submit.mock.calls[1]![0].use_ai).toBe(true);
   });
 
-  it('renders the in-flight placeholder before capture resolves and the preview-unavailable copy when FileReader fails', async () => {
+  it.skip('renders the in-flight placeholder before capture resolves and the preview-unavailable copy when FileReader fails', async () => {
     // Hold the capture promise open so the test can observe the
     // in-flight placeholder before the blob arrives.
     let resolveCapture!: (blob: Blob) => void;
@@ -793,7 +790,7 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     }
   });
 
-  it('routes screenshot capture through the native path when `viewRef` is supplied', async () => {
+  it.skip('routes screenshot capture through the native path when `viewRef` is supplied', async () => {
     const nativeBlob = new Blob(['native-png'], { type: 'image/png' });
     nativeCapture.mockReset();
     nativeCapture.mockResolvedValueOnce(nativeBlob);
@@ -804,6 +801,7 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_native' });
 
     const renderer = await renderTree(
+      // @ts-expect-error -- viewRef removed when screenshot UI was disabled in v1
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       <FeedbackButton viewRef={fakeRef as any} />,
     );
@@ -833,7 +831,7 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     expect((attachments[0] as any).blob).toBe(nativeBlob);
   });
 
-  it('surfaces an inline note and warns to the console when screenshot capture rejects', async () => {
+  it.skip('surfaces an inline note and warns to the console when screenshot capture rejects', async () => {
     captureScreenshot.mockReset();
     captureScreenshot.mockRejectedValueOnce(new Error('view tree unmounted'));
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_no_shot_capture' });

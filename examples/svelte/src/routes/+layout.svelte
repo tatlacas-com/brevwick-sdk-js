@@ -1,10 +1,15 @@
 <script lang="ts">
   import { setBrevwickContext, FeedbackButton } from '@tatlacas/brevwick-svelte';
-  import { brevwickConfig } from '$lib/configured-widget';
+  import { readConfig } from '$lib/configured-widget';
 
-  setBrevwickContext(brevwickConfig);
+  const { config } = readConfig();
+  if (config) {
+    setBrevwickContext(config);
+  }
 </script>
 
 <slot />
 
-<FeedbackButton />
+{#if config}
+  <FeedbackButton />
+{/if}
