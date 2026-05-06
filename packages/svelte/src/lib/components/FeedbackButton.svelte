@@ -81,6 +81,11 @@
   };
   const ASSISTANT_RECEIPT_TEXT = 'Thanks — your issue is on its way.';
 
+  // Maximum autogrow height of the composer textarea in pixels. Mirrors
+  // the React adapter's COMPOSER_MAX_HEIGHT_PX so the two widgets cap at
+  // the same line count before scrolling internally.
+  const COMPOSER_MAX_HEIGHT_PX = 120;
+
   let mounted = false;
   let open = false;
   let draft = '';
@@ -95,6 +100,11 @@
   let fileId = 0;
   let messageId = 0;
   let prefersReducedMotion = false;
+  // Bound to the composer textarea so the autogrow reactive block can
+  // measure scrollHeight and resize between min-height (one row) and
+  // COMPOSER_MAX_HEIGHT_PX without coupling to a CSS-only grow that
+  // would jump in row-sized increments.
+  let textareaEl: HTMLTextAreaElement | undefined;
 
   // Project-config render-policy state. Mirrors React's `useProjectConfig`:
   // lazy fetch on first panel open, cache the result for the lifetime of the
@@ -131,6 +141,15 @@
     actual.length > 0 ||
     files.length > 0;
   $: canSend = draft.trim().length > 0 && $status !== 'submitting';
+
+  // Autogrow the composer textarea between one row and
+  // COMPOSER_MAX_HEIGHT_PX as the user types. Mirrors the React adapter:
+  // reset to `auto` first so shrinking on backspace works, then size to
+  // `scrollHeight` capped at the ceiling.
+  $: if (textareaEl && draft !== undefined) {
+    textareaEl.style.height = 'auto';
+    textareaEl.style.height = `${Math.min(textareaEl.scrollHeight, COMPOSER_MAX_HEIGHT_PX)}px`;
+  }
 
   // Phase-driven row visibility. Parity with the React adapter — row 1
   // shows from `sanitising` onwards, row 2 from `formatting` onwards, row
@@ -723,84 +742,89 @@
         </div>
 
         <div class="brw-svelte-composer">
-          <label class="brw-svelte-icon-btn" aria-label="Attach file">
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path
-                d="M21 10.5l-8.5 8.5a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l7.5-7.5"
-              />
-            </svg>
-            <input
-              type="file"
-              multiple
-              class="brw-svelte-file-input"
-              on:change={handleFiles}
-              disabled={attachmentsAtCap || $status === 'submitting'}
-              aria-label={attachmentsAtCap
-                ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
-                : 'Attach file'}
-            />
-          </label>
-          <textarea
-            class="brw-svelte-textarea"
-            rows={2}
-            placeholder="Describe the bug or feedback…"
-            bind:value={draft}
-            on:keydown={handleKeydown}
-            aria-label="Feedback message"
-            disabled={$status === 'submitting'}
-          ></textarea>
-          {#if showAiToggle}
-            <span class="brw-svelte-aitoggle-wrap">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={useAi}
-                aria-label="Format with AI"
-                class="brw-svelte-aitoggle{useAi
-                  ? ' brw-svelte-aitoggle--on'
-                  : ''}"
-                disabled={$status === 'submitting'}
-                on:click={toggleAi}
-                on:keydown={handleAiKeydown}
+          <div class="brw-svelte-composer-shell">
+            <label class="brw-svelte-icon-btn" aria-label="Attach file">
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
               >
-                <span class="brw-svelte-aitoggle-thumb" aria-hidden="true"
-                ></span>
-              </button>
-              <span class="brw-svelte-aitoggle-text" aria-hidden="true">AI</span>
-            </span>
-          {/if}
-          <button
-            type="button"
-            class="brw-svelte-send"
-            aria-label="Send"
-            on:click={handleSubmit}
-            disabled={!canSend}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
+                <path
+                  d="M21 10.5l-8.5 8.5a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l7.5-7.5"
+                />
+              </svg>
+              <input
+                type="file"
+                multiple
+                class="brw-svelte-file-input"
+                on:change={handleFiles}
+                disabled={attachmentsAtCap || $status === 'submitting'}
+                aria-label={attachmentsAtCap
+                  ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
+                  : 'Attach file'}
+              />
+            </label>
+            <textarea
+              bind:this={textareaEl}
+              class="brw-svelte-textarea"
+              rows={1}
+              placeholder="Describe the bug or feedback…"
+              bind:value={draft}
+              on:keydown={handleKeydown}
+              aria-label="Feedback message"
+              disabled={$status === 'submitting'}
+            ></textarea>
+            {#if showAiToggle}
+              <span class="brw-svelte-aitoggle-wrap">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={useAi}
+                  aria-label="Format with AI"
+                  class="brw-svelte-aitoggle{useAi
+                    ? ' brw-svelte-aitoggle--on'
+                    : ''}"
+                  disabled={$status === 'submitting'}
+                  on:click={toggleAi}
+                  on:keydown={handleAiKeydown}
+                >
+                  <span class="brw-svelte-aitoggle-thumb" aria-hidden="true"
+                  ></span>
+                </button>
+                <span class="brw-svelte-aitoggle-text" aria-hidden="true"
+                  >AI</span
+                >
+              </span>
+            {/if}
+            <button
+              type="button"
+              class="brw-svelte-send"
+              aria-label="Send"
+              on:click={handleSubmit}
+              disabled={!canSend}
             >
-              <path d="M4 20l16-8L4 4l2 8-2 8z" />
-              <path d="M6 12h14" />
-            </svg>
-          </button>
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 20l16-8L4 4l2 8-2 8z" />
+                <path d="M6 12h14" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <footer class="brw-svelte-footer">
@@ -1254,43 +1278,71 @@
     }
   }
 
+  /* Outer composer is just the bottom strip — padding + bg + the
+     divider line above. The actual input affordance lives in
+     `.brw-svelte-composer-shell` so it reads as one unified chip
+     containing the attach button, textarea, optional AI toggle and
+     send button. Mirrors the React adapter's `.brw-composer` /
+     `.brw-composer-shell` split (#114 follow-up — the original Svelte
+     parity PR shipped a 3-row grid that put the textarea on its own
+     row; this shape lines everything up on one row to match the
+     React reference). */
   .brw-svelte-composer {
-    display: grid;
-    grid-template-columns: auto 1fr auto auto;
-    gap: 6px;
-    align-items: end;
-    padding: 10px 12px;
+    flex-shrink: 0;
+    padding: 8px 10px;
     background: var(--brw-composer-bg);
     border-top: 1px solid var(--brw-divider);
   }
-  .brw-svelte-textarea {
-    grid-column: 1 / -1;
-    width: 100%;
+  .brw-svelte-composer-shell {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--brw-composer-bg);
     border: 1px solid var(--brw-border);
-    border-radius: 10px;
-    padding: 8px 10px;
-    background: var(--brw-bg);
-    color: var(--brw-fg);
-    resize: none;
-    font: inherit;
-    box-sizing: border-box;
+    border-radius: 12px;
+    transition: border-color 120ms ease-out;
   }
-  .brw-svelte-textarea:focus {
-    outline: none;
+  .brw-svelte-composer-shell:focus-within {
     border-color: var(--brw-border-focus);
   }
-  .brw-svelte-send {
-    appearance: none;
+  @media (prefers-reduced-motion: reduce) {
+    .brw-svelte-composer-shell {
+      transition: none;
+    }
+  }
+  .brw-svelte-textarea {
+    flex: 1;
+    min-height: 34px;
+    max-height: 120px;
+    box-sizing: border-box;
+    padding: 8px 4px;
+    background: transparent;
+    color: var(--brw-fg);
     border: none;
-    background: var(--brw-accent);
-    color: var(--brw-accent-fg);
-    width: 36px;
-    height: 36px;
-    border-radius: 999px;
+    resize: none;
+    overflow-y: auto;
+    line-height: 1.4;
+    font: inherit;
+    font-size: 13px;
+  }
+  .brw-svelte-textarea:focus,
+  .brw-svelte-textarea:focus-visible {
+    outline: none;
+  }
+  .brw-svelte-send {
+    width: 34px;
+    height: 34px;
+    padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid var(--brw-accent);
+    background: var(--brw-accent);
+    color: var(--brw-accent-fg);
+    border-radius: 10px;
     cursor: pointer;
+    flex-shrink: 0;
     font: inherit;
   }
   .brw-svelte-send:disabled {
@@ -1308,12 +1360,15 @@
   /* AI toggle — track-and-thumb switch, parity with the React adapter's
      iOS-style toggle (#65). The "AI" text sits outside the button so the
      switch itself is an unambiguous track, not a pressed-button state. */
+  /* Wrap matches `.brw-svelte-send` height (34px) so the switch
+     centre and the send-button centre land on the same baseline
+     under the shell's `align-items: flex-end`. */
   .brw-svelte-aitoggle-wrap {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 36px;
+    height: 34px;
     padding: 0 4px;
   }
   .brw-svelte-aitoggle-text {
