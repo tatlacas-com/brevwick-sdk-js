@@ -6,6 +6,7 @@ Minimal Vue 3 + Vite app wired up with [`@tatlacas/brevwick-vue`](../../packages
 
 ```bash
 pnpm install
+pnpm --filter @tatlacas/brevwick-sdk --filter @tatlacas/brevwick-vue build
 cp .env.example .env.local        # then seed your real pk_test_* key
 pnpm --filter brevwick-example-vue dev
 ```

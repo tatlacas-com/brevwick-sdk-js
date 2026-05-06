@@ -5,7 +5,7 @@
  */
 
 export { setBrevwickContext, getFeedback } from './context';
-export type { FeedbackHandle, FeedbackStatus } from './context';
+export type { FeedbackHandle, FeedbackPhase, FeedbackStatus } from './context';
 
 export { default as FeedbackButton } from './components/FeedbackButton.svelte';
 

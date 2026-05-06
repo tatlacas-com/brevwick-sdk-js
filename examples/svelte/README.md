@@ -6,6 +6,7 @@ Minimal SvelteKit app wired up with [`@tatlacas/brevwick-svelte`](../../packages
 
 ```bash
 pnpm install
+pnpm --filter @tatlacas/brevwick-sdk --filter @tatlacas/brevwick-svelte build
 cp examples/svelte/.env.example examples/svelte/.env
 # edit .env to set PUBLIC_BREVWICK_PROJECT_KEY=pk_test_...
 

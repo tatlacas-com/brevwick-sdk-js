@@ -6,6 +6,7 @@ Minimal Angular 17+ standalone application that demonstrates `@tatlacas/brevwick
 
 ```bash
 pnpm install
+pnpm --filter @tatlacas/brevwick-sdk --filter @tatlacas/brevwick-angular build
 pnpm --filter brevwick-example-angular start
 ```
 
