@@ -20,7 +20,7 @@
     "size": "size-limit",
     "test:e2e": "playwright test",
     "changeset": "changeset",
-    "version-packages": "changeset version && pnpm install --lockfile-only",
+    "version-packages": "changeset version && pnpm install --lockfile-only && pnpm -r --if-present run prebuild",
     "release": "pnpm build && changeset publish"
   },
   "devDependencies": {

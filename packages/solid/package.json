@@ -34,7 +34,9 @@
     "build": "tsup",
     "predev": "node scripts/generate-version.mjs",
     "dev": "tsup --watch",
+    "pretest": "node scripts/generate-version.mjs",
     "test": "vitest run",
+    "pretest:cover": "node scripts/generate-version.mjs",
     "test:cover": "vitest run --coverage",
     "type-check": "tsc --noEmit"
   },
