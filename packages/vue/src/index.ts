@@ -9,6 +9,7 @@
 export { BrevwickPlugin, BREVWICK_INJECTION_KEY } from './plugin';
 export { useFeedback } from './composables/use-feedback';
 export type {
+  FeedbackPhase,
   FeedbackStatus,
   UseFeedbackResult,
 } from './composables/use-feedback';

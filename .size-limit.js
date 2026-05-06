@@ -121,21 +121,27 @@ export default [
     '12 kB',
   ),
 
-  // ── Vue bundle (≤ 5 kB gzip eager) ───────────────────────────────────────
-  // The Vue adapter is intentionally a thinner surface than React (no Radix
-  // dialog, no AI toggle, no region overlay, no preview dialog). The 5 kB
-  // ceiling reflects what a Vue 3 plugin + composable + minimal FAB
-  // component costs once minified — current size sits well under this and
-  // any drift surfaces as a CI failure here before it ships.
+  // ── Vue bundle (≤ 10 kB gzip eager) ──────────────────────────────────────
+  // Bumped from 5 kB → 10 kB when the Vue adapter's `<FeedbackButton>`
+  // reached UX parity with the React adapter (issue #112). The widget now
+  // ships the conversation thread, panel header / minimize / discard
+  // confirm, autogrow composer with paperclip + AI toggle, staged-status
+  // rows wired to the SDK's phase bus, retry row, lazy project-config
+  // fetch, and the canonical `BREVWICK_CSS` byte-for-byte. Region capture
+  // and the screenshot preview dialog stay out of v1 (no trigger button)
+  // to keep the bundle below the React adapter's 25 kB ceiling — current
+  // size sits ~8.4 kB gzip with headroom for incremental tuning before
+  // the next bump is needed. Mirrors the React widget's "ship the surface,
+  // measure the cost" approach in `CLAUDE.md`.
   fileEntry(
     '@tatlacas/brevwick-vue (ESM)',
     'packages/vue/dist/index.js',
-    '5 kB',
+    '10 kB',
   ),
   fileEntry(
     '@tatlacas/brevwick-vue (CJS)',
     'packages/vue/dist/index.cjs',
-    '5 kB',
+    '10 kB',
   ),
 
   // ── Svelte adapter eager entry (≤ 5 kB gzip) ─────────────────────────────
