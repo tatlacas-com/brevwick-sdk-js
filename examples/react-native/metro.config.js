@@ -7,10 +7,14 @@
 // real files live under the root `node_modules/.pnpm/` store.
 //
 // `disableHierarchicalLookup` + an explicit `nodeModulesPaths` whitelist
-// avoids the classic "duplicate React" error you get when Metro discovers
-// two copies of `react` along the way (the example's own `node_modules` and
-// the workspace root's). Both arrays-of-paths are required: the project
-// node_modules first, then the workspace root.
+// is required to keep Metro from walking up out of the example and
+// finding `react-native@0.76.9` in the SDK package's own `node_modules`
+// (the SDK declares 0.76.9 as a peer/dev). The example pins
+// `react-native@0.74.5` and Metro must resolve that one. The cost is
+// that Expo's transitive deps (`expo-modules-core`, etc.) cannot be
+// reached via `node_modules` traversal — they must be listed as direct
+// deps of this example so pnpm symlinks them into
+// `examples/react-native/node_modules/`, where the whitelist sees them.
 
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');

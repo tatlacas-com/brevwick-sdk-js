@@ -1,4 +1,5 @@
 import { useMemo, type ReactElement } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   NavigationContainer,
   useNavigationContainerRef,
@@ -6,12 +7,12 @@ import {
 import { createStackNavigator } from '@react-navigation/stack';
 import {
   BrevwickProvider,
+  FeedbackButton,
   type BrevwickConfig,
 } from '@tatlacas/brevwick-react-native';
 import { PROJECT_KEY_PATTERN } from '@tatlacas/brevwick-sdk';
 import { Home } from './screens/Home';
 import { Details } from './screens/Details';
-import { FeedbackFab } from './FeedbackFab';
 import { RouteRingBridge } from './RouteRingBridge';
 
 export type RootStackParamList = {
@@ -62,19 +63,21 @@ export default function App(): ReactElement {
   );
 
   return (
-    <BrevwickProvider config={config} navigationRef={navigationRef}>
-      <NavigationContainer ref={navigationRef}>
-        <Stack.Navigator>
-          <Stack.Screen
-            name="Home"
-            component={Home}
-            options={{ title: 'Brevwick RN Example' }}
-          />
-          <Stack.Screen name="Details" component={Details} />
-        </Stack.Navigator>
-      </NavigationContainer>
-      <RouteRingBridge />
-      <FeedbackFab keyReady={KEY_IS_READY} />
-    </BrevwickProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <BrevwickProvider config={config} navigationRef={navigationRef}>
+        <NavigationContainer ref={navigationRef}>
+          <Stack.Navigator>
+            <Stack.Screen
+              name="Home"
+              component={Home}
+              options={{ title: 'Brevwick RN Example' }}
+            />
+            <Stack.Screen name="Details" component={Details} />
+          </Stack.Navigator>
+        </NavigationContainer>
+        <RouteRingBridge />
+        <FeedbackButton disabled={!KEY_IS_READY} />
+      </BrevwickProvider>
+    </GestureHandlerRootView>
   );
 }
