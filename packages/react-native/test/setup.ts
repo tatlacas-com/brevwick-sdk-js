@@ -25,6 +25,7 @@ const Module: any = require('node:module');
 // not strip TypeScript syntax in CJS — only Node 24's experimental
 // type-stripping handled it transparently, masking the regression locally.
 const reactNativeStub = require('./__mocks__/react-native.cjs');
+const reactNativeSvgStub = require('./__mocks__/react-native-svg.cjs');
 const originalResolve = Module._resolveFilename;
 Module._resolveFilename = function patchedResolve(
   this: unknown,
@@ -35,6 +36,9 @@ Module._resolveFilename = function patchedResolve(
 ): string {
   if (request === 'react-native') {
     return '__brevwick_react_native_stub__';
+  }
+  if (request === 'react-native-svg') {
+    return '__brevwick_react_native_svg_stub__';
   }
   return originalResolve.call(this, request, parent, isMain, options);
 };
@@ -51,6 +55,12 @@ Module._load = function patchedLoad(
   ) {
     return reactNativeStub;
   }
+  if (
+    request === 'react-native-svg' ||
+    request === '__brevwick_react_native_svg_stub__'
+  ) {
+    return reactNativeSvgStub;
+  }
   return originalLoad.call(this, request, parent, isMain);
 };
 
@@ -58,6 +68,7 @@ Module._load = function patchedLoad(
 // vite-node's module loader (e.g. our own `src/` files imported via the
 // alias). The factory mirrors `__mocks__/react-native.cjs`.
 vi.mock('react-native', () => reactNativeStub);
+vi.mock('react-native-svg', () => reactNativeSvgStub);
 
 // `react-test-renderer@19` logs a deprecation warning on every render
 // (React Team plans to remove it in a future major). The hook + provider

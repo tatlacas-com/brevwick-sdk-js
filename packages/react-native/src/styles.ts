@@ -23,6 +23,10 @@ export interface BrevwickPalette {
   inputBg: string;
   accent: string;
   accentFg: string;
+  bubbleAssistantBg: string;
+  bubbleUserBg: string;
+  bubbleUserFg: string;
+  success: string;
   error: string;
   scrim: string;
   shadow: string;
@@ -36,6 +40,10 @@ export const LIGHT_PALETTE: BrevwickPalette = {
   inputBg: '#f8fafc',
   accent: '#0f172a',
   accentFg: '#ffffff',
+  bubbleAssistantBg: '#f1f5f9',
+  bubbleUserBg: '#0f172a',
+  bubbleUserFg: '#ffffff',
+  success: '#15803d',
   error: '#b91c1c',
   scrim: 'rgba(15, 23, 42, 0.45)',
   shadow: 'rgba(15, 23, 42, 0.18)',
@@ -49,6 +57,10 @@ export const DARK_PALETTE: BrevwickPalette = {
   inputBg: '#0f172a',
   accent: '#f8fafc',
   accentFg: '#0f172a',
+  bubbleAssistantBg: '#1e293b',
+  bubbleUserBg: '#f8fafc',
+  bubbleUserFg: '#0b1220',
+  success: '#4ade80',
   error: '#f87171',
   scrim: 'rgba(0, 0, 0, 0.6)',
   shadow: 'rgba(0, 0, 0, 0.55)',
@@ -112,33 +124,194 @@ export function createWidgetStyles(palette: BrevwickPalette) {
       backgroundColor: palette.panelBg,
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
-      padding: 20,
-      maxHeight: '90%',
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 12,
+      maxHeight: '92%',
     },
     headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
+      gap: 10,
+      paddingBottom: 10,
+      borderBottomColor: palette.border,
+      borderBottomWidth: 1,
     },
-    title: {
+    headerAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: palette.accent,
+      color: palette.accentFg,
+      textAlign: 'center',
+      lineHeight: 28,
+      fontSize: 14,
+      fontWeight: '700',
+      overflow: 'hidden',
+    },
+    headerTitle: {
+      flex: 1,
       color: palette.fg,
-      fontSize: 18,
+      fontSize: 16,
       fontWeight: '600',
     },
-    closeButton: {
+    iconButton: {
       paddingHorizontal: 8,
-      paddingVertical: 4,
+      paddingVertical: 6,
+      borderRadius: 8,
     },
-    closeLabel: {
+    thread: {
+      paddingVertical: 8,
+    },
+    threadContent: {
+      paddingBottom: 4,
+      gap: 8,
+    },
+    bubbleAssistant: {
+      alignSelf: 'flex-start',
+      maxWidth: '85%',
+      backgroundColor: palette.bubbleAssistantBg,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 14,
+      borderBottomLeftRadius: 4,
+    },
+    bubbleAssistantText: {
+      color: palette.fg,
+      fontSize: 14,
+      lineHeight: 20,
+    },
+    bubbleUser: {
+      alignSelf: 'flex-end',
+      maxWidth: '85%',
+      backgroundColor: palette.bubbleUserBg,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 14,
+      borderBottomRightRadius: 4,
+    },
+    bubbleUserText: {
+      color: palette.bubbleUserFg,
+      fontSize: 14,
+      lineHeight: 20,
+    },
+    receipt: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 4,
+    },
+    receiptText: {
       color: palette.fgMuted,
-      fontSize: 16,
+      fontSize: 11,
+    },
+    statusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 4,
+    },
+    statusRowLabel: {
+      color: palette.fgMuted,
+      fontSize: 12,
+      flex: 1,
+    },
+    statusCheck: {
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: palette.success,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    retryRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: palette.error,
+      backgroundColor: 'transparent',
+    },
+    retryText: {
+      flex: 1,
+      color: palette.error,
+      fontSize: 13,
+    },
+    retryButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: palette.error,
+    },
+    retryButtonLabel: {
+      color: palette.error,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    confirmRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.inputBg,
+    },
+    confirmText: {
+      flex: 1,
+      color: palette.fg,
+      fontSize: 13,
+    },
+    confirmKeepBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    confirmKeepLabel: {
+      color: palette.fg,
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    confirmDiscardBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 6,
+      backgroundColor: palette.accent,
+    },
+    confirmDiscardLabel: {
+      color: palette.accentFg,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    disclosureToggle: {
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+    },
+    disclosureToggleLabel: {
+      color: palette.fgMuted,
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    disclosurePanel: {
+      gap: 8,
+      paddingHorizontal: 4,
+      paddingBottom: 4,
+    },
+    disclosureField: {
+      gap: 4,
     },
     fieldLabel: {
       color: palette.fgMuted,
-      fontSize: 12,
-      marginBottom: 4,
-      marginTop: 12,
+      fontSize: 11,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
     },
@@ -148,83 +321,168 @@ export function createWidgetStyles(palette: BrevwickPalette) {
       borderColor: palette.border,
       borderWidth: 1,
       borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
       fontSize: 14,
+      minHeight: 40,
     },
-    descriptionInput: {
-      minHeight: 88,
-      textAlignVertical: 'top',
+    composer: {
+      borderTopColor: palette.border,
+      borderTopWidth: 1,
+      paddingTop: 10,
+      paddingBottom: 6,
+      backgroundColor: palette.panelBg,
     },
-    toggleRow: {
+    // Rounded container that groups the textarea + AI toggle + send button
+    // into a single visual input affordance — visual twin of the web
+    // adapter's `brw-composer-shell`. Border lifts to `accent` when any
+    // descendant takes focus via the `composerShellFocus` overlay.
+    composerShell: {
       flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginTop: 16,
-    },
-    toggleLabel: {
-      color: palette.fg,
-      fontSize: 14,
-    },
-    screenshotPreview: {
-      marginTop: 12,
+      alignItems: 'flex-end',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+      backgroundColor: palette.inputBg,
       borderColor: palette.border,
       borderWidth: 1,
-      borderRadius: 8,
-      overflow: 'hidden',
-      backgroundColor: palette.inputBg,
+      borderRadius: 12,
+    },
+    composerInput: {
+      flex: 1,
+      color: palette.fg,
+      backgroundColor: 'transparent',
+      paddingHorizontal: 4,
+      paddingVertical: 8,
+      fontSize: 13,
+      minHeight: 34,
+      maxHeight: 140,
+      lineHeight: 18,
+    },
+    sendButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      backgroundColor: palette.accent,
       alignItems: 'center',
       justifyContent: 'center',
-      height: 140,
     },
-    screenshotImage: {
-      width: '100%',
-      height: '100%',
+    sendButtonDisabled: {
+      opacity: 0.5,
     },
-    screenshotPlaceholder: {
-      color: palette.fgMuted,
-      fontSize: 12,
-    },
-    actionsRow: {
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-      gap: 12,
-      marginTop: 20,
-    },
-    secondaryButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: palette.border,
+    // Square icon button anchoring the paperclip on the left of the
+    // composer shell. Same 34x34 footprint as `.sendButton` so the two
+    // ends of the shell read as visually balanced; transparent fill so
+    // the shell's rounded background carries through.
+    attachButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
       backgroundColor: 'transparent',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    secondaryLabel: {
-      color: palette.fg,
-      fontSize: 14,
-      fontWeight: '500',
+    attachButtonDisabled: {
+      opacity: 0.5,
     },
-    primaryButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      borderRadius: 8,
-      backgroundColor: palette.accent,
+    // AttachmentChip — visual twin of the web adapter's `.brw-chip`.
+    // align-self: flex-end so the chip sits on the user side of the
+    // thread, the way a fresh attachment reads as "what I just queued".
+    chip: {
+      alignSelf: 'flex-end',
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.bubbleAssistantBg,
+      maxWidth: '85%',
     },
-    primaryButtonDisabled: {
+    chipName: {
+      flexShrink: 1,
+      color: palette.fg,
+      fontSize: 12,
+    },
+    chipSize: {
+      color: palette.fgMuted,
+      fontSize: 12,
+    },
+    chipRemove: {
+      width: 20,
+      height: 20,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    aiToggleWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      height: 34,
+      paddingHorizontal: 4,
+    },
+    aiToggleTrack: {
+      width: 30,
+      height: 18,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.bubbleAssistantBg,
+      justifyContent: 'center',
+    },
+    aiToggleTrackOn: {
+      backgroundColor: palette.accent,
+      borderColor: palette.accent,
+    },
+    aiToggleDisabled: {
       opacity: 0.5,
     },
-    primaryLabel: {
-      color: palette.accentFg,
-      fontSize: 14,
-      fontWeight: '600',
+    aiToggleThumb: {
+      position: 'absolute',
+      width: 12,
+      height: 12,
+      borderRadius: 999,
+      backgroundColor: palette.fgMuted,
+      left: 2,
+      // Track inner height is 16px (18px outer minus the 1px border on
+      // each side); centring the 12px thumb leaves a 2px gap above and
+      // below — same optical mass as the web `transform: translateY(-50%)`
+      // trick the React adapter uses.
+      top: 2,
+    },
+    aiToggleThumbOn: {
+      backgroundColor: palette.accentFg,
+      left: 14,
+    },
+    aiToggleText: {
+      color: palette.fgMuted,
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    aiToggleTextOn: {
+      color: palette.fg,
     },
     errorText: {
       color: palette.error,
-      fontSize: 13,
-      marginTop: 12,
+      fontSize: 12,
+      paddingHorizontal: 4,
+      paddingVertical: 4,
+    },
+    spinnerInline: {
+      width: 16,
+      height: 16,
+    },
+    footer: {
+      alignItems: 'center',
+      paddingTop: 6,
+      paddingBottom: 4,
+    },
+    footerLink: {
+      color: palette.fgMuted,
+      fontSize: 11,
     },
   });
 }

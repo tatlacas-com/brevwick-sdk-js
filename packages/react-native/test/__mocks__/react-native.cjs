@@ -189,6 +189,32 @@ const Appearance = {
   addChangeListener: () => ({ remove: () => {} }),
 };
 
+// `Linking.openURL` is consumed by the modal footer's brevwick.dev link.
+// The stub returns a resolved promise so the production code path's
+// `void Linking.openURL(...).catch(...)` is safe even when no platform
+// handler is installed; tests that need to assert the URL spy on this.
+const Linking = {
+  openURL(_url) {
+    return Promise.resolve();
+  },
+  canOpenURL(_url) {
+    return Promise.resolve(true);
+  },
+};
+
+// `AccessibilityInfo.isReduceMotionEnabled` powers the modal's reduced
+// motion gate. The stub resolves to `false` so the default test render
+// follows the un-staggered code path; tests that need to exercise the
+// staggered branch override the resolved value via `vi.spyOn`.
+const AccessibilityInfo = {
+  isReduceMotionEnabled() {
+    return Promise.resolve(false);
+  },
+  addEventListener(_event, _handler) {
+    return { remove() {} };
+  },
+};
+
 module.exports = {
   Platform,
   Dimensions,
@@ -206,4 +232,6 @@ module.exports = {
   StyleSheet,
   useColorScheme,
   Appearance,
+  Linking,
+  AccessibilityInfo,
 };
