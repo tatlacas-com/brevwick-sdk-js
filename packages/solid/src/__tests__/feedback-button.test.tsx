@@ -1,16 +1,52 @@
-import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@solidjs/testing-library';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   Brevwick,
   BrevwickConfig,
   FeedbackInput,
+  ProjectConfig,
   SubmitResult,
 } from '@tatlacas/brevwick-sdk';
+import pkg from '../../package.json';
 
 const submit = vi.fn<(input: FeedbackInput) => Promise<SubmitResult>>();
 const captureScreenshot = vi.fn<() => Promise<Blob>>();
+const getConfig = vi.fn<() => Promise<ProjectConfig | null>>();
 const install = vi.fn();
 const uninstall = vi.fn();
+
+/**
+ * In-memory mirror of the SDK's internal phase bus. The Solid adapter
+ * subscribes to this via the `_internal` backdoor (see
+ * `src/internal-bridge.ts`), so the test mock stamps a structurally
+ * compatible bus on the `Brevwick` instance and the suite drives phase
+ * events through `phaseBus.emit(...)`.
+ */
+type PhaseEventPayload =
+  | { phase: 'capturing-done' }
+  | { phase: 'sanitising-done' }
+  | { phase: 'sent'; aiEnabled: boolean };
+const phaseListeners = new Set<(p: PhaseEventPayload) => void>();
+const phaseBus = {
+  on: (event: 'phase', listener: (p: PhaseEventPayload) => void) => {
+    void event;
+    phaseListeners.add(listener);
+  },
+  off: (event: 'phase', listener: (p: PhaseEventPayload) => void) => {
+    void event;
+    phaseListeners.delete(listener);
+  },
+  emit: (event: 'phase', payload: PhaseEventPayload) => {
+    void event;
+    for (const listener of [...phaseListeners]) listener(payload);
+  },
+};
 
 vi.mock('@tatlacas/brevwick-sdk', async () => {
   const actual = await vi.importActual<typeof import('@tatlacas/brevwick-sdk')>(
@@ -24,15 +60,21 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
         uninstall,
         submit,
         captureScreenshot,
+        getConfig,
+        _internal: { bus: phaseBus },
       }) as unknown as Brevwick,
   };
 });
 
 import { BrevwickProvider } from '../provider';
-import { FeedbackButton } from '../components/feedback-button';
+import {
+  FeedbackButton,
+  type FeedbackButtonProps,
+} from '../components/feedback-button';
 
 beforeEach(() => {
-  // jsdom lacks createObjectURL by default; stub both for the screenshot path.
+  // jsdom lacks createObjectURL by default; stub both for the screenshot
+  // path so individual tests don't have to.
   if (typeof URL.createObjectURL !== 'function') {
     (
       URL as unknown as { createObjectURL: (b: Blob) => string }
@@ -43,19 +85,24 @@ beforeEach(() => {
       URL as unknown as { revokeObjectURL: (u: string) => void }
     ).revokeObjectURL = () => undefined;
   }
+  // Default: no AI toggle. Individual tests opt into the toggle by re-
+  // mocking with `ai_enabled` + `ai_submitter_choice_allowed`.
+  getConfig.mockResolvedValue(null);
 });
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  phaseListeners.clear();
 });
 
 const onSubmitSpy = vi.fn<(result: SubmitResult) => void>();
 afterEach(() => onSubmitSpy.mockReset());
 
-const mount = () =>
+const mount = (props: FeedbackButtonProps = {}) =>
   render(() => (
     <BrevwickProvider config={{ projectKey: 'pk_test_fab' }}>
-      <FeedbackButton onSubmit={onSubmitSpy} />
+      <FeedbackButton onSubmit={onSubmitSpy} {...props} />
     </BrevwickProvider>
   ));
 
@@ -63,27 +110,72 @@ const openPanel = (): void => {
   fireEvent.click(screen.getByRole('button', { name: /open feedback form/i }));
 };
 
-describe('FeedbackButton', () => {
+const getComposer = (): HTMLTextAreaElement =>
+  screen.getByLabelText(/feedback message/i) as HTMLTextAreaElement;
+
+const typeDraft = (text: string): void => {
+  fireEvent.input(getComposer(), { target: { value: text } });
+};
+
+describe('<FeedbackButton>', () => {
   it('renders the FAB with the default label', async () => {
     mount();
+    const fab = await screen.findByRole('button', {
+      name: /open feedback form/i,
+    });
+    expect(fab).toBeInTheDocument();
+    expect(fab).toHaveAttribute('data-brevwick-skip');
+    expect(fab.className).toMatch(/brw-fab/);
+  });
+
+  it('renders the panel with data-brevwick-skip + greeting on open', () => {
+    mount();
+    openPanel();
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('data-brevwick-skip');
+    expect(dialog.className).toMatch(/brw-panel/);
+    expect(dialog.className).toMatch(/brw-panel-br/);
+    expect(screen.getByText(/send feedback/i)).toBeInTheDocument();
     expect(
-      await screen.findByRole('button', { name: /open feedback form/i }),
+      screen.getByText(/Hi! Tell us what's happening/i),
     ).toBeInTheDocument();
   });
 
-  it('opens the dialog and submits a draft', async () => {
+  it('renders a Brevwick credit footer linking to brevwick.dev on open', () => {
+    mount();
+    openPanel();
+
+    const link = screen.getByRole('link', { name: /brevwick v/i });
+    expect(link).toHaveAttribute('href', 'https://brevwick.dev');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link.getAttribute('rel')).toMatch(/noopener/);
+    expect(link.getAttribute('rel')).toMatch(/noreferrer/);
+    expect(link).toHaveTextContent(`Brevwick v${pkg.version}`);
+  });
+
+  it('applies the bottom-left position class to FAB and panel', () => {
+    mount({ position: 'bottom-left' });
+    const fab = screen.getByRole('button', { name: /open feedback form/i });
+    expect(fab.className).toMatch(/brw-fab-bl/);
+    expect(fab.className).not.toMatch(/brw-fab-br/);
+    openPanel();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toMatch(/brw-panel-bl/);
+    expect(dialog.className).not.toMatch(/brw-panel-br/);
+  });
+
+  it('opens the panel and submits a draft as title + raw description', async () => {
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_42' });
 
     mount();
     openPanel();
+    typeDraft('login is broken');
 
-    const textarea = await screen.findByLabelText(/feedback message/i);
-    fireEvent.input(textarea, { target: { value: 'login is broken' } });
-
-    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
 
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
-    const [input] = submit.mock.calls[0]!;
+    const input = submit.mock.calls[0]![0]!;
     expect(input.description).toBe('login is broken');
     expect(input.title).toBe('login is broken');
     expect(input.attachments).toBeUndefined();
@@ -96,29 +188,85 @@ describe('FeedbackButton', () => {
     );
   });
 
-  it.skip('captures a screenshot via the SDK and rides it on the next submit', async () => {
-    captureScreenshot.mockResolvedValueOnce(
-      new Blob(['png'], { type: 'image/png' }),
-    );
-    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_99' });
-
+  it('submit appends user + assistant bubbles and keeps the composer active', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ok' });
     mount();
     openPanel();
+    typeDraft('Broken flow');
 
-    fireEvent.click(
-      screen.getByRole('button', { name: /capture screenshot/i }),
-    );
-    await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
-
-    fireEvent.input(await screen.findByLabelText(/feedback message/i), {
-      target: { value: 'see screenshot' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /send/i }));
-
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
-    const [input] = submit.mock.calls[0]!;
-    expect(input.attachments).toHaveLength(1);
-    expect(input.attachments![0]).toMatchObject({ filename: 'screenshot.png' });
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Broken flow')).toBeInTheDocument();
+    const receiptText = await screen.findByText(
+      /thanks — your issue is on its way/i,
+    );
+    const receiptBubble = receiptText.closest('.brw-bubble') as HTMLElement;
+    expect(receiptBubble).not.toBeNull();
+    expect(within(receiptBubble).getByText(/issue sent/i)).toBeInTheDocument();
+    // Composer survives the submit, draft cleared but textarea active.
+    const composer = getComposer();
+    expect(composer).not.toBeDisabled();
+    expect(composer.value).toBe('');
+  });
+
+  it('Enter submits, Shift+Enter inserts a newline', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_enter' });
+    mount();
+    openPanel();
+    const textarea = getComposer();
+
+    fireEvent.input(textarea, { target: { value: 'line one\nline two' } });
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+    expect(submit).not.toHaveBeenCalled();
+    expect(textarea.value).toBe('line one\nline two');
+
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]!;
+    expect(input.description).toBe('line one\nline two');
+    expect(input.title).toBe('line one');
+  });
+
+  it('Enter+Ctrl/Meta/Alt does not submit', () => {
+    mount();
+    openPanel();
+    typeDraft('hi');
+    const textarea = getComposer();
+    fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
+    fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true });
+    fireEvent.keyDown(textarea, { key: 'Enter', altKey: true });
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('typing into the composer does not append a bubble to the thread', () => {
+    mount();
+    openPanel();
+    const log = screen.getByRole('log', { name: /conversation/i });
+    expect(log.querySelectorAll('.brw-bubble')).toHaveLength(1);
+
+    typeDraft('still drafting…');
+
+    expect(log.querySelectorAll('.brw-bubble')).toHaveLength(1);
+    expect(within(log).queryByText(/still drafting/i)).toBeNull();
+  });
+
+  it('does not submit when the composer is empty (send button disabled)', () => {
+    mount();
+    openPanel();
+    const sendButton = screen.getByRole('button', { name: /^send$/i });
+    expect(sendButton).toBeDisabled();
+    fireEvent.click(sendButton);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('keeps the send button disabled while the description is whitespace-only', () => {
+    mount();
+    openPanel();
+    typeDraft('   ');
+    expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled();
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it('renders nothing when hidden', () => {
@@ -132,32 +280,569 @@ describe('FeedbackButton', () => {
     ).toBeNull();
   });
 
-  it('keeps the send button disabled while the description is whitespace-only', async () => {
-    mount();
-    openPanel();
-    fireEvent.input(await screen.findByLabelText(/feedback message/i), {
-      target: { value: '   ' },
-    });
-    expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
-    expect(submit).not.toHaveBeenCalled();
+  it('renders a disabled FAB when disabled prop is true and does not open the panel', () => {
+    mount({ disabled: true });
+    const fab = screen.getByRole('button', { name: /open feedback form/i });
+    expect(fab).toBeDisabled();
+    fireEvent.click(fab);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('surfaces an error alert when submit() returns ok:false', async () => {
+  it('exposes a polite aria-live log for the thread', () => {
+    mount();
+    openPanel();
+    const log = screen.getByRole('log', { name: /conversation/i });
+    expect(log).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('passes the raw draft (no trim) so the bubble and payload stay in sync', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_raw' });
+    mount();
+    openPanel();
+    typeDraft('   hi there   \n');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]!;
+    expect(input.description).toBe('   hi there   \n');
+    expect(input.title).toBe('hi there');
+  });
+});
+
+describe('<FeedbackButton> — minimize / close / discard', () => {
+  it('minimize preserves draft across reopen', () => {
+    mount();
+    openPanel();
+    typeDraft('half-typed message');
+
+    fireEvent.click(screen.getByRole('button', { name: /^minimize$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    openPanel();
+    expect(getComposer().value).toBe('half-typed message');
+  });
+
+  it('close when clean dismisses immediately and clears state', () => {
+    mount();
+    openPanel();
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    openPanel();
+    expect(getComposer().value).toBe('');
+  });
+
+  it('close when dirty shows a confirm; Discard clears, Keep preserves', () => {
+    mount();
+    openPanel();
+    typeDraft('draft-content');
+
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    const confirm = screen.getByRole('alert', { name: /discard draft/i });
+    expect(
+      within(confirm).getByRole('button', { name: /keep/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(confirm).getByRole('button', { name: /keep/i }));
+    expect(screen.queryByRole('alert', { name: /discard draft/i })).toBeNull();
+    expect(getComposer().value).toBe('draft-content');
+
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^discard$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    openPanel();
+    expect(getComposer().value).toBe('');
+  });
+
+  it('closing and reopening the panel resets the thread to just the greeting', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_reset' });
+    mount();
+    openPanel();
+    typeDraft('first message');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/thanks — your issue is on its way/i),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    openPanel();
+    const log = screen.getByRole('log', { name: /conversation/i });
+    expect(log.querySelectorAll('.brw-bubble')).toHaveLength(1);
+    expect(
+      within(log).getByText(/Hi! Tell us what's happening/i),
+    ).toBeInTheDocument();
+    expect(getComposer().value).toBe('');
+  });
+});
+
+describe('<FeedbackButton> — error paths', () => {
+  it('surfaces a tagged retry row when submit() returns ok:false', async () => {
     submit.mockResolvedValueOnce({
       ok: false,
-      error: { code: 'INGEST_REJECTED', message: 'server said no' },
+      error: { code: 'INGEST_REJECTED', message: 'quota exceeded' },
     });
     mount();
     openPanel();
-    fireEvent.input(await screen.findByLabelText(/feedback message/i), {
-      target: { value: 'broken' },
+    typeDraft('Broken flow');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    await waitFor(() => {
+      const row = document.querySelector('[data-brw-row="error"]');
+      expect(row).not.toBeNull();
     });
-    fireEvent.click(screen.getByRole('button', { name: /send/i }));
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/server said no/i);
+    const row = document.querySelector('[data-brw-row="error"]') as HTMLElement;
+    expect(row).toHaveAttribute('role', 'alert');
+    expect(row).toHaveAttribute('data-brw-error-code', 'INGEST_REJECTED');
+    expect(row.textContent).toContain('quota exceeded');
   });
 
-  it.skip('surfaces an error alert when capture rejects', async () => {
+  it('invokes onSubmit with the { ok: false, error } shape on failure', async () => {
+    const failure: SubmitResult = {
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'nope' },
+    };
+    submit.mockResolvedValueOnce(failure);
+    mount();
+    openPanel();
+    typeDraft('x');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(onSubmitSpy).toHaveBeenCalledWith(failure));
+  });
+
+  it('surfaces a tagged retry row when submit() rejects (chunk load failure)', async () => {
+    submit.mockRejectedValueOnce(new Error('chunk load failed'));
+    mount();
+    openPanel();
+    typeDraft('oops');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => {
+      expect(document.querySelector('[data-brw-row="error"]')).not.toBeNull();
+    });
+    const row = document.querySelector('[data-brw-row="error"]') as HTMLElement;
+    expect(row).toHaveAttribute(
+      'data-brw-error-code',
+      'INGEST_RETRY_EXHAUSTED',
+    );
+    expect(row.textContent).toContain('chunk load failed');
+  });
+
+  it('Retry CTA re-runs submit() with the original FeedbackInput', async () => {
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'first try' },
+    });
+    mount();
+    openPanel();
+    typeDraft('please retry me');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-brw-row="error"]')).not.toBeNull();
+    });
+    const row = document.querySelector('[data-brw-row="error"]') as HTMLElement;
+
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_retry' });
+    fireEvent.click(within(row).getByRole('button', { name: /^retry$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
+    expect((submit.mock.calls[1]![0] as FeedbackInput).description).toBe(
+      'please retry me',
+    );
+  });
+});
+
+describe('<FeedbackButton> — expected/actual disclosure', () => {
+  it('expected/actual are hidden by default and revealed via disclosure', () => {
+    mount();
+    openPanel();
+    expect(screen.queryByRole('textbox', { name: /expected/i })).toBeNull();
+    fireEvent.click(
+      screen.getByRole('button', { name: /add expected vs actual/i }),
+    );
+    expect(
+      screen.getByRole('textbox', { name: /expected/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('textbox', { name: /actual/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('passes expected/actual into the submit payload when filled', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ea' });
+    mount();
+    openPanel();
+    typeDraft('bug');
+    fireEvent.click(
+      screen.getByRole('button', { name: /add expected vs actual/i }),
+    );
+    fireEvent.input(screen.getByRole('textbox', { name: /expected/i }), {
+      target: { value: 'should succeed' },
+    });
+    fireEvent.input(screen.getByRole('textbox', { name: /actual/i }), {
+      target: { value: 'failed' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]!;
+    expect(input.expected).toBe('should succeed');
+    expect(input.actual).toBe('failed');
+  });
+
+  it('disclosure toggle flips aria-expanded in both states', () => {
+    mount();
+    openPanel();
+    const toggle = screen.getByRole('button', {
+      name: /add expected vs actual/i,
+    });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(
+      screen.getByRole('button', { name: /hide expected vs actual/i }),
+    ).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('<FeedbackButton> — staged-status rows (#74)', () => {
+  function parkSubmit(): void {
+    submit.mockReturnValueOnce(new Promise<SubmitResult>(() => undefined));
+  }
+
+  function getStatusRow(
+    name: 'captured' | 'sanitised' | 'formatting' | 'error',
+  ): HTMLElement | null {
+    return document.querySelector<HTMLElement>(`[data-brw-row="${name}"]`);
+  }
+
+  it('Pressing Send clears the input + renders user bubble synchronously', () => {
+    parkSubmit();
+    mount();
+    openPanel();
+    typeDraft('synchronous-send-test');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    expect(getComposer().value).toBe('');
+    const log = screen.getByRole('log', { name: /conversation/i });
+    expect(within(log).getByText('synchronous-send-test')).toBeInTheDocument();
+  });
+
+  it('Three staged rows render in order as phase events arrive', async () => {
+    parkSubmit();
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
+    mount();
+    openPanel();
+    // Wait for the lazy getConfig() microtask to settle so the AI-row
+    // gate sees `ai_enabled: true` instead of the default null.
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    typeDraft('staged-rows-test');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    expect(getStatusRow('captured')).toBeNull();
+    expect(getStatusRow('sanitised')).toBeNull();
+    expect(getStatusRow('formatting')).toBeNull();
+
+    phaseBus.emit('phase', { phase: 'capturing-done' });
+    await waitFor(() => expect(getStatusRow('captured')).not.toBeNull());
+    expect(getStatusRow('sanitised')).toBeNull();
+    expect(getStatusRow('formatting')).toBeNull();
+
+    phaseBus.emit('phase', { phase: 'sanitising-done' });
+    await waitFor(() => expect(getStatusRow('sanitised')).not.toBeNull());
+    await waitFor(() => expect(getStatusRow('formatting')).not.toBeNull());
+  });
+
+  it('AI row is suppressed when getConfig().ai_enabled === false', async () => {
+    parkSubmit();
+    getConfig.mockResolvedValue({
+      ai_enabled: false,
+      ai_submitter_choice_allowed: false,
+    });
+    mount();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    typeDraft('non-ai-project');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    phaseBus.emit('phase', { phase: 'capturing-done' });
+    phaseBus.emit('phase', { phase: 'sanitising-done' });
+
+    await waitFor(() => expect(getStatusRow('captured')).not.toBeNull());
+    await waitFor(() => expect(getStatusRow('sanitised')).not.toBeNull());
+    expect(getStatusRow('formatting')).toBeNull();
+  });
+
+  it('Reduced motion renders all rows with a 0 ms transition delay (no stagger)', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    parkSubmit();
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
+    mount();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    typeDraft('reduced-motion-test');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    phaseBus.emit('phase', { phase: 'capturing-done' });
+    phaseBus.emit('phase', { phase: 'sanitising-done' });
+    await waitFor(() => expect(getStatusRow('captured')).not.toBeNull());
+
+    const rows = document.querySelectorAll<HTMLElement>('[data-brw-row]');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.style.transitionDelay).toBe('0ms');
+    }
+  });
+});
+
+describe('<FeedbackButton> — Use AI toggle', () => {
+  function queryAiToggle(): HTMLElement | null {
+    return screen.queryByRole('switch', { name: /format with ai/i });
+  }
+
+  it('does not fetch config on mount — only on first panel open', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    mount();
+    expect(getConfig).not.toHaveBeenCalled();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalledTimes(1));
+  });
+
+  it('only fetches once across multiple opens (cache reused)', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    mount();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /^minimize$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    openPanel();
+    // No second fetch — value cached.
+    await Promise.resolve();
+    expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the toggle when ai_enabled=false and omits use_ai from submit', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: false,
+      ai_submitter_choice_allowed: true,
+    });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_disabled' });
+    mount();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    expect(queryAiToggle()).toBeNull();
+    typeDraft('hi');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]! as unknown as Record<
+      string,
+      unknown
+    >;
+    expect('use_ai' in input).toBe(false);
+  });
+
+  it('hides the toggle when choice is not allowed and omits use_ai', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_forced' });
+    mount();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    expect(queryAiToggle()).toBeNull();
+    typeDraft('admin-forced');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]! as unknown as Record<
+      string,
+      unknown
+    >;
+    expect('use_ai' in input).toBe(false);
+  });
+
+  it('renders the toggle default-on and payload carries use_ai=true', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_choice_on' });
+    mount();
+    openPanel();
+    await waitFor(() => expect(queryAiToggle()).not.toBeNull());
+    const toggle = queryAiToggle()!;
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(toggle.className).toMatch(/brw-aitoggle--on/);
+
+    typeDraft('with ai');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]! as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(input.use_ai).toBe(true);
+  });
+
+  it('click flips the toggle off and payload carries use_ai=false', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_choice_off' });
+    mount();
+    openPanel();
+    await waitFor(() => expect(queryAiToggle()).not.toBeNull());
+    const toggle = queryAiToggle()!;
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle.className).not.toMatch(/brw-aitoggle--on/);
+
+    typeDraft('without ai');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]! as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(input.use_ai).toBe(false);
+  });
+
+  it('Space toggles when focused (keyboard a11y)', async () => {
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    mount();
+    openPanel();
+    await waitFor(() => expect(queryAiToggle()).not.toBeNull());
+    const toggle = queryAiToggle()!;
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: ' ' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    fireEvent.keyDown(toggle, { key: ' ' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('config fetch resolves to null → widget still works, no toggle, use_ai omitted', async () => {
+    getConfig.mockResolvedValue(null);
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_null' });
+    mount();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    expect(queryAiToggle()).toBeNull();
+    typeDraft('fallback');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]! as unknown as Record<
+      string,
+      unknown
+    >;
+    expect('use_ai' in input).toBe(false);
+  });
+
+  it('config fetch rejects → no toggle, submit still works and omits use_ai', async () => {
+    getConfig.mockRejectedValueOnce(new Error('cfg boom'));
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_cfg_err' });
+    mount();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    expect(queryAiToggle()).toBeNull();
+    typeDraft('cfg error path');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]! as unknown as Record<
+      string,
+      unknown
+    >;
+    expect('use_ai' in input).toBe(false);
+  });
+});
+
+describe('<FeedbackButton> — theme prop', () => {
+  it('defaults to theme="system" on both the FAB and the dialog panel', () => {
+    mount();
+    expect(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    ).toHaveAttribute('data-brw-theme', 'system');
+    openPanel();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'data-brw-theme',
+      'system',
+    );
+  });
+
+  it('stamps data-brw-theme="light" when theme="light"', () => {
+    mount({ theme: 'light' });
+    expect(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    ).toHaveAttribute('data-brw-theme', 'light');
+    openPanel();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'data-brw-theme',
+      'light',
+    );
+  });
+
+  it('stamps data-brw-theme="dark" when theme="dark"', () => {
+    mount({ theme: 'dark' });
+    expect(
+      screen.getByRole('button', { name: /open feedback form/i }),
+    ).toHaveAttribute('data-brw-theme', 'dark');
+    openPanel();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'data-brw-theme',
+      'dark',
+    );
+  });
+});
+
+describe.skip('<FeedbackButton> — screenshot capture', () => {
+  it('captures a screenshot via the SDK and rides it on the next submit', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['png'], { type: 'image/png' }),
+    );
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_99' });
+
+    mount();
+    openPanel();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+    await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
+
+    typeDraft('see screenshot');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]!;
+    expect(input.attachments).toHaveLength(1);
+    expect(input.attachments![0]).toMatchObject({ filename: 'screenshot.png' });
+  });
+
+  it('surfaces an error alert when capture rejects', async () => {
     captureScreenshot.mockRejectedValueOnce(new Error('canvas blew up'));
     mount();
     openPanel();
@@ -168,49 +853,7 @@ describe('FeedbackButton', () => {
     expect(alert).toHaveTextContent(/canvas blew up/i);
   });
 
-  it('surfaces a generic error when submit() rejects', async () => {
-    submit.mockRejectedValueOnce(new Error('chunk load failed'));
-    mount();
-    openPanel();
-    fireEvent.input(await screen.findByLabelText(/feedback message/i), {
-      target: { value: 'broken' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /send/i }));
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/chunk load failed/i);
-  });
-
-  it('closes the panel via the close button and resets state', async () => {
-    mount();
-    openPanel();
-    expect(
-      await screen.findByLabelText(/feedback message/i),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
-    await waitFor(() =>
-      expect(screen.queryByLabelText(/feedback message/i)).toBeNull(),
-    );
-  });
-
-  it('renders nothing when open is closed (collapsed FAB)', () => {
-    mount();
-    // Before opening, the panel body is not in the DOM.
-    expect(screen.queryByLabelText(/feedback message/i)).toBeNull();
-  });
-
-  it('renders the bottom-left position class when configured', async () => {
-    render(() => (
-      <BrevwickProvider config={{ projectKey: 'pk_test_pos' }}>
-        <FeedbackButton position="bottom-left" />
-      </BrevwickProvider>
-    ));
-    const fab = await screen.findByRole('button', {
-      name: /open feedback form/i,
-    });
-    expect(fab).toHaveClass('brw-fab-bl');
-  });
-
-  it.skip('revokes queued screenshot object URLs when closed without submitting', async () => {
+  it('revokes queued screenshot object URLs after a discard-confirmed close', async () => {
     captureScreenshot.mockResolvedValueOnce(
       new Blob(['png'], { type: 'image/png' }),
     );
@@ -221,9 +864,7 @@ describe('FeedbackButton', () => {
       .mockImplementation(() => `blob:close-leak-${++urlSeq}`);
     const revokeSpy = vi
       .spyOn(URL, 'revokeObjectURL')
-      .mockImplementation(() => {
-        // jsdom no-op; we only care about the call set.
-      });
+      .mockImplementation(() => undefined);
 
     try {
       mount();
@@ -232,60 +873,18 @@ describe('FeedbackButton', () => {
         screen.getByRole('button', { name: /capture screenshot/i }),
       );
       await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
-
-      const createdUrls = createSpy.mock.results.map((r) => r.value as string);
-      expect(createdUrls).toHaveLength(1);
-
-      // Close without submitting — every queued URL must be revoked.
-      fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
-
-      const revoked = revokeSpy.mock.calls.map((c) => c[0]);
-      for (const url of createdUrls) expect(revoked).toContain(url);
-    } finally {
-      createSpy.mockRestore();
-      revokeSpy.mockRestore();
-    }
-  });
-
-  it.skip('revokes queued screenshot object URLs when submit() returns ok:false', async () => {
-    captureScreenshot.mockResolvedValueOnce(
-      new Blob(['png'], { type: 'image/png' }),
-    );
-    submit.mockResolvedValueOnce({
-      ok: false,
-      error: { code: 'INGEST_REJECTED', message: 'no' },
-    });
-
-    let urlSeq = 0;
-    const createSpy = vi
-      .spyOn(URL, 'createObjectURL')
-      .mockImplementation(() => `blob:err-leak-${++urlSeq}`);
-    const revokeSpy = vi
-      .spyOn(URL, 'revokeObjectURL')
-      .mockImplementation(() => {
-        // jsdom no-op
-      });
-
-    try {
-      mount();
-      openPanel();
-      fireEvent.click(
-        screen.getByRole('button', { name: /capture screenshot/i }),
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /^remove screenshot$/i }),
+        ).toBeInTheDocument(),
       );
-      await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
-
-      fireEvent.input(await screen.findByLabelText(/feedback message/i), {
-        target: { value: 'broken' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: /send/i }));
-      await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
-      await screen.findByRole('alert');
-
-      // ok:false leaves the queue intact (so the user can retry the same
-      // shot). Closing the panel must then revoke the URL.
-      fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
 
       const created = createSpy.mock.results.map((r) => r.value as string);
+      expect(created.length).toBeGreaterThanOrEqual(1);
+
+      fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^discard$/i }));
+
       const revoked = revokeSpy.mock.calls.map((c) => c[0]);
       for (const url of created) expect(revoked).toContain(url);
     } finally {
@@ -294,19 +893,7 @@ describe('FeedbackButton', () => {
     }
   });
 
-  it('derives a trimmed title from the first line but submits the description raw', async () => {
-    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_trim' });
-    mount();
-    openPanel();
-    fireEvent.input(await screen.findByLabelText(/feedback message/i), {
-      target: { value: '   hi there   \n' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /send/i }));
-    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
-    const [input] = submit.mock.calls[0]!;
-    expect(input.title).toBe('hi there');
-    // Description preserves the user's whitespace verbatim — title-derivation
-    // trimming must not leak into the wire payload (parity with React).
-    expect(input.description).toBe('   hi there   \n');
-  });
+  it('region overlay parity (Solid V1 ships full-page only)', () => {});
+
+  it('screenshot preview dialog parity (Solid V1 has no preview modal)', () => {});
 });
