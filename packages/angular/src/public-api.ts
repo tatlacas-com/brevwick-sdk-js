@@ -5,7 +5,11 @@
 
 export { provideBrevwick } from './lib/provide-brevwick';
 export { BREVWICK_CONFIG } from './lib/brevwick.tokens';
-export { BrevwickService, type FeedbackStatus } from './lib/brevwick.service';
+export {
+  BrevwickService,
+  type FeedbackPhase,
+  type FeedbackStatus,
+} from './lib/brevwick.service';
 export {
   BwFeedbackButtonComponent,
   type BwFeedbackButtonPosition,

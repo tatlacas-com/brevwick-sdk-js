@@ -27,14 +27,28 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
 import { BrevwickService } from '../brevwick.service';
 import { provideBrevwick } from '../provide-brevwick';
 
-const makeInstance = (): Brevwick =>
-  ({
+/**
+ * Builds a structurally-complete `Brevwick` mock. The phase-bus listener the
+ * service subscribes to needs `_internal.bus.on/off` to exist; otherwise the
+ * service silently skips subscription. Tests that don't drive phase events
+ * still benefit from a no-op bus so the registration path is exercised.
+ */
+const makeInstance = (): Brevwick => {
+  const listeners = new Set<(payload: unknown) => void>();
+  const bus = {
+    on: (_: string, l: (payload: unknown) => void) => listeners.add(l),
+    off: (_: string, l: (payload: unknown) => void) => listeners.delete(l),
+    emit: (payload: unknown) => listeners.forEach((l) => l(payload)),
+  };
+  return {
     install,
     uninstall,
     submit,
     captureScreenshot,
     getConfig,
-  }) as unknown as Brevwick;
+    _internal: { bus },
+  } as unknown as Brevwick;
+};
 
 beforeEach(() => {
   // Clear in beforeEach (not afterEach) so the setup-file's afterEach hook,
@@ -160,6 +174,96 @@ describe('BrevwickService', () => {
     expect(blob).toBeInstanceOf(Blob);
   });
 
+  it('phase advances on internal bus events and resets back to idle', () => {
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_phase' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    expect(service.phase()).toBe('idle');
+    const sdk = createBrevwick.mock.results[0]!.value as unknown as {
+      _internal: { bus: { emit: (payload: unknown) => void } };
+    };
+    sdk._internal.bus.emit({ phase: 'capturing-done' });
+    expect(service.phase()).toBe('sanitising');
+    sdk._internal.bus.emit({ phase: 'sanitising-done' });
+    expect(service.phase()).toBe('formatting');
+    service.reset();
+    expect(service.phase()).toBe('idle');
+    expect(service.error()).toBeNull();
+  });
+
+  it('error signal carries the SubmitError after a failed submit', async () => {
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'rejected' },
+    });
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_err_signal' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    await service.submit({ description: 'oops' });
+    expect(service.error()).toEqual({
+      code: 'INGEST_REJECTED',
+      message: 'rejected',
+    });
+    expect(service.phase()).toBe('error');
+  });
+
+  it('retry replays the last submit with the same input', async () => {
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'first' },
+    });
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'r2' });
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_retry_svc' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    const input = { description: 'replay me' } as const;
+    await service.submit(input);
+    const second = await service.retry();
+    expect(second).toEqual({ ok: true, issue_id: 'r2' });
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(submit.mock.calls[1]![0]).toEqual(input);
+  });
+
+  it('retry resolves to undefined when no submit has been attempted', async () => {
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_retry_none' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    await expect(service.retry()).resolves.toBeUndefined();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('getConfig delegates to the SDK in browser context', async () => {
+    getConfig.mockResolvedValueOnce({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_cfg' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    await expect(service.getConfig()).resolves.toEqual({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('getConfig returns null on non-browser PLATFORM_ID', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideBrevwick({ projectKey: 'pk_test_cfg_ssr' }),
+        { provide: PLATFORM_ID, useValue: 'server' },
+      ],
+    });
+    const service = TestBed.inject(BrevwickService);
+    await expect(service.getConfig()).resolves.toBeNull();
+    expect(getConfig).not.toHaveBeenCalled();
+  });
+
   it('uninstalls the SDK when the root injector is destroyed', () => {
     TestBed.configureTestingModule({
       providers: [provideBrevwick({ projectKey: 'pk_test_destroy' })],
@@ -169,5 +273,55 @@ describe('BrevwickService', () => {
     expect(uninstall).not.toHaveBeenCalled();
     TestBed.resetTestingModule();
     expect(uninstall).toHaveBeenCalledTimes(1);
+  });
+
+  it('phase listener no-ops once the destroy hook has fired', () => {
+    // Custom bus: off does NOT actually drop the listener, letting us
+    // emit after destroy to prove the in-handler `destroyed` guard kicks in.
+    let capturedListener: ((payload: unknown) => void) | null = null;
+    const offFn = vi.fn();
+    const customInstance = {
+      install,
+      uninstall,
+      submit,
+      captureScreenshot,
+      getConfig,
+      _internal: {
+        bus: {
+          on: (_: string, l: (payload: unknown) => void) => {
+            capturedListener = l;
+          },
+          off: offFn,
+        },
+      },
+    } as unknown as Brevwick;
+    createBrevwick.mockReturnValueOnce(customInstance);
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_phase_destroyed' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    expect(capturedListener).not.toBeNull();
+    TestBed.resetTestingModule();
+    expect(offFn).toHaveBeenCalledTimes(1);
+    // The captured reference is still live in the test even though `off`
+    // ran — invoking it must hit the guard and leave phase at idle.
+    capturedListener!({ phase: 'capturing-done' });
+    expect(service.phase()).toBe('idle');
+  });
+
+  it('submit error message uses String() coercion for non-Error rejections', async () => {
+    submit.mockRejectedValueOnce('plain string failure');
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_string_throw' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    await expect(service.submit({ description: 'x' })).rejects.toBe(
+      'plain string failure',
+    );
+    expect(service.status()).toBe('error');
+    expect(service.error()).toEqual({
+      code: 'INGEST_RETRY_EXHAUSTED',
+      message: 'plain string failure',
+    });
   });
 });

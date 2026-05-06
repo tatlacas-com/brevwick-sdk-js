@@ -172,18 +172,24 @@ export default [
     '14 kB',
   ),
 
-  // ── Angular bundle (≤ 8 kB gzip) ─────────────────────────────────────────
+  // ── Angular bundle (≤ 18 kB gzip) ────────────────────────────────────────
   // Angular adapter ships only one artefact per Angular Package Format: the
   // FESM2022 flat-ESM bundle. ng-packagr does not emit a CJS counterpart for
   // libraries (CJS apps consume Angular via @angular/upgrade or stay on the
   // older legacy package format — neither is a target of this adapter).
-  // 8 kB gzip envelope is intentionally roomier than React/Vue/Svelte/Solid
-  // because Angular's @Injectable / standalone-component / Signals scaffolding
-  // costs 4-5 kB of irreducible runtime overhead before our own code lands.
+  //
+  // Bumped from 8 kB → 18 kB when the widget reached UX parity with the
+  // React adapter (issue #115): the FAB-only build was 5.21 kB; the full
+  // chat-style panel + composer + AI toggle + phase-driven status rows +
+  // inlined BREVWICK_CSS lands at ~15.5 kB. The ceiling is intentionally
+  // roomier than React/Vue/Svelte/Solid because Angular's @Injectable /
+  // standalone-component / Signals scaffolding costs 4-5 kB of irreducible
+  // runtime overhead before our own code lands; 18 kB stays well under
+  // React's 25 kB envelope (no Radix dialog dependency saves ~7 kB).
   fileEntry(
     '@tatlacas/brevwick-angular (FESM2022)',
     'packages/angular/dist/fesm2022/tatlacas-brevwick-angular.mjs',
-    '8 kB',
+    '18 kB',
   ),
 
   // ── React Native bundle (≤ 25 kB gzip) ───────────────────────────────────

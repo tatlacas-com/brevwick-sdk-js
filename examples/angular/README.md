@@ -14,7 +14,7 @@ Open http://localhost:4200. The Feedback FAB pins to the bottom-right.
 
 ## Configure your project key
 
-Edit `src/environments/environment.ts` (and `environment.prod.ts` for production builds) and replace `pk_test_demo` with your real key from https://brevwick.com.
+Edit `src/environments/environment.ts` (and `environment.prod.ts` for production builds) and replace `pk_test_demo` with your real key from https://brevwick.dev.
 
 Angular doesn't ship a built-in `import.meta.env`-style env-var mechanism for app code, so the environment files plus the `fileReplacements` block in `angular.json` are the canonical pattern.
 
