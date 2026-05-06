@@ -15,7 +15,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Switch,
   Text,
   TextInput,
   View,
@@ -84,24 +83,6 @@ const PHASE_RANK: Record<FeedbackPhase, number> = {
   sent: 4,
   error: -1,
 };
-
-/**
- * Map the (`status`, `phase`) tuple returned by `useFeedback()` to the
- * primary-button label. Same vocabulary as the web React adapter so a user
- * who has seen the web widget recognises every state.
- */
-function submitButtonLabel(
-  status: 'idle' | 'submitting' | 'success' | 'error',
-  phase: FeedbackPhase,
-): string {
-  if (status === 'success' || phase === 'sent') return 'Sent ✓';
-  if (status === 'error') return 'Try again';
-  if (status === 'submitting') {
-    if (phase === 'formatting') return 'Sending…';
-    return 'Capturing…';
-  }
-  return 'Send';
-}
 
 /**
  * Cheap relative-time formatter for the issue-sent receipt. The bubble
@@ -483,10 +464,8 @@ export function FeedbackModal({
   }, [retry]);
 
   const submitting = status === 'submitting';
-  const showRetry = status === 'error';
   const submitDisabled =
     submitting || status === 'success' || description.trim().length === 0;
-  const primaryLabel = submitButtonLabel(status, phase);
 
   // Phase-driven status row visibility. Mirrors the web React adapter's
   // `Thread` rules.
@@ -642,18 +621,6 @@ export function FeedbackModal({
           </ScrollView>
 
           <View style={styles.composer}>
-            {showAiToggle ? (
-              <View style={styles.aiToggleRow}>
-                <Text style={styles.aiToggleLabel}>Format with AI</Text>
-                <Switch
-                  value={useAi}
-                  onValueChange={setUseAi}
-                  disabled={submitting || status === 'success'}
-                  accessibilityLabel="Format with AI"
-                />
-              </View>
-            ) : null}
-
             <View style={styles.composerShell}>
               <TextInput
                 value={description}
@@ -663,45 +630,39 @@ export function FeedbackModal({
                 placeholderTextColor={palette.fgMuted}
                 style={[
                   styles.composerInput,
-                  { height: Math.max(40, Math.min(140, composerHeight)) },
+                  { height: Math.max(34, Math.min(140, composerHeight)) },
                 ]}
                 accessibilityLabel="Feedback description"
                 editable={!submitting && status !== 'success'}
                 onContentSizeChange={(e) => {
                   const next = e.nativeEvent.contentSize.height;
-                  // Bound between the minHeight (40) and maxHeight (140)
-                  // declared on `composerInput`. Mirrors the React
-                  // adapter's `COMPOSER_MAX_HEIGHT_PX` autogrow.
                   setComposerHeight(next);
                 }}
               />
-              {showRetry ? (
-                <Pressable
-                  onPress={handleRetry}
-                  style={styles.sendButton}
-                  accessibilityLabel="Retry submission"
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.sendButtonLabel}>Try again</Text>
-                </Pressable>
-              ) : (
-                <Pressable
-                  onPress={handleSubmit}
-                  style={[
-                    styles.sendButton,
-                    submitDisabled && styles.sendButtonDisabled,
-                  ]}
-                  accessibilityLabel={primaryLabel}
-                  accessibilityRole="button"
-                  disabled={submitDisabled}
-                >
-                  {submitting ? (
-                    <ActivityIndicator color={palette.accentFg} size="small" />
-                  ) : (
-                    <Text style={styles.sendButtonLabel}>{primaryLabel}</Text>
-                  )}
-                </Pressable>
-              )}
+              {showAiToggle ? (
+                <AIToggle
+                  on={useAi}
+                  disabled={submitting || status === 'success'}
+                  onChange={setUseAi}
+                  styles={styles}
+                />
+              ) : null}
+              <Pressable
+                onPress={handleSubmit}
+                style={[
+                  styles.sendButton,
+                  submitDisabled && styles.sendButtonDisabled,
+                ]}
+                accessibilityLabel="Send"
+                accessibilityRole="button"
+                disabled={submitDisabled}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={palette.accentFg} size="small" />
+                ) : (
+                  <Text style={styles.sendButtonIcon}>➤</Text>
+                )}
+              </Pressable>
             </View>
           </View>
 
@@ -719,6 +680,58 @@ export function FeedbackModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+interface AIToggleProps {
+  on: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+  styles: ReturnType<typeof createWidgetStyles>;
+}
+
+/**
+ * Track-and-thumb switch surfaced in the composer when the project allows
+ * submitters to opt in/out of AI formatting per issue. Visual twin of the
+ * web React adapter's `brw-aitoggle` — small pill track + animated thumb +
+ * "AI" text outside the button — so the panel reads identically across
+ * adapters. `accessibilityRole="switch"` + `accessibilityState.checked` is
+ * the narrow semantic TalkBack/VoiceOver want for an on/off control.
+ */
+function AIToggle({
+  on,
+  disabled,
+  onChange,
+  styles,
+}: AIToggleProps): ReactElement {
+  return (
+    <View style={styles.aiToggleWrap}>
+      <Pressable
+        onPress={() => onChange(!on)}
+        disabled={disabled}
+        accessibilityRole="switch"
+        accessibilityLabel="Format with AI"
+        accessibilityState={{ checked: on, disabled }}
+        style={[
+          styles.aiToggleTrack,
+          on && styles.aiToggleTrackOn,
+          disabled && styles.aiToggleDisabled,
+        ]}
+      >
+        <View
+          style={[styles.aiToggleThumb, on && styles.aiToggleThumbOn]}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      </Pressable>
+      <Text
+        style={[styles.aiToggleText, on && styles.aiToggleTextOn]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        AI
+      </Text>
+    </View>
   );
 }
 

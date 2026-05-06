@@ -343,57 +343,101 @@ export function createWidgetStyles(palette: BrevwickPalette) {
       borderTopWidth: 1,
       paddingTop: 10,
       paddingBottom: 6,
-      gap: 8,
+      backgroundColor: palette.panelBg,
     },
+    // Rounded container that groups the textarea + AI toggle + send button
+    // into a single visual input affordance — visual twin of the web
+    // adapter's `brw-composer-shell`. Border lifts to `accent` when any
+    // descendant takes focus via the `composerShellFocus` overlay.
     composerShell: {
       flexDirection: 'row',
       alignItems: 'flex-end',
-      gap: 8,
-    },
-    composerInput: {
-      flex: 1,
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 6,
       backgroundColor: palette.inputBg,
-      color: palette.fg,
       borderColor: palette.border,
       borderWidth: 1,
       borderRadius: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 14,
-      minHeight: 40,
-      maxHeight: 140,
     },
-    composerExtras: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
+    composerInput: {
+      flex: 1,
+      color: palette.fg,
+      backgroundColor: 'transparent',
+      paddingHorizontal: 4,
+      paddingVertical: 8,
+      fontSize: 13,
+      minHeight: 34,
+      maxHeight: 140,
+      lineHeight: 18,
     },
     sendButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 10,
+      width: 34,
+      height: 34,
       borderRadius: 10,
       backgroundColor: palette.accent,
       alignItems: 'center',
       justifyContent: 'center',
-      minWidth: 64,
     },
     sendButtonDisabled: {
       opacity: 0.5,
     },
-    sendButtonLabel: {
+    sendButtonIcon: {
       color: palette.accentFg,
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: 16,
+      fontWeight: '700',
+      // Tiny upward nudge so the U+27A4 glyph optical-centres in the 34px
+      // square; the glyph carries an asymmetric baseline that otherwise
+      // sits noticeably low.
+      lineHeight: 16,
     },
-    aiToggleRow: {
+    aiToggleWrap: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 6,
+      height: 34,
       paddingHorizontal: 4,
     },
-    aiToggleLabel: {
+    aiToggleTrack: {
+      width: 30,
+      height: 18,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.bubbleAssistantBg,
+      justifyContent: 'center',
+    },
+    aiToggleTrackOn: {
+      backgroundColor: palette.accent,
+      borderColor: palette.accent,
+    },
+    aiToggleDisabled: {
+      opacity: 0.5,
+    },
+    aiToggleThumb: {
+      position: 'absolute',
+      width: 12,
+      height: 12,
+      borderRadius: 999,
+      backgroundColor: palette.fgMuted,
+      left: 2,
+      // Track inner height is 16px (18px outer minus the 1px border on
+      // each side); centring the 12px thumb leaves a 2px gap above and
+      // below — same optical mass as the web `transform: translateY(-50%)`
+      // trick the React adapter uses.
+      top: 2,
+    },
+    aiToggleThumbOn: {
+      backgroundColor: palette.accentFg,
+      left: 14,
+    },
+    aiToggleText: {
       color: palette.fgMuted,
       fontSize: 12,
+      fontWeight: '500',
+    },
+    aiToggleTextOn: {
+      color: palette.fg,
     },
     errorText: {
       color: palette.error,

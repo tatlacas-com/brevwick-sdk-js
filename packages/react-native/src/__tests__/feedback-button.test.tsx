@@ -777,12 +777,13 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     const renderer = await renderTree(<FeedbackButton />);
     await openModal(renderer);
 
-    // Toggle AI off for this report.
-    const aiSwitch = renderer.root
-      .findAll((node) => node.props?.accessibilityLabel === 'Format with AI')
-      .find((node) => typeof node.props?.onValueChange === 'function')!;
+    // Toggle AI off for this report. The post-#127 inline switch is a
+    // Pressable (not RN's native `<Switch>`), so we drive it via `onPress`
+    // to flip its bound boolean — same wire effect as the old
+    // `onValueChange(false)` pattern.
+    const aiSwitch = findPressableByLabel(renderer, 'Format with AI')!;
     await act(async () => {
-      aiSwitch.props.onValueChange(false);
+      aiSwitch.props.onPress();
     });
 
     const desc = findInputByLabel(renderer, 'Feedback description');
@@ -1104,10 +1105,13 @@ describe('FeedbackModal — standalone consumer (owns its hook)', () => {
       await sendBtn.props.onPress();
     });
 
-    // Sanity — the modal is in the success dwell. The primary button now
-    // reads "Sent ✓" which is what the user is mid-reading when they
-    // tap Minimize.
-    expect(findPressableByLabel(renderer, 'Sent ✓')).toBeDefined();
+    // Sanity — the modal is in the success dwell. Post-#127 the inline
+    // send button is a constant icon (visual parity with React) so we
+    // detect the success state via the assistant-receipt bubble that
+    // gets appended to the thread on a successful submit.
+    expect(
+      findTextByContent(renderer, 'Thanks — your issue is on its way.'),
+    ).toBe(true);
 
     const minimize = findPressableByLabel(renderer, 'Minimize')!;
     await act(async () => {
@@ -1132,7 +1136,11 @@ describe('FeedbackModal — standalone consumer (owns its hook)', () => {
     });
 
     expect(findPressableByLabel(renderer, 'Send')).toBeDefined();
-    expect(findPressableByLabel(renderer, 'Sent ✓')).toBeUndefined();
+    // Receipt only lives in the thread mid-success-dwell; after the
+    // discard-on-minimize path runs, the thread resets to the greeting.
+    expect(
+      findTextByContent(renderer, 'Thanks — your issue is on its way.'),
+    ).toBe(false);
     const desc2 = findInputByLabel(renderer, 'Feedback description');
     expect(desc2.props.editable).toBe(true);
     // Draft is also wiped — the manual-close branch clears the same
