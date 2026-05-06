@@ -30,8 +30,10 @@
     "console-error-ring",
     "create-brevwick-core",
     "credit-footer",
+    "eager-rings-capture-race",
     "feedback-attachments-ux",
     "feedback-thread-continuation",
+    "fix-screenshot-inner-scroll-compensation",
     "hide-panel-during-region-overlay",
     "integration-msw-coverage",
     "landing-parity-rings",
@@ -62,6 +64,7 @@
     "submit-pipeline",
     "svelte-bindings",
     "theming-composer-shell",
-    "use-ai-toggle"
+    "use-ai-toggle",
+    "v1-disable-screenshot-button"
   ]
 }

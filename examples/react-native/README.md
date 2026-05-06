@@ -8,10 +8,11 @@ route, screenshot).
 
 ## Run locally
 
-1. From the repo root, install:
+1. From the repo root, install and build the SDKs:
 
    ```bash
    pnpm install
+   pnpm --filter @tatlacas/brevwick-sdk --filter @tatlacas/brevwick-react-native build
    ```
 
 2. Copy `.env.example` to `.env` and replace the placeholder key with a

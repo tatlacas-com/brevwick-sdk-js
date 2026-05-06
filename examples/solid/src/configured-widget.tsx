@@ -1,4 +1,4 @@
-import { Show, type Component } from 'solid-js';
+import { ErrorBoundary, Show, type Component } from 'solid-js';
 import {
   BrevwickProvider,
   FeedbackButton,
@@ -8,10 +8,15 @@ import {
 const PROJECT_KEY_PATTERN = /^pk_(live|test)_[A-Za-z0-9]{16,}$/;
 const PLACEHOLDER_KEY = 'pk_test_replace_me';
 
-interface ResolvedConfig {
+export type ConfigErrorKind =
+  | 'missing-key'
+  | 'invalid-key'
+  | 'missing-endpoint';
+
+export interface ResolvedConfig {
   readonly projectKey: string;
   readonly endpoint: string;
-  readonly error?: 'missing-key' | 'invalid-key' | 'missing-endpoint';
+  readonly error?: ConfigErrorKind;
 }
 
 /**
@@ -21,7 +26,7 @@ interface ResolvedConfig {
  * either is missing so the example never falls through to the SDK's
  * production endpoint default.
  */
-function readConfig(): ResolvedConfig {
+export function readConfig(): ResolvedConfig {
   const rawKey = (import.meta.env.VITE_BREVWICK_PROJECT_KEY as string) ?? '';
   const rawEndpoint = (import.meta.env.VITE_BREVWICK_ENDPOINT as string) ?? '';
 
@@ -47,9 +52,18 @@ export const ConfiguredWidget: Component = () => {
   };
   return (
     <Show when={mountWidget}>
-      <BrevwickProvider config={config}>
-        <FeedbackButton position="bottom-right" />
-      </BrevwickProvider>
+      <ErrorBoundary
+        fallback={(err: unknown) => (
+          <p role="alert" style={{ color: '#b42318', margin: '1rem' }}>
+            Brevwick config error:{' '}
+            {err instanceof Error ? err.message : String(err)}
+          </p>
+        )}
+      >
+        <BrevwickProvider config={config}>
+          <FeedbackButton position="bottom-right" />
+        </BrevwickProvider>
+      </ErrorBoundary>
     </Show>
   );
 };

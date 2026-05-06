@@ -8,7 +8,7 @@
 [![npm (react-native)](https://img.shields.io/npm/v/@tatlacas/brevwick-react-native/beta?label=@tatlacas/brevwick-react-native%40beta)](https://www.npmjs.com/package/@tatlacas/brevwick-react-native)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-Ship feedback from any browser app straight into clean, AI-formatted GitHub issues. Drop in a floating button, collect a description + screenshot + the console/network rings that preceded the bug, and Brevwick turns it all into a triage-ready issue on your repo.
+Ship feedback from any browser app straight into clean, AI-formatted GitHub issues. Drop in a floating button, collect a description plus the console/network rings that preceded the bug, and Brevwick turns it all into a triage-ready issue on your repo.
 
 > **Status — public beta.** Versions are `1.x.x-beta.N` on the `beta` dist-tag. The API defined here is the frozen public surface — breaking changes are possible before the `latest` cutover but will be called out in the changelog.
 
@@ -67,7 +67,7 @@ export default function App() {
 }
 ```
 
-That's it. A floating action button appears in the bottom-right; clicking it opens a feedback dialog with screenshot capture, file attachments, and your project's AI formatting (if enabled).
+That's it. A floating action button appears in the bottom-right; clicking it opens a feedback dialog with file attachments and your project's AI formatting (if enabled).
 
 Full API and theming → [packages/react/README.md](./packages/react/README.md).
 
@@ -168,7 +168,7 @@ export default function App() {
 }
 ```
 
-Build a custom feedback UI with `useFeedback()` (the drop-in `<FeedbackButton />` lands with #88), wire the React Navigation route ring by rendering `useRouteRing()` inside the provider, and capture screenshots via the optional `react-native-view-shot` peer.
+Build a custom feedback UI with `useFeedback()` (the drop-in `<FeedbackButton />` lands with #88) and wire the React Navigation route ring by rendering `useRouteRing()` inside the provider.
 
 Full API → [packages/react-native/README.md](./packages/react-native/README.md).
 

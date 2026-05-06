@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-svelte",
-  "version": "1.0.0-beta.10",
+  "version": "1.0.0-beta.11",
   "description": "Brevwick Svelte bindings — context, FAB, getFeedback. Drop-in for Svelte 5 and SvelteKit apps.",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,9 @@
   ],
   "sideEffects": false,
   "scripts": {
+    "prebuild": "node scripts/generate-version.mjs",
     "build": "svelte-package -i src/lib -o dist && publint",
+    "predev": "node scripts/generate-version.mjs",
     "dev": "svelte-package -i src/lib -o dist --watch",
     "test": "vitest run",
     "test:cover": "vitest run --coverage",

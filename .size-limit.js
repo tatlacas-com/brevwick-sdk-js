@@ -151,11 +151,16 @@ export default [
   // FeedbackButton SFC (compiled by `svelte-package`, but emitted as the
   // raw `.svelte` source — bundlers compile it at consumer build time).
   // Tracking the gzipped source caps the on-page weight if the SFC bloats.
-  // Current ~5.4 kB; budget 8 kB leaves headroom for incremental UX work.
+  // Bumped from 8 kB → 14 kB at issue #114 when the SFC reached UI parity
+  // with the React adapter (chat thread + assistant/user bubbles +
+  // expected/actual disclosure + staged-status rows + retry row + AI
+  // toggle render-policy + discard-confirm + minimize button + receipt
+  // with relative time). The post-parity SFC weighs ~12.1 kB gzip; the
+  // 14 kB ceiling leaves ~2 kB of headroom for incremental UX work.
   fileEntry(
     '@tatlacas/brevwick-svelte FeedbackButton SFC',
     'packages/svelte/dist/components/FeedbackButton.svelte',
-    '8 kB',
+    '14 kB',
   ),
 
   // ── Angular bundle (≤ 8 kB gzip) ─────────────────────────────────────────
