@@ -969,11 +969,16 @@
     left: 24px;
   }
 
+  /* Anchor the panel at the same `bottom: 24px` / corner offset as the
+     FAB so the panel's higher z-index covers the FAB while it is open
+     (parity with the React adapter — Radix Dialog there mounts the
+     panel above the trigger at the same position, hiding the FAB
+     behind the panel rather than leaving them side-by-side). */
   .brw-svelte-panel {
     position: fixed;
-    bottom: 88px;
-    width: min(380px, calc(100vw - 32px));
-    max-height: min(640px, calc(100vh - 120px));
+    bottom: 24px;
+    width: min(92vw, 400px);
+    height: min(80vh, 640px);
     display: flex;
     flex-direction: column;
     background: var(--brw-panel-bg);
@@ -989,6 +994,13 @@
   }
   .brw-svelte-panel.brw-panel-bl {
     left: 24px;
+  }
+  @media (max-width: 480px) {
+    .brw-svelte-panel {
+      width: calc(100vw - 32px);
+      left: 16px;
+      right: 16px;
+    }
   }
 
   .brw-svelte-header {
