@@ -274,4 +274,54 @@ describe('BrevwickService', () => {
     TestBed.resetTestingModule();
     expect(uninstall).toHaveBeenCalledTimes(1);
   });
+
+  it('phase listener no-ops once the destroy hook has fired', () => {
+    // Custom bus: off does NOT actually drop the listener, letting us
+    // emit after destroy to prove the in-handler `destroyed` guard kicks in.
+    let capturedListener: ((payload: unknown) => void) | null = null;
+    const offFn = vi.fn();
+    const customInstance = {
+      install,
+      uninstall,
+      submit,
+      captureScreenshot,
+      getConfig,
+      _internal: {
+        bus: {
+          on: (_: string, l: (payload: unknown) => void) => {
+            capturedListener = l;
+          },
+          off: offFn,
+        },
+      },
+    } as unknown as Brevwick;
+    createBrevwick.mockReturnValueOnce(customInstance);
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_phase_destroyed' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    expect(capturedListener).not.toBeNull();
+    TestBed.resetTestingModule();
+    expect(offFn).toHaveBeenCalledTimes(1);
+    // The captured reference is still live in the test even though `off`
+    // ran — invoking it must hit the guard and leave phase at idle.
+    capturedListener!({ phase: 'capturing-done' });
+    expect(service.phase()).toBe('idle');
+  });
+
+  it('submit error message uses String() coercion for non-Error rejections', async () => {
+    submit.mockRejectedValueOnce('plain string failure');
+    TestBed.configureTestingModule({
+      providers: [provideBrevwick({ projectKey: 'pk_test_string_throw' })],
+    });
+    const service = TestBed.inject(BrevwickService);
+    await expect(service.submit({ description: 'x' })).rejects.toBe(
+      'plain string failure',
+    );
+    expect(service.status()).toBe('error');
+    expect(service.error()).toEqual({
+      code: 'INGEST_RETRY_EXHAUSTED',
+      message: 'plain string failure',
+    });
+  });
 });

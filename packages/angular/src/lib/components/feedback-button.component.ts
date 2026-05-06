@@ -1409,27 +1409,37 @@ export class BwFeedbackButtonComponent {
     // Lazy project-config fetch on first panel open. Mirrors the React
     // adapter's `useProjectConfig` hook: explicitly does NOT fetch on mount,
     // so the widget's "zero-cost until opened" property holds.
+    // `allowSignalWrites: true` is required because the synchronous transition
+    // to `loading` and the async resolution / rejection branches all need to
+    // mutate `projectConfig`. The effect only reads `open()`, so there is no
+    // feedback loop — this opts out of the default NG0600 guard for a write
+    // pattern that is intentional. Without it, dev-mode runs throw inside the
+    // effect, the .then handler never fires, and `projectConfig` stays at
+    // `'idle'` so the AI toggle never appears.
     let triggered = false;
-    effect(() => {
-      if (!this.open()) return;
-      if (triggered) return;
-      triggered = true;
-      this.projectConfig.set({ status: 'loading', config: null });
-      void this.brevwick
-        .getConfig()
-        .then((config) => {
-          if (this.destroyed) return;
-          this.projectConfig.set(
-            config !== null
-              ? { status: 'ready', config }
-              : { status: 'error', config: null },
-          );
-        })
-        .catch(() => {
-          if (this.destroyed) return;
-          this.projectConfig.set({ status: 'error', config: null });
-        });
-    });
+    effect(
+      () => {
+        if (!this.open()) return;
+        if (triggered) return;
+        triggered = true;
+        this.projectConfig.set({ status: 'loading', config: null });
+        void this.brevwick
+          .getConfig()
+          .then((config) => {
+            if (this.destroyed) return;
+            this.projectConfig.set(
+              config !== null
+                ? { status: 'ready', config }
+                : { status: 'error', config: null },
+            );
+          })
+          .catch(() => {
+            if (this.destroyed) return;
+            this.projectConfig.set({ status: 'error', config: null });
+          });
+      },
+      { allowSignalWrites: true },
+    );
 
     // Move focus to the "Keep" button when the discard confirm appears,
     // mirroring the React adapter — the non-destructive default lands under

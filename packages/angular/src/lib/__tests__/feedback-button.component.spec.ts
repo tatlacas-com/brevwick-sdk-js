@@ -76,9 +76,12 @@ interface ComponentInternals {
   };
   reducedMotion: { set: (v: boolean) => void };
   useAi: { set: (v: boolean) => void };
+  lastSubmittedInput: { set: (v: unknown) => void };
   doSubmit: () => Promise<void>;
   onRetryClick: () => Promise<void>;
   toggleAi: () => void;
+  relativeTime: (ms: number | undefined) => string;
+  size: (bytes: number) => string;
 }
 
 const internals = (cmp: BwFeedbackButtonComponent): ComponentInternals =>
@@ -390,21 +393,22 @@ describe('BwFeedbackButtonComponent', () => {
     expect(fixture.nativeElement.querySelector('.brw-aitoggle')).toBeNull();
   });
 
-  it('AI toggle renders when ai_enabled + ai_submitter_choice_allowed are true', () => {
+  it('AI toggle renders when ai_enabled + ai_submitter_choice_allowed are true', async () => {
+    getConfig.mockResolvedValueOnce({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
     TestBed.configureTestingModule({
       imports: [BwFeedbackButtonComponent],
       providers: [provideBrevwick({ projectKey: 'pk_test_ai_on' })],
     });
     const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
     fixture.detectChanges();
-    const cmp = fixture.componentInstance;
-    internals(cmp).projectConfig.set({
-      status: 'ready',
-      config: { ai_enabled: true, ai_submitter_choice_allowed: true },
-    });
     (
       fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
     ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
     fixture.detectChanges();
     const toggle = fixture.nativeElement.querySelector(
       '.brw-aitoggle',
@@ -413,21 +417,22 @@ describe('BwFeedbackButtonComponent', () => {
     expect(toggle?.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('AI toggle hidden when admin disabled submitter choice', () => {
+  it('AI toggle hidden when admin disabled submitter choice', async () => {
+    getConfig.mockResolvedValueOnce({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
     TestBed.configureTestingModule({
       imports: [BwFeedbackButtonComponent],
       providers: [provideBrevwick({ projectKey: 'pk_test_ai_forced' })],
     });
     const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
     fixture.detectChanges();
-    const cmp = fixture.componentInstance;
-    internals(cmp).projectConfig.set({
-      status: 'ready',
-      config: { ai_enabled: true, ai_submitter_choice_allowed: false },
-    });
     (
       fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
     ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.brw-aitoggle')).toBeNull();
   });
@@ -450,7 +455,9 @@ describe('BwFeedbackButtonComponent', () => {
     internals(cmp).useAi.set(false);
     await internals(cmp).doSubmit();
     expect(submit.mock.calls[0]![0]).toMatchObject({ use_ai: false });
-    // Toggle hidden again: no use_ai key on the next submit.
+    // Toggle hidden again: no use_ai key on the next submit. Note we don't
+    // open the panel, so the lazy-config effect never fires and the manual
+    // signal set wins.
     internals(cmp).projectConfig.set({ status: 'idle', config: null });
     internals(cmp).draft.set('without ai');
     await internals(cmp).doSubmit();
@@ -489,21 +496,22 @@ describe('BwFeedbackButtonComponent', () => {
     void cmp;
   });
 
-  it('formatting row shows only when AI is enabled', () => {
+  it('formatting row shows only when AI is enabled', async () => {
+    getConfig.mockResolvedValueOnce({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
     TestBed.configureTestingModule({
       imports: [BwFeedbackButtonComponent],
       providers: [provideBrevwick({ projectKey: 'pk_test_fmt' })],
     });
     const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
     fixture.detectChanges();
-    const cmp = fixture.componentInstance;
-    internals(cmp).projectConfig.set({
-      status: 'ready',
-      config: { ai_enabled: true, ai_submitter_choice_allowed: false },
-    });
     (
       fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
     ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
     const sdk = createBrevwick.mock.results[0]!.value as unknown as {
       _internal: { bus: { emit: (payload: unknown) => void } };
     };
@@ -813,21 +821,22 @@ describe('BwFeedbackButtonComponent', () => {
 
   // ── AI toggle keyboard activation ────────────────────────────────────────
 
-  it('Space on the AI toggle flips the signal; other keys are no-ops', () => {
+  it('Space on the AI toggle flips the signal; other keys are no-ops', async () => {
+    getConfig.mockResolvedValueOnce({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
     TestBed.configureTestingModule({
       imports: [BwFeedbackButtonComponent],
       providers: [provideBrevwick({ projectKey: 'pk_test_ai_kbd' })],
     });
     const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
     fixture.detectChanges();
-    const cmp = fixture.componentInstance;
-    internals(cmp).projectConfig.set({
-      status: 'ready',
-      config: { ai_enabled: true, ai_submitter_choice_allowed: true },
-    });
     (
       fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
     ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
     fixture.detectChanges();
     const toggle = fixture.nativeElement.querySelector(
       '.brw-aitoggle',
@@ -882,5 +891,276 @@ describe('BwFeedbackButtonComponent', () => {
     expect(link).not.toBeNull();
     expect(link.textContent).toContain('Brevwick v');
     expect(link.href).toContain('https://brevwick.dev');
+  });
+
+  // ── Format helpers ───────────────────────────────────────────────────────
+
+  it('relativeTime covers the minute / hour / day branches', () => {
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_relative' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const rt = internals(fixture.componentInstance).relativeTime;
+    const now = Date.now();
+    expect(rt(undefined)).toBe('just now');
+    expect(rt(now)).toBe('just now');
+    expect(rt(now - 5 * 60_000)).toBe('5 min ago');
+    expect(rt(now - 3 * 60 * 60_000)).toBe('3 hr ago');
+    expect(rt(now - 2 * 24 * 60 * 60_000)).toBe('2 d ago');
+  });
+
+  it('size formats bytes / kB / MB', () => {
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_size' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const fmt = internals(fixture.componentInstance).size;
+    expect(fmt(512)).toBe('512 B');
+    expect(fmt(2048)).toBe('2.0 kB');
+    expect(fmt(2 * 1024 * 1024)).toBe('2.0 MB');
+  });
+
+  // ── matchMedia paths ─────────────────────────────────────────────────────
+
+  it('reduced-motion modern path: change event flips the signal', () => {
+    type ChangeListener = (e: MediaQueryListEvent) => void;
+    let captured: ChangeListener | null = null;
+    const mql = {
+      matches: false,
+      media: '(prefers-reduced-motion: reduce)',
+      addEventListener: (_: string, cb: ChangeListener) => {
+        captured = cb;
+      },
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList;
+    const original = window.matchMedia;
+    window.matchMedia = (() => mql) as typeof window.matchMedia;
+    try {
+      TestBed.configureTestingModule({
+        imports: [BwFeedbackButtonComponent],
+        providers: [provideBrevwick({ projectKey: 'pk_test_rm_modern' })],
+      });
+      const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+      fixture.detectChanges();
+      const cmp = fixture.componentInstance;
+      // Default: reducedMotion mirrors mql.matches (false).
+      expect(captured).not.toBeNull();
+      // Fire a synthetic change event — onChange should set reducedMotion=true.
+      captured!({ matches: true } as MediaQueryListEvent);
+      fixture.detectChanges();
+      // Open + drive a phase event so we can read the stagger off a row.
+      (
+        fixture.nativeElement.querySelector(
+          'button.brw-fab',
+        ) as HTMLButtonElement
+      ).click();
+      const sdk = createBrevwick.mock.results[0]!.value as unknown as {
+        _internal: { bus: { emit: (payload: unknown) => void } };
+      };
+      sdk._internal.bus.emit({ phase: 'sanitising-done' });
+      fixture.detectChanges();
+      const row = fixture.nativeElement.querySelector(
+        '[data-brw-row="sanitised"]',
+      ) as HTMLElement;
+      expect(row.style.transitionDelay).toBe('0ms');
+      void cmp;
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it('reduced-motion legacy path: addListener fallback registers + cleans up', () => {
+    type ChangeListener = (e: MediaQueryListEvent) => void;
+    let captured: ChangeListener | null = null;
+    const removeListener = vi.fn();
+    // Build an mql that ONLY exposes the legacy addListener / removeListener
+    // pair — no addEventListener — so the component's else-if branch fires.
+    const mql = {
+      matches: true,
+      media: '(prefers-reduced-motion: reduce)',
+      addListener: (cb: ChangeListener) => {
+        captured = cb;
+      },
+      removeListener,
+    } as unknown as MediaQueryList;
+    const original = window.matchMedia;
+    window.matchMedia = (() => mql) as typeof window.matchMedia;
+    try {
+      TestBed.configureTestingModule({
+        imports: [BwFeedbackButtonComponent],
+        providers: [provideBrevwick({ projectKey: 'pk_test_rm_legacy' })],
+      });
+      const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+      fixture.detectChanges();
+      expect(captured).not.toBeNull();
+      // Destroying the fixture should run the destroyRef.onDestroy callback
+      // which in turn calls removeListener with the same handler we registered.
+      fixture.destroy();
+      expect(removeListener).toHaveBeenCalledTimes(1);
+      expect(removeListener.mock.calls[0]![0]).toBe(captured);
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  // ── Composer autogrow effect ─────────────────────────────────────────────
+
+  it('composer autogrow effect early-returns until the textarea mounts', () => {
+    // The full autogrow body (`renderer.setStyle` round-trip) only runs once
+    // the viewChild signal resolves to a real `ElementRef`. Vitest + happy-dom
+    // do not flush the viewChild query result reliably across CD passes, so we
+    // assert what we *can* deterministically observe: the effect runs at all,
+    // it sees a falsy ref on first paint, and it does not throw when the panel
+    // opens. The covered branch is the early-return guard at the top.
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_autogrow' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    (
+      fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    // Mutating draft must not throw even when the viewChild ref is unresolved.
+    expect(() => internals(cmp).draft.set('two\nlines')).not.toThrow();
+    fixture.detectChanges();
+  });
+
+  // ── Project config promise resolution ────────────────────────────────────
+
+  it('project config success path runs the .then handler after the promise settles', async () => {
+    getConfig.mockResolvedValueOnce({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: true,
+    });
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_cfg_ok' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    (
+      fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    // Drain microtasks so the resolved getConfig promise's .then fires.
+    await fixture.whenStable();
+    expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('project config catch path runs the .catch handler after a fetch rejection', async () => {
+    getConfig.mockRejectedValueOnce(new Error('network down'));
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_cfg_err' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    (
+      fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  // ── doSubmit / onRetryClick error catch paths ────────────────────────────
+
+  it('doSubmit re-opens the panel after a chunk-load rejection', async () => {
+    submit.mockRejectedValueOnce(new Error('chunk load failed'));
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_submit_throw' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    (
+      fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    internals(cmp).draft.set('boom');
+    // Minimise mid-submit so we can prove doSubmit pops the panel back open
+    // through the catch branch.
+    (
+      fixture.nativeElement.querySelector(
+        '.brw-icon-btn[aria-label="Minimize"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await internals(cmp).doSubmit();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.brw-panel')).not.toBeNull();
+  });
+
+  it('onRetryClick re-opens the panel after a chunk-load rejection', async () => {
+    submit.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INGEST_REJECTED', message: 'first failed' },
+    });
+    submit.mockRejectedValueOnce(new Error('chunk load failed on retry'));
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_retry_throw' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    (
+      fixture.nativeElement.querySelector('button.brw-fab') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    internals(cmp).draft.set('first attempt');
+    await internals(cmp).doSubmit();
+    fixture.detectChanges();
+    // Minimise so we can prove onRetryClick pops the panel back open through
+    // the catch branch.
+    (
+      fixture.nativeElement.querySelector(
+        '.brw-icon-btn[aria-label="Minimize"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await internals(cmp).onRetryClick();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.brw-panel')).not.toBeNull();
+  });
+
+  it('onRetryClick is a no-op when no submit has been attempted', async () => {
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_retry_noop' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    await internals(cmp).onRetryClick();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  // ── Toggle while open routes through minimize ────────────────────────────
+
+  it('clicking the FAB while the panel is open routes through minimize', () => {
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_toggle_close' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const fab = fixture.nativeElement.querySelector(
+      'button.brw-fab',
+    ) as HTMLButtonElement;
+    fab.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.brw-panel')).not.toBeNull();
+    fab.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.brw-panel')).toBeNull();
   });
 });
