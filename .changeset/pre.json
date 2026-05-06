@@ -63,6 +63,7 @@
     "staged-status-feedback-ux",
     "submit-pipeline",
     "svelte-bindings",
+    "svelte-widget-parity",
     "theming-composer-shell",
     "use-ai-toggle",
     "v1-disable-screenshot-button"
