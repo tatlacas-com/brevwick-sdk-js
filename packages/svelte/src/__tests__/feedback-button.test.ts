@@ -528,9 +528,6 @@ describe('<FeedbackButton>', () => {
   });
 
   it('minimize preserves draft + attachments across reopen', async () => {
-    captureScreenshot.mockResolvedValueOnce(
-      new Blob(['x'], { type: 'image/png' }),
-    );
     mountFab();
     await openPanel();
     const textarea = screen.getByRole('textbox', {
@@ -539,15 +536,21 @@ describe('<FeedbackButton>', () => {
     await act(async () => {
       await fireEvent.input(textarea, { target: { value: 'wip' } });
     });
+
+    // Attach a file so we can assert the chip survives the minimize / reopen
+    // cycle. (The screenshot button is disabled on V1 — same property holds
+    // for any chip in the composer; using a file keeps the test off the
+    // capture path that no longer exists.)
+    const fileInput = screen
+      .getByRole('dialog')
+      .querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    const attached = new File(['x'], 'note.txt', { type: 'text/plain' });
     await act(async () => {
-      await fireEvent.click(
-        screen.getByRole('button', {
-          name: /capture screenshot of this page/i,
-        }),
-      );
+      await fireEvent.change(fileInput!, { target: { files: [attached] } });
     });
     await waitFor(() =>
-      expect(screen.getByText(/^screenshot$/i)).toBeInTheDocument(),
+      expect(screen.getByText('note.txt')).toBeInTheDocument(),
     );
 
     await act(async () => {
@@ -568,7 +571,7 @@ describe('<FeedbackButton>', () => {
         }) as HTMLTextAreaElement
       ).value,
     ).toBe('wip');
-    expect(screen.getByText(/^screenshot$/i)).toBeInTheDocument();
+    expect(screen.getByText('note.txt')).toBeInTheDocument();
   });
 
   it('close when clean dismisses immediately and clears state', async () => {
