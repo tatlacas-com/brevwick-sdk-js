@@ -23,11 +23,30 @@ import type {
 // longer surfaces capture UI — the mock keeps the module graph stable for
 // the `.skip`-ped legacy tests at the bottom of the file, which the issue
 // (#116) explicitly asked us to retain as forward-compat scaffolding.
-const { nativeCapture } = vi.hoisted(() => ({
+const { nativeCapture, pickFilesMock, uriToBlobMock } = vi.hoisted(() => ({
   nativeCapture: vi.fn<(viewRef: unknown) => Promise<Blob>>(),
+  pickFilesMock:
+    vi.fn<
+      (opts?: {
+        multiple?: boolean;
+      }) => Promise<
+        readonly { uri: string; name: string; size: number }[] | null
+      >
+    >(),
+  uriToBlobMock: vi.fn<(uri: string) => Promise<Blob | null>>(),
 }));
 vi.mock('../screenshot', () => ({
   captureScreenshot: nativeCapture,
+}));
+// The picker abstraction is dynamically imported by the modal under
+// production, but tests need deterministic control over the picked-file
+// flow so we replace the whole module surface. `__resetFilePickerModule
+// CacheForTest` is a no-op here because we never let the real dynamic
+// imports fire.
+vi.mock('../file-picker', () => ({
+  pickFiles: pickFilesMock,
+  uriToBlob: uriToBlobMock,
+  __resetFilePickerModuleCacheForTest: () => {},
 }));
 
 // ---- SDK mock -----------------------------------------------------------
@@ -142,6 +161,13 @@ beforeEach(() => {
   // Default mocks — individual tests override.
   captureScreenshot.mockResolvedValue(new Blob(['png'], { type: 'image/png' }));
   getConfig.mockResolvedValue(null);
+  // By default the picker is unavailable — tests that need it install
+  // their own resolved value via `pickFilesMock.mockResolvedValueOnce`.
+  pickFilesMock.mockResolvedValue(null);
+  uriToBlobMock.mockImplementation(
+    async (uri: string) =>
+      new Blob([`bytes:${uri}`], { type: 'application/octet-stream' }),
+  );
 });
 
 afterEach(() => {
@@ -296,7 +322,9 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     expect(arg.actual).toBeUndefined();
     // Title derives from the first non-empty line, ≤ 120 chars.
     expect(arg.title).toBe('login button does nothing');
-    // Screenshot UI is removed in v1 — no attachments rideshare.
+    // Submitter did not pick a file → the attachments rideshare is
+    // omitted from the wire payload. The picker integration that adds
+    // attachments is exercised by the dedicated tests further below.
     expect(arg.attachments).toBeUndefined();
   });
 
@@ -839,6 +867,113 @@ describe('FeedbackModal (via FeedbackButton)', () => {
     } finally {
       openSpy.mockRestore();
     }
+  });
+
+  it('renders the paperclip Attach file button on the composer', async () => {
+    const renderer = await renderTree(<FeedbackButton />);
+    await openModal(renderer);
+    expect(findPressableByLabel(renderer, 'Attach file')).toBeDefined();
+  });
+
+  it('surfaces a missing-peer note when neither document picker is installed', async () => {
+    pickFilesMock.mockResolvedValueOnce(null);
+    const renderer = await renderTree(<FeedbackButton />);
+    await openModal(renderer);
+
+    const attach = findPressableByLabel(renderer, 'Attach file')!;
+    await act(async () => {
+      await attach.props.onPress();
+    });
+    expect(pickFilesMock).toHaveBeenCalledTimes(1);
+    expect(
+      findTextByContent(
+        renderer,
+        'File attachments are unavailable. Install expo-document-picker or react-native-document-picker.',
+      ),
+    ).toBe(true);
+  });
+
+  it('renders an AttachmentChip for each picked file and rideshares the converted Blobs on submit', async () => {
+    pickFilesMock.mockResolvedValueOnce([
+      { uri: 'file:///tmp/a.png', name: 'a.png', size: 12345 },
+      { uri: 'file:///tmp/b.pdf', name: 'b.pdf', size: 6789 },
+    ]);
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_attached' });
+
+    const renderer = await renderTree(<FeedbackButton />);
+    await openModal(renderer);
+
+    const attach = findPressableByLabel(renderer, 'Attach file')!;
+    await act(async () => {
+      await attach.props.onPress();
+    });
+    // Both filenames render as chips above the composer.
+    expect(findTextByContent(renderer, 'a.png')).toBe(true);
+    expect(findTextByContent(renderer, 'b.pdf')).toBe(true);
+
+    const desc = findInputByLabel(renderer, 'Feedback description');
+    await act(async () => {
+      desc.props.onChangeText('with two attachments');
+    });
+    const sendBtn = findPressableByLabel(renderer, 'Send')!;
+    await act(async () => {
+      await sendBtn.props.onPress();
+    });
+
+    expect(submit).toHaveBeenCalledTimes(1);
+    const payload = submit.mock.calls[0]![0];
+    // Each picked URI was converted to a Blob via the mocked uriToBlob.
+    expect(payload.attachments).toBeDefined();
+    expect(payload.attachments).toHaveLength(2);
+    expect(payload.attachments?.[0]).toMatchObject({ filename: 'a.png' });
+    expect(payload.attachments?.[1]).toMatchObject({ filename: 'b.pdf' });
+    expect(uriToBlobMock).toHaveBeenCalledWith('file:///tmp/a.png');
+    expect(uriToBlobMock).toHaveBeenCalledWith('file:///tmp/b.pdf');
+  });
+
+  it('drops a chip when the user taps its remove button', async () => {
+    pickFilesMock.mockResolvedValueOnce([
+      { uri: 'file:///tmp/x.png', name: 'x.png', size: 10 },
+    ]);
+    const renderer = await renderTree(<FeedbackButton />);
+    await openModal(renderer);
+
+    const attach = findPressableByLabel(renderer, 'Attach file')!;
+    await act(async () => {
+      await attach.props.onPress();
+    });
+    expect(findTextByContent(renderer, 'x.png')).toBe(true);
+
+    const remove = findPressableByLabel(renderer, 'Remove x.png')!;
+    expect(remove).toBeDefined();
+    await act(async () => {
+      remove.props.onPress();
+    });
+    expect(findTextByContent(renderer, 'x.png')).toBe(false);
+  });
+
+  it('caps the attachment total at 5 and disables the paperclip with the cap message', async () => {
+    pickFilesMock.mockResolvedValueOnce([
+      { uri: 'file:///tmp/1', name: '1', size: 1 },
+      { uri: 'file:///tmp/2', name: '2', size: 1 },
+      { uri: 'file:///tmp/3', name: '3', size: 1 },
+      { uri: 'file:///tmp/4', name: '4', size: 1 },
+      { uri: 'file:///tmp/5', name: '5', size: 1 },
+      { uri: 'file:///tmp/6', name: '6', size: 1 },
+    ]);
+    const renderer = await renderTree(<FeedbackButton />);
+    await openModal(renderer);
+
+    const attach = findPressableByLabel(renderer, 'Attach file')!;
+    await act(async () => {
+      await attach.props.onPress();
+    });
+    // The 6th picked file is dropped; the paperclip flips to its
+    // capped accessibilityLabel + disabled state.
+    expect(
+      findPressableByLabel(renderer, 'Maximum 5 attachments reached'),
+    ).toBeDefined();
+    expect(findPressableByLabel(renderer, 'Attach file')).toBeUndefined();
   });
 
   it('reveals the Expected/Actual fields only when the disclosure is opened', async () => {

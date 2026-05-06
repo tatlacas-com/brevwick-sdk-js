@@ -18,6 +18,14 @@ export default defineConfig({
       'react-native': fileURLToPath(
         new URL('./test/__mocks__/react-native.cjs', import.meta.url),
       ),
+      // `react-native-svg`'s real entry tries to consume RN private APIs
+      // (`Touchable.Mixin`, `processColor`, the fabric registry) at import
+      // time — none of which our minimal RN stub exposes. Routing the
+      // specifier here keeps the icon module importable under vitest with
+      // the same render shape the production package would mount.
+      'react-native-svg': fileURLToPath(
+        new URL('./test/__mocks__/react-native-svg.cjs', import.meta.url),
+      ),
     },
   },
   test: {

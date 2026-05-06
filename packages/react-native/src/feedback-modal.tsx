@@ -21,6 +21,7 @@ import {
   useColorScheme,
 } from 'react-native';
 import type {
+  FeedbackAttachment,
   FeedbackInput,
   ProjectConfig,
   SubmitError,
@@ -37,6 +38,14 @@ import {
   type BrevwickPalette,
   type BrevwickTheme,
 } from './styles';
+import {
+  CheckIcon,
+  CloseIcon,
+  MinimizeIcon,
+  PaperclipIcon,
+  SendIcon,
+} from './icons';
+import { pickFiles, uriToBlob, type PickedFile } from './file-picker';
 import { BREVWICK_REACT_NATIVE_VERSION } from './version';
 
 const SUCCESS_DISMISS_DELAY_MS = 2000;
@@ -48,8 +57,10 @@ const BREVWICK_URL = 'https://brevwick.dev';
 /**
  * One bubble in the conversation thread. The greeting and submitted-issue
  * receipt are `assistant` messages; submitted drafts become `user` messages.
- * Mirrors the React adapter's `Message` shape but without the
- * web-only `attachments` field — RN v1 does not surface attachment chips.
+ * Mirrors the React adapter's `Message` shape end-to-end, including the
+ * `attachments` snapshot that captures the file metadata that rode along
+ * with each submitted message so the bubble has access to the picker
+ * descriptors after the live composer state has been cleared.
  */
 interface Message {
   id: string;
@@ -57,6 +68,26 @@ interface Message {
   text: string;
   sentAt?: number;
   issueSent?: boolean;
+  attachments?: readonly PickedFile[];
+}
+
+/**
+ * Cap mirrored from the SDK's `MAX_ATTACHMENT_COUNT` in
+ * `packages/sdk/src/submit.ts`. Enforced in the picker handler by clipping
+ * the appended slice and in the paperclip button's disabled state, so the
+ * UI never queues an attachment the SDK would reject downstream.
+ */
+const MAX_ATTACHMENTS = 5;
+
+/**
+ * Internal slot for a file picked through the OS picker. Carries a
+ * monotonic id alongside the picker descriptor so the AttachmentChip rows
+ * keep their React keys stable across removal of middle entries — matches
+ * the React adapter's `FileAttachment` shape.
+ */
+interface FileEntry {
+  id: number;
+  file: PickedFile;
 }
 
 const GREETING_MESSAGE: Message = {
@@ -235,6 +266,12 @@ export function FeedbackModal({
   const [draftError, setDraftError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [composerHeight, setComposerHeight] = useState(40);
+  const [files, setFiles] = useState<readonly FileEntry[]>([]);
+  // True while the OS document picker is mounted. Disables the paperclip
+  // and prevents double-tap stacked picker dialogs on Android, where the
+  // intent broadcast can interleave with a second picker.open before the
+  // first dialog finishes mounting.
+  const [picking, setPicking] = useState(false);
 
   // Tracks whether we've kicked off the on-open side-effects (config
   // fetch) for the current open. Reset on close so the next open re-runs
@@ -256,6 +293,10 @@ export function FeedbackModal({
   // Monotonic id for message keys so duplicate-content bubbles still
   // reconcile against distinct slots if the user re-sends the same text.
   const messageIdRef = useRef(0);
+  // Monotonic id for FileEntry keys so removing a middle attachment
+  // doesn't reconcile surviving rows against the wrong slots — same role
+  // as the React adapter's `fileIdRef`.
+  const fileIdRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -291,13 +332,17 @@ export function FeedbackModal({
   const showAiToggle =
     config?.ai_enabled === true && config.ai_submitter_choice_allowed === true;
 
+  const attachmentsAtCap = files.length >= MAX_ATTACHMENTS;
+
   // Has the user touched the form? Mirrors the React adapter's
   // `hasContent` check so the × button only triggers the discard-confirm
-  // when there's something to discard.
+  // when there's something to discard. Attachments count: a user who has
+  // queued a file but no description text still has unsaved work.
   const hasContent =
     description.trim().length > 0 ||
     expected.length > 0 ||
     actual.length > 0 ||
+    files.length > 0 ||
     messages.length > 1;
 
   const resetDraft = useCallback(() => {
@@ -309,7 +354,48 @@ export function FeedbackModal({
     setDraftError(null);
     setMessages(initialMessages());
     setConfirmClose(false);
+    setFiles([]);
     lastSubmittedInputRef.current = null;
+  }, []);
+
+  /**
+   * Open the platform document picker, append the picked files to the
+   * draft (capped at MAX_ATTACHMENTS), and surface a one-line inline note
+   * if no document-picker peer is installed. The picker abstraction never
+   * rejects, so the only failure path here is the missing-peer surface
+   * — `setDraftError` reuses the existing inline-error slot above the
+   * composer so a missing peer reads as guidance, not a crash.
+   */
+  const handlePickFiles = useCallback(async () => {
+    if (picking) return;
+    if (attachmentsAtCap) return;
+    setPicking(true);
+    try {
+      const picked = await pickFiles({ multiple: true });
+      if (!mountedRef.current) return;
+      if (picked === null) {
+        setDraftError(
+          'File attachments are unavailable. Install expo-document-picker or react-native-document-picker.',
+        );
+        return;
+      }
+      if (picked.length === 0) return;
+      setFiles((prev) => {
+        const remaining = MAX_ATTACHMENTS - prev.length;
+        if (remaining <= 0) return prev;
+        const next = picked.slice(0, remaining).map<FileEntry>((file) => ({
+          id: ++fileIdRef.current,
+          file,
+        }));
+        return [...prev, ...next];
+      });
+    } finally {
+      if (mountedRef.current) setPicking(false);
+    }
+  }, [picking, attachmentsAtCap]);
+
+  const handleRemoveFile = useCallback((id: number) => {
+    setFiles((prev) => prev.filter((entry) => entry.id !== id));
   }, []);
 
   // Auto-dismiss + draft reset on success. Runs after the user has had a
@@ -402,6 +488,23 @@ export function FeedbackModal({
       return;
     }
     setDraftError(null);
+
+    // Convert each picked URI to a Blob ahead of submit so the SDK's
+    // FeedbackAttachment contract (Blob + filename) is satisfied. We
+    // tolerate per-file read failures: a corrupt or revoked URI is
+    // dropped from the rideshare rather than aborting the whole submit
+    // — same permissive read-error stance the web adapter takes when a
+    // FileReader throws on an individual <input type=file> entry.
+    const attachments: Array<FeedbackAttachment> = [];
+    if (files.length > 0) {
+      for (const { file } of files) {
+        const blob = await uriToBlob(file.uri);
+        if (blob) {
+          attachments.push({ blob, filename: file.name });
+        }
+      }
+    }
+
     // Title derived from the first non-empty line of the trimmed draft so
     // leading whitespace doesn't pollute the issue title; description
     // itself is sent raw to preserve the user's intentional formatting.
@@ -411,8 +514,7 @@ export function FeedbackModal({
       description,
       expected: expected.trim() || undefined,
       actual: actual.trim() || undefined,
-      // RN v1 has no attachment surface; the field is omitted so the
-      // server picks up its default behaviour.
+      attachments: attachments.length ? attachments : undefined,
       ...(showAiToggle ? { use_ai: useAi } : {}),
     };
     lastSubmittedInputRef.current = input;
@@ -422,18 +524,25 @@ export function FeedbackModal({
     // what makes the wait feel fast — a synchronous bubble + cleared
     // input lets the staged-status rows below carry the rest of the
     // animation while the network round-trip is in flight (mirrors the
-    // React adapter's behaviour for issue #74).
+    // React adapter's behaviour for issue #74). The attachments snapshot
+    // rides on the bubble so a future render of submitted history can
+    // still show what was sent after the live `files` state has been
+    // cleared.
     const submittedDraft = description;
+    const filesSnapshot: readonly PickedFile[] | undefined =
+      files.length > 0 ? files.map(({ file }) => file) : undefined;
     const userMessage: Message = {
       id: `msg-${++messageIdRef.current}`,
       role: 'user',
       text: submittedDraft,
+      attachments: filesSnapshot,
     };
     setMessages((prev) => [...prev, userMessage]);
     setDescription('');
     setExpected('');
     setActual('');
     setShowExtras(false);
+    setFiles([]);
 
     try {
       const result = await submit(input);
@@ -456,7 +565,16 @@ export function FeedbackModal({
       // status to 'error' and stored the synthetic SubmitError. Nothing
       // else to do here.
     }
-  }, [status, description, expected, actual, showAiToggle, useAi, submit]);
+  }, [
+    status,
+    description,
+    expected,
+    actual,
+    files,
+    showAiToggle,
+    useAi,
+    submit,
+  ]);
 
   const handleRetry = useCallback(() => {
     setDraftError(null);
@@ -515,7 +633,7 @@ export function FeedbackModal({
               accessibilityLabel="Minimize"
               accessibilityRole="button"
             >
-              <Text style={styles.iconButtonLabel}>–</Text>
+              <MinimizeIcon color={palette.fgMuted} size={16} />
             </Pressable>
             <Pressable
               onPress={handleCloseClick}
@@ -524,7 +642,7 @@ export function FeedbackModal({
               accessibilityRole="button"
               disabled={submitting}
             >
-              <Text style={styles.iconButtonLabel}>×</Text>
+              <CloseIcon color={palette.fgMuted} size={16} />
             </Pressable>
           </View>
 
@@ -552,6 +670,17 @@ export function FeedbackModal({
                 </UserBubble>
               ),
             )}
+
+            {files.map(({ id, file }) => (
+              <AttachmentChip
+                key={id}
+                styles={styles}
+                palette={palette}
+                name={file.name}
+                size={file.size}
+                onRemove={() => handleRemoveFile(id)}
+              />
+            ))}
 
             <DisclosureExpectedActual
               styles={styles}
@@ -622,6 +751,26 @@ export function FeedbackModal({
 
           <View style={styles.composer}>
             <View style={styles.composerShell}>
+              <Pressable
+                onPress={handlePickFiles}
+                disabled={submitting || attachmentsAtCap || picking}
+                style={[
+                  styles.attachButton,
+                  (submitting || attachmentsAtCap || picking) &&
+                    styles.attachButtonDisabled,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  attachmentsAtCap
+                    ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
+                    : 'Attach file'
+                }
+                accessibilityState={{
+                  disabled: submitting || attachmentsAtCap || picking,
+                }}
+              >
+                <PaperclipIcon color={palette.fgMuted} size={18} />
+              </Pressable>
               <TextInput
                 value={description}
                 onChangeText={handleDescriptionChange}
@@ -660,7 +809,7 @@ export function FeedbackModal({
                 {submitting ? (
                   <ActivityIndicator color={palette.accentFg} size="small" />
                 ) : (
-                  <Text style={styles.sendButtonIcon}>➤</Text>
+                  <SendIcon color={palette.accentFg} size={16} />
                 )}
               </Pressable>
             </View>
@@ -681,6 +830,70 @@ export function FeedbackModal({
       </View>
     </Modal>
   );
+}
+
+interface AttachmentChipProps {
+  styles: ReturnType<typeof createWidgetStyles>;
+  palette: BrevwickPalette;
+  name: string;
+  size: number;
+  onRemove: () => void;
+}
+
+/**
+ * Chip rendered for each picked attachment. Mirrors the web React adapter's
+ * `<AttachmentChip>`: filename + human-readable size + a small × button to
+ * drop the file from the rideshare. Sits in the thread above the composer
+ * so the chip layout follows the standard list-item flow rather than a
+ * pinned tray; align-self: flex-end on `bubbleUser`-adjacent rows keeps the
+ * chip aligned with the message it accompanies.
+ */
+function AttachmentChip({
+  styles,
+  palette,
+  name,
+  size,
+  onRemove,
+}: AttachmentChipProps): ReactElement {
+  return (
+    <View style={styles.chip} accessibilityLabel={`Attachment: ${name}`}>
+      <Text
+        style={styles.chipName}
+        numberOfLines={1}
+        ellipsizeMode="middle"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        {name}
+      </Text>
+      <Text
+        style={styles.chipSize}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        {formatAttachmentSize(size)}
+      </Text>
+      <Pressable
+        onPress={onRemove}
+        style={styles.chipRemove}
+        accessibilityRole="button"
+        accessibilityLabel={`Remove ${name}`}
+        hitSlop={6}
+      >
+        <CloseIcon color={palette.fgMuted} size={12} />
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Human-readable byte-size formatter mirroring the web adapter's
+ * `formatSize` helper. Bytes for sub-kB files, decimal kB / MB above.
+ */
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 interface AIToggleProps {
@@ -756,7 +969,7 @@ function AssistantBubble({
       {issueSent ? (
         <View style={styles.receipt}>
           <View style={styles.statusCheck}>
-            <Text style={styles.statusCheckLabel}>✓</Text>
+            <CheckIcon color={palette.accentFg} size={10} />
           </View>
           <Text style={styles.receiptText}>
             Issue sent · {formatRelativeTime(sentAt)}
@@ -819,7 +1032,7 @@ function StatusRow({
     >
       {variant === 'check' ? (
         <View style={styles.statusCheck}>
-          <Text style={styles.statusCheckLabel}>✓</Text>
+          <CheckIcon color="#ffffff" size={10} />
         </View>
       ) : (
         <ActivityIndicator size="small" color={palette.fgMuted} />

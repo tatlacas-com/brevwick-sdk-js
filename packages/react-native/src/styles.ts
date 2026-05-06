@@ -160,12 +160,6 @@ export function createWidgetStyles(palette: BrevwickPalette) {
       paddingVertical: 6,
       borderRadius: 8,
     },
-    iconButtonLabel: {
-      color: palette.fgMuted,
-      fontSize: 18,
-      lineHeight: 18,
-      fontWeight: '600',
-    },
     thread: {
       paddingVertical: 8,
     },
@@ -230,12 +224,6 @@ export function createWidgetStyles(palette: BrevwickPalette) {
       backgroundColor: palette.success,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    statusCheckLabel: {
-      color: '#ffffff',
-      fontSize: 11,
-      fontWeight: '700',
-      lineHeight: 12,
     },
     retryRow: {
       flexDirection: 'row',
@@ -382,14 +370,52 @@ export function createWidgetStyles(palette: BrevwickPalette) {
     sendButtonDisabled: {
       opacity: 0.5,
     },
-    sendButtonIcon: {
-      color: palette.accentFg,
-      fontSize: 16,
-      fontWeight: '700',
-      // Tiny upward nudge so the U+27A4 glyph optical-centres in the 34px
-      // square; the glyph carries an asymmetric baseline that otherwise
-      // sits noticeably low.
-      lineHeight: 16,
+    // Square icon button anchoring the paperclip on the left of the
+    // composer shell. Same 34x34 footprint as `.sendButton` so the two
+    // ends of the shell read as visually balanced; transparent fill so
+    // the shell's rounded background carries through.
+    attachButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      backgroundColor: 'transparent',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    attachButtonDisabled: {
+      opacity: 0.5,
+    },
+    // AttachmentChip — visual twin of the web adapter's `.brw-chip`.
+    // align-self: flex-end so the chip sits on the user side of the
+    // thread, the way a fresh attachment reads as "what I just queued".
+    chip: {
+      alignSelf: 'flex-end',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.bubbleAssistantBg,
+      maxWidth: '85%',
+    },
+    chipName: {
+      flexShrink: 1,
+      color: palette.fg,
+      fontSize: 12,
+    },
+    chipSize: {
+      color: palette.fgMuted,
+      fontSize: 12,
+    },
+    chipRemove: {
+      width: 20,
+      height: 20,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     aiToggleWrap: {
       flexDirection: 'row',
