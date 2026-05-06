@@ -1,5 +1,67 @@
 # brevwick-sdk
 
+## 1.0.0-beta.11
+
+### Patch Changes
+
+- [#109](https://github.com/tatlacas-com/brevwick-sdk-js/pull/109) [`c3d5300`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/c3d5300740bcb30c15a4b75eff484c81786b0b7c) Thanks [@tatlacas](https://github.com/tatlacas)! - **fix:** the console + network rings now install **synchronously** inside `Brevwick.install()` instead of being dynamic-imported. The previous shape registered the rings as `() => import('../rings/console')` / `() => import('../rings/network')` thunks resolved by `install()`; until those chunks landed, `globalThis.fetch`, `XMLHttpRequest.prototype.*`, and `console.*` were unpatched, and any error / failing request fired in that window was lost. Symptom: bug reports arrived at the dashboard with empty `console_errors` / `network_calls` even when the user clearly saw both in DevTools, especially on first visits with a cold CDN.
+
+  The capture race is now covered by `packages/sdk/src/__tests__/integration/install-race.test.ts`, which fires a `console.error` and a failing `fetch` on the synchronous turn after `install()` (no `await internal.ready()`) and asserts both land in the submitted payload.
+
+  **Bundle budget bump:** the eager core gzip ceiling moves from 2.85 kB → 8 kB. The figure now reflects the _true_ eager weight (`index.js` plus every chunk it pulls in via static `import` / `export … from`) rather than `index.js` alone — `chunk-split.test.ts` and `.size-limit.js` were both updated to walk the static-import graph so the metric matches what consumers' bundlers actually inline. Mirrored in `CLAUDE.md`, `CONTRIBUTING.md`, and `packages/sdk/README.md`. The on-widget-open and per-adapter budgets are unchanged.
+
+- [#107](https://github.com/tatlacas-com/brevwick-sdk-js/pull/107) [`e9f24aa`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/e9f24aaba3079d62488e190aadf5c2aca1f6504d) Thanks [@tatlacas](https://github.com/tatlacas)! - fix(sdk): compensate for inner overflow:auto scrollTop/scrollLeft so the
+  capture matches what the user is looking at, not the top of the
+  container's scroll extent.
+
+  Apps whose visible viewport lives on an inner element rather than the
+  window — Tailwind admin shells (`<main class="overflow-y-auto">`),
+  dashboards with sticky headers and a scrolling content well, anything
+  that pins `<html>`/`<body>` to viewport size and scrolls a child —
+  were the original failure mode behind the brevwick-web#254 / PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
+  "blank screenshot" reports. `modern-screenshot` clones the capture
+  subtree into an SVG `<foreignObject>` and the clone resets `scrollTop`
+  and `scrollLeft` on every overflow:auto/scroll descendant to (0, 0).
+  Once the user had scrolled mid-way down, captures rasterized the _top_
+  of the inner scrollable area rather than the visible content — partial
+  or fully blank WebPs depending on what happened to live at the top of
+  that scroll extent.
+
+  PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103) flipped the default capture root from `documentElement` to
+  `body`, which changed which slice of the page accidentally got
+  captured but did not fix the underlying reset — the previous
+  "foreignObject inside documentElement" hypothesis was wrong.
+
+  What changed: `screenshot.ts` now walks overflow:auto/scroll
+  descendants of the capture root with non-zero `scrollTop`/`scrollLeft`,
+  leaves the container's `overflow` clip in place, and translates each
+  direct element child by `(-scrollLeft, -scrollTop)` with
+  `transform-origin: 0 0` for the duration of the capture. The
+  container's box stays the same so clipping is preserved; the children
+  render at the offset the user sees, exactly as in the live tree.
+  Restored unconditionally in the same `try/finally` block as the
+  `[data-brevwick-skip]` scrub, ref-counted via WeakMap so concurrent
+  captures do not leak transforms.
+
+  Sticky/fixed handling: `position: sticky` and `position: fixed` direct
+  children are explicitly skipped by the compensation pass — translating
+  them by `-scrollTop` would rasterize the pinned element off the top of
+  the captured frame, re-introducing the partial-blank symptom this PR
+  fixes for sticky-header dashboards. Skipped children render at their
+  intrinsic flow position in the clone, which is roughly where the user
+  sees a `top:0`-stuck header. Not pixel-perfect (faithful reconstruction
+  needs per-child geometry), but strictly better than translating
+  off-screen.
+
+  Other limitations called out in JSDoc: inline `style.transform` on a
+  direct child composes by _prepending_ the translate; RTL `scrollLeft`
+  semantics are not normalised; window scroll continues to be handled by
+  `modern-screenshot` itself. Real-browser pixel coverage of the
+  rasterized output remains tracked separately via [#104](https://github.com/tatlacas-com/brevwick-sdk-js/issues/104).
+
+  The non-SDK adapter packages get a no-op patch bump to stay in
+  lockstep per the repo's pre-1.0 versioning policy.
+
 ## 1.0.0-beta.10
 
 ### Minor Changes
