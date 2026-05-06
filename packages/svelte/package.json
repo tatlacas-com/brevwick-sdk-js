@@ -22,7 +22,9 @@
   ],
   "sideEffects": false,
   "scripts": {
+    "prebuild": "node scripts/generate-version.mjs",
     "build": "svelte-package -i src/lib -o dist && publint",
+    "predev": "node scripts/generate-version.mjs",
     "dev": "svelte-package -i src/lib -o dist --watch",
     "test": "vitest run",
     "test:cover": "vitest run --coverage",

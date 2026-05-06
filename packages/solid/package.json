@@ -29,7 +29,9 @@
   ],
   "sideEffects": false,
   "scripts": {
+    "prebuild": "node scripts/generate-version.mjs",
     "build": "tsup",
+    "predev": "node scripts/generate-version.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:cover": "vitest run --coverage",
