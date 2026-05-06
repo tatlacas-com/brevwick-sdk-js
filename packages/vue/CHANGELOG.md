@@ -1,5 +1,11 @@
 # @tatlacas/brevwick-vue
 
+## 1.0.0-beta.13
+
+### Minor Changes
+
+- [#119](https://github.com/tatlacas-com/brevwick-sdk-js/pull/119) [`721113f`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/721113f4dcc011905110a5c2c21a30556297816b) Thanks [@tatlacas](https://github.com/tatlacas)! - Bring `<FeedbackButton>` to UX parity with the React adapter ([#112](https://github.com/tatlacas-com/brevwick-sdk-js/issues/112)). The widget now renders the chat-thread panel (assistant + user bubbles, receipt with relative-time), expected-vs-actual disclosure, phase-driven status rows, retry row, discard-confirm flow, AI toggle render-policy matrix, autogrow composer, and minimize button. The Vue `useFeedback()` composable is extended with `phase`, `error`, `retry` accessors and a new `internal-bridge.ts` subscribes to the SDK's phase bus. Bundle budget bumped 5 kB → 10 kB.
+
 ## 1.0.0-beta.11
 
 ### Minor Changes

@@ -24,6 +24,7 @@
   "changesets": [
     "ai-toggle-switch-redesign",
     "angular-bindings",
+    "angular-widget-parity",
     "brevwick-vue-adapter",
     "busy-insects-rule",
     "chat-panel-redesign",
@@ -49,10 +50,12 @@
     "react-theme-prop",
     "region-capture",
     "release-infrastructure",
+    "release-version-sync",
     "rename-reports-to-issues",
     "rn-feedback-button",
     "rn-provider-hook",
     "rn-route-ring-helper-and-docs",
+    "rn-widget-parity",
     "scope-to-tatlacas-org",
     "screenshot-default-body",
     "screenshot-dialog-title",
@@ -60,12 +63,14 @@
     "sha256-checksum-on-presign",
     "size-limit-budgets",
     "solid-bindings",
+    "solid-widget-parity",
     "staged-status-feedback-ux",
     "submit-pipeline",
     "svelte-bindings",
     "svelte-widget-parity",
     "theming-composer-shell",
     "use-ai-toggle",
-    "v1-disable-screenshot-button"
+    "v1-disable-screenshot-button",
+    "vue-widget-parity"
   ]
 }
