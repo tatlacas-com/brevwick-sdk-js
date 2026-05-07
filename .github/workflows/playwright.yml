@@ -15,7 +15,7 @@ name: Playwright e2e (real-browser screenshot)
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'packages/sdk/**'
       - 'examples/next/**'
@@ -23,7 +23,7 @@ on:
       - 'playwright.config.ts'
       - '.github/workflows/playwright.yml'
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'packages/sdk/**'
       - 'examples/next/**'
