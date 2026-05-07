@@ -6,7 +6,7 @@ Never blindly implement a suggestion. Apply critical thinking — push back when
 
 **No shortcuts or temporary fixes.** Do not implement workarounds or "for now" solutions that paper over a real problem. If the proper fix belongs in a different repo or requires upstream work, say so and stop. Every fix must address the root cause.
 
-**Never commit and push directly to `main` or `beta`.** Both are protected — all changes go through a PR. No exceptions. Day-to-day work targets `beta` (the default branch); `main` only receives promotion PRs from `beta` (see Release Channels below).
+**Never commit and push directly to `main` or `dev`.** Both are protected — all changes go through a PR. No exceptions. Day-to-day work targets `dev` (the default branch); `main` only receives promotion PRs from `dev` (see Release Channels below).
 
 **Auto-commit, push, and open PR on branches.** When working on a `feat/fix/chore` branch, commit, push, **and create a PR with `gh pr create`** without asking. Every push to a branch must result in a PR. If a PR already exists, just push.
 
@@ -28,8 +28,8 @@ If CI is failing, **immediately investigate and fix** — do not ask whether to 
 
 ```bash
 git fetch origin
-# Branch from origin/beta, not local beta (may be stale). beta is the default branch.
-git worktree add ../brevwick-sdk-js-issue-<N> -b feat/issue-<N>-short-desc origin/beta
+# Branch from origin/dev, not local dev (may be stale). dev is the default branch.
+git worktree add ../brevwick-sdk-js-issue-<N> -b feat/issue-<N>-short-desc origin/dev
 cd ../brevwick-sdk-js-issue-<N>
 ```
 
@@ -66,7 +66,7 @@ When the user asks to write or update a worktree.md, follow this convention. Exi
   ```bash
   cd ~/repos/brevwick/<repo>
   git fetch origin
-  git worktree add ../<repo>-wt-<slug> -b <type>/<branch-name> origin/beta
+  git worktree add ../<repo>-wt-<slug> -b <type>/<branch-name> origin/dev
   cd ../<repo>-wt-<slug>
 
   claude --dangerously-skip-permissions "
@@ -137,18 +137,22 @@ All seven packages move together (linked in `.changeset/config.json`). Versions 
 
 Two long-lived branches map to two npm dist-tags:
 
-| Branch           | npm dist-tag | Purpose                                                            |
-| ---------------- | ------------ | ------------------------------------------------------------------ |
-| `beta` (default) | `beta`       | Day-to-day integration; every merge can publish a new `-beta.N`    |
-| `main`           | `latest`     | Stable releases only, fed exclusively by promotion PRs from `beta` |
+| Branch          | npm dist-tag | Purpose                                                           |
+| --------------- | ------------ | ----------------------------------------------------------------- |
+| `dev` (default) | `beta`       | Day-to-day integration; every merge can publish a new `-beta.N`   |
+| `main`          | `latest`     | Stable releases only, fed exclusively by promotion PRs from `dev` |
+
+> **Branch and dist-tag intentionally diverge on the prerelease channel.** The branch (`dev`) is for contributors; the dist-tag (`beta`) is for installers (`npm install @tatlacas/brevwick-sdk@beta`). Don't "fix" the mismatch — it's intentional.
+>
+> Concrete consequence: the workflow file is `release-dev.yml` (named for the source branch, like `release.yml`), but inside it `pnpm release:beta` runs `changeset publish --tag beta`. The pre-mode tag in `.changeset/pre.json` is also `beta`.
 
 ### Day-to-day flow (the 99% case)
 
-1. `git fetch origin` then branch from `origin/beta` (the default branch).
+1. `git fetch origin` then branch from `origin/dev` (the default branch).
 2. Make changes; add a changeset (`pnpm changeset`).
-3. Push branch, open PR into `beta` with `gh pr create`.
-4. CI passes → squash-merge into `beta`.
-5. `release-beta.yml` opens (or updates) a "Version Packages (beta)" PR. Merging it publishes `-beta.N` to the `beta` dist-tag.
+3. Push branch, open PR into `dev` with `gh pr create`.
+4. CI passes → squash-merge into `dev`.
+5. `release-dev.yml` opens (or updates) a "Version Packages (dev)" PR. Merging it publishes `-beta.N` to the npm `beta` dist-tag.
 
 ### Stable promotion (occasional)
 
@@ -160,14 +164,14 @@ git checkout -b chore/promote-<version> origin/main
 ./scripts/promote-stable.sh
 ```
 
-The script merges `beta` into the branch, exits changesets pre mode, pushes, and opens a `beta → main` PR. After that PR merges, `release.yml` on `main` opens a "Version Packages" PR with stable bumps; merging it publishes to the `latest` dist-tag.
+The script merges `dev` into the branch, exits changesets pre mode, pushes, and opens a `dev → main` PR. After that PR merges, `release.yml` on `main` opens a "Version Packages" PR with stable bumps; merging it publishes to the `latest` dist-tag.
 
-After stable ships, resume the beta channel:
+After stable ships, resume the prerelease channel:
 
 ```bash
 git fetch origin
-git checkout -b chore/resume-beta-<version> origin/beta
-./scripts/resume-beta.sh
+git checkout -b chore/resume-dev-<version> origin/dev
+./scripts/resume-dev.sh
 ```
 
 ### Rules
@@ -175,14 +179,14 @@ git checkout -b chore/resume-beta-<version> origin/beta
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - Subject ≤ 72 chars
 - No `Co-Authored-By` headers — no Claude attribution anywhere
-- Squash-merge only on both `beta` and `main`
+- Squash-merge only on both `dev` and `main`
 
 ### Branch protection
 
-Both `beta` and `main` are protected:
+Both `dev` and `main` are protected:
 
 - Squash-merge only; no direct push, no force-push, no deletion.
 - Required status checks: `check`, `codecov/patch`, `codecov/project`.
 - Stale reviews dismissed on new push.
 
-`main` additionally enforces (via `guard-deploy-branches.yml`) that PRs into it must come from the `beta` branch — use `scripts/promote-stable.sh`, do not open a feature-branch PR straight into `main`.
+`main` additionally enforces (via `guard-deploy-branches.yml`) that PRs into it must come from `dev`, a `chore/promote-*` branch, or `changeset-release/main` — use `scripts/promote-stable.sh`, do not open a feature-branch PR straight into `main`.

@@ -1,8 +1,11 @@
-name: Release (beta)
+# Triggers on push to dev. Publishes prerelease versions to npm 'beta' dist-tag.
+# Branch and dist-tag intentionally diverge: branch is for contributors, dist-tag
+# is for installers. See CLAUDE.md "Release Channels".
+name: Release (dev)
 
 on:
   push:
-    branches: [beta]
+    branches: [dev]
 
 concurrency:
   group: release-${{ github.ref }}
@@ -28,14 +31,14 @@ jobs:
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
       - run: pnpm install --frozen-lockfile
-      - name: Create Release PR or publish (beta)
+      - name: Create Release PR or publish (dev → beta dist-tag)
         uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf # v1.7.0
         with:
           version: pnpm version-packages
           publish: pnpm release:beta
           createGithubReleases: true
-          title: 'Version Packages (beta)'
-          commit: 'chore(release): version packages (beta)'
+          title: 'Version Packages (dev)'
+          commit: 'chore(release): version packages (dev)'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
