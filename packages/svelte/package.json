@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-svelte",
-  "version": "1.0.0-beta.12",
+  "version": "1.0.0",
   "description": "Brevwick Svelte bindings — context, FAB, getFeedback. Drop-in for Svelte 5 and SvelteKit apps.",
   "license": "MIT",
   "type": "module",
