@@ -2,14 +2,14 @@ name: Guard deploy branches
 
 on:
   pull_request:
-    branches: [beta, stable]
+    branches: [main]
 
 jobs:
   check-source:
     runs-on: ubuntu-latest
     steps:
-      - name: Only allow merges from main
-        if: github.head_ref != 'main'
+      - name: Only allow merges from beta
+        if: github.head_ref != 'beta'
         run: |
-          echo "::error::Only the 'main' branch can be merged into '${{ github.base_ref }}'. Got '${{ github.head_ref }}'."
+          echo "::error::Only the 'beta' branch can be merged into 'main'. Got '${{ github.head_ref }}'. Use scripts/promote-stable.sh to open a promotion PR."
           exit 1

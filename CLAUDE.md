@@ -6,7 +6,7 @@ Never blindly implement a suggestion. Apply critical thinking — push back when
 
 **No shortcuts or temporary fixes.** Do not implement workarounds or "for now" solutions that paper over a real problem. If the proper fix belongs in a different repo or requires upstream work, say so and stop. Every fix must address the root cause.
 
-**Never commit and push directly to `main`.** `main` is protected — all changes go through a PR. No exceptions.
+**Never commit and push directly to `main` or `beta`.** Both are protected — all changes go through a PR. No exceptions. Day-to-day work targets `beta` (the default branch); `main` only receives promotion PRs from `beta` (see Release Channels below).
 
 **Auto-commit, push, and open PR on branches.** When working on a `feat/fix/chore` branch, commit, push, **and create a PR with `gh pr create`** without asking. Every push to a branch must result in a PR. If a PR already exists, just push.
 
@@ -28,8 +28,8 @@ If CI is failing, **immediately investigate and fix** — do not ask whether to 
 
 ```bash
 git fetch origin
-# Branch from origin/main, not local main (may be stale)
-git worktree add ../brevwick-sdk-js-issue-<N> -b feat/issue-<N>-short-desc origin/main
+# Branch from origin/beta, not local beta (may be stale). beta is the default branch.
+git worktree add ../brevwick-sdk-js-issue-<N> -b feat/issue-<N>-short-desc origin/beta
 cd ../brevwick-sdk-js-issue-<N>
 ```
 
@@ -66,7 +66,7 @@ When the user asks to write or update a worktree.md, follow this convention. Exi
   ```bash
   cd ~/repos/brevwick/<repo>
   git fetch origin
-  git worktree add ../<repo>-wt-<slug> -b <type>/<branch-name> origin/main
+  git worktree add ../<repo>-wt-<slug> -b <type>/<branch-name> origin/beta
   cd ../<repo>-wt-<slug>
 
   claude --dangerously-skip-permissions "
@@ -127,42 +127,62 @@ Every payload that leaves the device runs through `redact()` first. Adding a new
 
 ## Versioning
 
-Both packages move together for now (kept in lockstep). Once Phase 4 ships and the API is stable, they may diverge — at that point introduce changesets.
+All seven packages move together (linked in `.changeset/config.json`). Versions follow SemVer from `1.0.0` onward — the `1.0.0-beta.X` train is the lead-up to the first stable.
 
-Pre-1.0 (`0.x.y`):
+- `feat:` — minor bump
+- `fix:` / `refactor:` — patch bump
+- Breaking change — major bump (call it out in the changeset body)
 
-- patch: bug fixes, internal refactors
-- minor: anything else (no SemVer guarantee in 0.x)
+## Release Channels
 
-## Branching & PR Workflow
+Two long-lived branches map to two npm dist-tags:
 
+| Branch           | npm dist-tag | Purpose                                                            |
+| ---------------- | ------------ | ------------------------------------------------------------------ |
+| `beta` (default) | `beta`       | Day-to-day integration; every merge can publish a new `-beta.N`    |
+| `main`           | `latest`     | Stable releases only, fed exclusively by promotion PRs from `beta` |
+
+### Day-to-day flow (the 99% case)
+
+1. `git fetch origin` then branch from `origin/beta` (the default branch).
+2. Make changes; add a changeset (`pnpm changeset`).
+3. Push branch, open PR into `beta` with `gh pr create`.
+4. CI passes → squash-merge into `beta`.
+5. `release-beta.yml` opens (or updates) a "Version Packages (beta)" PR. Merging it publishes `-beta.N` to the `beta` dist-tag.
+
+### Stable promotion (occasional)
+
+Run from a fresh chore branch off `origin/main`:
+
+```bash
+git fetch origin
+git checkout -b chore/promote-<version> origin/main
+./scripts/promote-stable.sh
 ```
-main (protected)
-  └── feat/<short-description>
-  └── fix/<short-description>
-  └── chore/<short-description>
+
+The script merges `beta` into the branch, exits changesets pre mode, pushes, and opens a `beta → main` PR. After that PR merges, `release.yml` on `main` opens a "Version Packages" PR with stable bumps; merging it publishes to the `latest` dist-tag.
+
+After stable ships, resume the beta channel:
+
+```bash
+git fetch origin
+git checkout -b chore/resume-beta-<version> origin/beta
+./scripts/resume-beta.sh
 ```
-
-### Workflow steps
-
-1. `git fetch origin` then create branch from `origin/main` (never from local `main`).
-2. Make changes, commit with conventional commits.
-3. Push branch, create PR with `gh pr create`.
-4. PR body references the issue (`Closes #<number>`) where applicable; link the SDD § 12 contract for public API changes.
-5. Wait for CI to pass. Squash-merge into `main` (the only allowed merge method).
 
 ### Rules
 
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - Subject ≤ 72 chars
 - No `Co-Authored-By` headers — no Claude attribution anywhere
+- Squash-merge only on both `beta` and `main`
 
-### Branch protection (`main`)
+### Branch protection
+
+Both `beta` and `main` are protected:
 
 - Squash-merge only; no direct push, no force-push, no deletion.
 - Required status checks: `check`, `codecov/patch`, `codecov/project`.
 - Stale reviews dismissed on new push.
 
-### Deploy branches
-
-- `beta` and `stable` (if/when introduced) are deploy branches. PRs to them must originate from `main` (enforced by `guard-deploy-branches.yml`).
+`main` additionally enforces (via `guard-deploy-branches.yml`) that PRs into it must come from the `beta` branch — use `scripts/promote-stable.sh`, do not open a feature-branch PR straight into `main`.
