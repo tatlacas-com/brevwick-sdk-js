@@ -8,8 +8,8 @@ jobs:
   check-source:
     runs-on: ubuntu-latest
     steps:
-      - name: Only allow merges from beta
-        if: github.head_ref != 'beta'
+      - name: Only allow merges from beta or a chore/promote-* branch
+        if: github.head_ref != 'beta' && !startsWith(github.head_ref, 'chore/promote-')
         run: |
-          echo "::error::Only the 'beta' branch can be merged into 'main'. Got '${{ github.head_ref }}'. Use scripts/promote-stable.sh to open a promotion PR."
+          echo "::error::Only 'beta' or a 'chore/promote-*' branch can be merged into 'main'. Got '${{ github.head_ref }}'. Use scripts/promote-stable.sh to open a promotion PR."
           exit 1
