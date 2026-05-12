@@ -268,7 +268,7 @@ Bundler`) trying to resolve `dist/` before it has been built.
   window — Tailwind admin shells (`<main class="overflow-y-auto">`),
   dashboards with sticky headers and a scrolling content well, anything
   that pins `<html>`/`<body>` to viewport size and scrolls a child —
-  were the original failure mode behind the brevwick-web#254 / PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
+  were the original failure mode behind the PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
   "blank screenshot" reports. `modern-screenshot` clones the capture
   subtree into an SVG `<foreignObject>` and the clone resets `scrollTop`
   and `scrollLeft` on every overflow:auto/scroll descendant to (0, 0).
@@ -373,7 +373,7 @@ Bundler`) trying to resolve `dist/` before it has been built.
   window — Tailwind admin shells (`<main class="overflow-y-auto">`),
   dashboards with sticky headers and a scrolling content well, anything
   that pins `<html>`/`<body>` to viewport size and scrolls a child —
-  were the original failure mode behind the brevwick-web#254 / PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
+  were the original failure mode behind the PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
   "blank screenshot" reports. `modern-screenshot` clones the capture
   subtree into an SVG `<foreignObject>` and the clone resets `scrollTop`
   and `scrollLeft` on every overflow:auto/scroll descendant to (0, 0).

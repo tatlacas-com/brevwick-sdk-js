@@ -9,8 +9,8 @@
  * That means the unit suite cannot prove that real Chromium actually
  * paints non-blank pixels for the default-body capture path.
  *
- * `captureScreenshot()`'s default capture root has now flipped twice
- * (PR #103, brevwick-web #254). Each fix landed against mock-only
+ * `captureScreenshot()`'s default capture root has flipped multiple
+ * times (most recently PR #103). Each fix landed against mock-only
  * coverage and each one eventually regressed with a fresh "blank
  * screenshot" report. This spec drives the live DOM against Chromium
  * so the next regression breaks CI before it reaches a user.

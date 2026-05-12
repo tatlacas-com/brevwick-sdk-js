@@ -7,34 +7,29 @@ hard-coded issue when a button is clicked.
 > Looking for a no-build-tool version that runs straight from `index.html`?
 > See [`../static`](../static).
 
-## Works locally
+## Run it
 
-1. Bring up the local API stack:
-   ```bash
-   docker compose -f ../../../brevwick-api/docker-compose.dev.yml up -d
-   ```
-   Then start `brevwick-api` itself on `http://localhost:8080` (see
-   `brevwick-api/README.md`).
-2. Seed a test project key with `bwctl` and copy it into `.env`:
+1. Get a project key from your Brevwick dashboard and copy it into `.env`:
    ```bash
    cp .env.example .env
    # edit VITE_BREVWICK_KEY=pk_test_…
+   # edit VITE_API_BASE    =https://api.your-brevwick-host.example  (or http://localhost:8080 against a local instance)
    ```
-3. From the repo root, build the SDK and run the example:
+2. From the repo root, build the SDK and run the example:
    ```bash
    pnpm install
    pnpm --filter @tatlacas/brevwick-sdk build
    pnpm --filter brevwick-example-vanilla dev
    ```
-4. Open http://localhost:5173 and click **Send feedback**.
-5. Confirm the issue appears in `brevwick-web` → `/app/inbox`.
+3. Open http://localhost:5173 and click **Send feedback**.
+4. Confirm the submission lands in your Brevwick dashboard inbox.
 
 ## Environment
 
 Both variables are **required** for this example — it fails closed in-page if
 either is missing. The SDK's own `endpoint` default (`https://api.brevwick.com`)
-is the production SaaS; this example is explicitly scoped to a local
-`brevwick-api` and refuses to fall through to production.
+is the production SaaS; this example is explicitly scoped to whatever ingest
+host you configure and refuses to silently fall through.
 
 | Variable            | Required | Purpose                                                              |
 | ------------------- | -------- | -------------------------------------------------------------------- |

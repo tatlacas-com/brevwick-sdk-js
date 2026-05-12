@@ -7,8 +7,7 @@
  * top of React Navigation, so the same hook serves both — see
  * `tatlacas-com/brevwick-sdk-js#87` and SDD § 12 `route_trail`.
  *
- * Mirrors Flutter's `BrevwickRouteObserver` (`brevwick-sdk-flutter/lib/src
- * /rings/route.dart`) three-stage redaction:
+ * Mirrors the Flutter SDK's `BrevwickRouteObserver` three-stage redaction:
  *
  * 1. Named-placeholder segments matching {@link SENSITIVE_PARAM_KEYS}
  *    (`:token`, `:auth`, `:key`, `:session`, `:sig`) become

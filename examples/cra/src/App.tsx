@@ -76,8 +76,8 @@ export function App(): ReactElement {
         {error === 'missing-endpoint' && (
           <p style={{ color: '#b42318' }}>
             Missing <code>REACT_APP_BREVWICK_ENDPOINT</code>. Point it at your
-            local <code>brevwick-api</code> (e.g.{' '}
-            <code>http://localhost:8080</code>) in <code>.env.local</code>.
+            Brevwick ingest host (e.g. <code>http://localhost:8080</code> for a
+            local instance) in <code>.env.local</code>.
           </p>
         )}
       </section>

@@ -170,10 +170,10 @@ rings: {
 
 > **Wire contract — behaviour change.** The submitted issue payload renames the
 > network ring's wire field from `network_errors` → `network_calls`. The
-> companion server-side change in `brevwick-api` (sanitiser + ingest schema
-> shape-lock fixtures) ships in lockstep. Consumers that previously read
-> `network_errors` off captured payloads must follow the rename — this is a
-> breaking wire change in the pre-1.0 series.
+> server-side ingest (sanitiser + schema shape-lock fixtures) mirrors the
+> rename in lockstep. Consumers that previously read `network_errors` off
+> captured payloads must follow the rename — this is a breaking wire change
+> in the pre-1.0 series.
 
 ### `redact`
 
@@ -301,8 +301,8 @@ const blob = await bw.captureScreenshot({
 **About the `document.body` default:** prior to this version the default
 was `document.documentElement`. We changed it because the
 `documentElement` default reproduced as a ~2 KiB blank image in at least
-one consumer (tatlacas-com/brevwick-web#254) and `modern-screenshot`'s
-own README captures against `<body>`. The exact failure mode of the
+one consumer integration and `modern-screenshot`'s own README captures
+against `<body>`. The exact failure mode of the
 `documentElement` path is not yet root-caused — treat the new default as
 a behaviour-improving change rather than a verified upstream fix. Two
 behaviour changes worth knowing:

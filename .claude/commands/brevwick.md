@@ -82,7 +82,7 @@ After fetch, if `STATE` is closed/done/cancelled/won't-fix → abort: `Issue is 
 
 ## STEP 3 — Assess (no edits yet)
 
-Read the current repo's `CLAUDE.md` (`git rev-parse --show-toplevel` → `CLAUDE.md`). Read any `*-worktree.md` files at the repo root for active-initiative context.
+Read the current repo's `CLAUDE.md` (`git rev-parse --show-toplevel` → `CLAUDE.md`).
 
 Apply this decision matrix to the fetched issue:
 
@@ -133,17 +133,15 @@ Save any clarifications received in step 3 to `notes/issue-${ID}-context.md` so 
 
 ## STEP 6 — CI gauntlet
 
-Read the CI command from this repo's `CLAUDE.md`. Brevwick repos:
+Read the CI command from this repo's `CLAUDE.md`. For `brevwick-sdk-js`:
 
-| Repo                   | Command                                                                                                                |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `brevwick-api`         | `make lint && make test`                                                                                               |
-| `brevwick-web`         | `pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm type-check && pnpm test:cover && pnpm build` |
-| `brevwick-sdk-js`      | same as `-web` (add `pnpm size` if change touches bundle-budgeted code per CLAUDE.md § bundle budgets)                 |
-| `brevwick-sdk-flutter` | `flutter pub get && dart format --set-exit-if-changed . && dart analyze && flutter test --coverage`                    |
-| `brevwick-ops`         | `/voice-check` on changed markdown                                                                                     |
+```
+pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm type-check && pnpm test:cover && pnpm build
+```
 
-For an unknown repo (customer install): `grep -E "CI gauntlet\|ci\.yml" CLAUDE.md`. If nothing usable, ask the user once via `AskUserQuestion`: which command mirrors `.github/workflows/ci.yml`? Save the answer to `notes/issue-${ID}-context.md` for future runs.
+Add `pnpm size` if the change touches bundle-budgeted code (see CLAUDE.md § bundle budgets).
+
+For any other repo: `grep -E "CI gauntlet\|ci\.yml" CLAUDE.md`. If nothing usable, ask the user once via `AskUserQuestion`: which command mirrors `.github/workflows/ci.yml`? Save the answer to `notes/issue-${ID}-context.md` for future runs.
 
 On any failure, fix the root cause and re-run the **full** chain. Never push partial-green.
 
