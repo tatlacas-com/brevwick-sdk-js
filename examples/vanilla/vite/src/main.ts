@@ -23,16 +23,17 @@ function fail(message: string): void {
 }
 
 // Fail closed on missing / placeholder config. This example is explicitly
-// scoped to a local `brevwick-api`, so we refuse to fall through to the SDK's
-// production default (`https://api.brevwick.com`) when the endpoint env var
-// is unset — silently hitting prod from a local-dev example is a footgun.
+// scoped to whatever ingest host the env var points at, so we refuse to
+// fall through to the SDK's production default (`https://api.brevwick.com`)
+// when the endpoint env var is unset — silently hitting prod from a
+// local-dev example is a footgun.
 if (!projectKey || projectKey === PLACEHOLDER_KEY) {
   fail(
     'Missing VITE_BREVWICK_KEY — copy .env.example to .env and set your pk_test_… key.',
   );
 } else if (!endpoint) {
   fail(
-    'Missing VITE_API_BASE — copy .env.example to .env and point it at your local brevwick-api (e.g. http://localhost:8080).',
+    'Missing VITE_API_BASE — copy .env.example to .env and point it at your Brevwick ingest host (e.g. http://localhost:8080 for a local instance).',
   );
 } else {
   // This demo scopes itself to a one-shot `submit()`; the error/network/route

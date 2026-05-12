@@ -74,15 +74,15 @@ export function App(): ReactElement {
         {error === 'invalid-key' && (
           <p style={{ color: '#b42318' }}>
             <code>VITE_BREVWICK_PROJECT_KEY</code> is malformed. It must match{' '}
-            <code>pk_(live|test)_[A-Za-z0-9]{'{16,}'}</code>. Re-run{' '}
-            <code>bwctl</code> and update <code>.env.local</code>.
+            <code>pk_(live|test)_[A-Za-z0-9]{'{16,}'}</code>. Copy a fresh key
+            from your Brevwick dashboard into <code>.env.local</code>.
           </p>
         )}
         {error === 'missing-endpoint' && (
           <p style={{ color: '#b42318' }}>
-            Missing <code>VITE_BREVWICK_ENDPOINT</code>. Point it at your local{' '}
-            <code>brevwick-api</code> (e.g. <code>http://localhost:8080</code>)
-            in <code>.env.local</code>.
+            Missing <code>VITE_BREVWICK_ENDPOINT</code>. Point it at your
+            Brevwick ingest host (e.g. <code>http://localhost:8080</code> for a
+            local instance) in <code>.env.local</code>.
           </p>
         )}
       </section>

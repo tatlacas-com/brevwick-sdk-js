@@ -27,7 +27,7 @@
  *   - The SDK passes the LIVE `document.body` element (not a detached
  *     clone) to `domToBlob`, so when `modern-screenshot` walks ancestor
  *     stylesheets and inlines computed styles, the `:root`-scoped CSS
- *     custom properties brevwick-web ships are reachable. Asserted by
+ *     custom properties the host app ships are reachable. Asserted by
  *     reading `getComputedStyle` on a body descendant from inside a
  *     wrapper that lets the call proceed otherwise un-mocked.
  *   - The `[data-brevwick-skip]` scrub runs against the live tree before
@@ -172,7 +172,7 @@ describe('integration — captureScreenshot() against a real DOM subtree', () =>
     // Scrub ran against the live tree before the renderer was invoked.
     expect(observedSkipDuringCapture).toBe('hidden');
     // :root CSS-var inheritance survives at capture time on the live
-    // subtree (the invariant brevwick-web's design tokens depend on).
+    // subtree (the invariant the host app's design tokens depend on).
     expect(observedTokenColor).toBe('rgb(11, 22, 33)');
     // Renderer failure was caught and produced a valid placeholder.
     expect(blob).toBeInstanceOf(Blob);

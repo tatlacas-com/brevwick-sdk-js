@@ -81,7 +81,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * this, a typo in config on the second `createBrevwick` call spawns a
  * shadow instance that silently diverges from the first. `http:` is allowed
  * only on loopback (`localhost`, `127.0.0.1`, `[::1]`) so integrators can
- * point at a local `brevwick-api` without standing up TLS; the `URL` parser
+ * point at a local Brevwick ingest host without standing up TLS; the `URL` parser
  * lowercases `hostname`/`host` for us. Three inline equality checks beat a
  * regex by a few gzipped bytes — deliberate, see SDD § 12 bundle budget.
  * `.localhost` aliases are NOT accepted; use `127.0.0.1` instead.
