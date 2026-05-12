@@ -205,7 +205,7 @@ describe('validateConfig', () => {
   });
 
   // Loopback HTTP is explicitly allowed so integrators can point the SDK at a
-  // local `brevwick-api` without standing up TLS. Every non-loopback http:
+  // local Brevwick ingest host without standing up TLS. Every non-loopback http:
   // URL still throws via the rejection table above — this block pins the
   // carve-out. Limited to literal loopback hostnames (`localhost`,
   // `127.0.0.1`, `[::1]`); `*.localhost` aliases are deliberately NOT

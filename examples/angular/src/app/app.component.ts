@@ -37,8 +37,9 @@ export const BREVWICK_CONFIG_ERROR = new InjectionToken<BrevwickConfigError>(
           >.
         </p>
         <p *ngIf="error === 'missing-endpoint'" class="error">
-          Missing <code>brevwickEndpoint</code>. Point it at your local
-          <code>brevwick-api</code> (e.g. <code>http://localhost:8080</code>).
+          Missing <code>brevwickEndpoint</code>. Point it at your Brevwick
+          ingest host (e.g. <code>http://localhost:8080</code> for a local
+          instance).
         </p>
       </section>
       <bw-feedback-button *ngIf="error === null" (submit)="onSubmit($event)" />

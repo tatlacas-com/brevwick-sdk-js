@@ -72,7 +72,7 @@ export default function Home(): ReactElement {
           The floating <strong>Feedback</strong> button is rendered by{' '}
           <code>&lt;FeedbackButton /&gt;</code> from{' '}
           <code>@tatlacas/brevwick-react</code>. Click it, fill the dialog,
-          submit, and check <code>brevwick-web</code>&rsquo;s inbox.
+          submit, and check your Brevwick dashboard inbox.
         </p>
         {error === 'missing-key' && (
           <p style={{ color: '#b42318' }}>
@@ -84,15 +84,15 @@ export default function Home(): ReactElement {
         {error === 'invalid-key' && (
           <p style={{ color: '#b42318' }}>
             <code>NEXT_PUBLIC_BREVWICK_KEY</code> is malformed. It must match{' '}
-            <code>pk_(live|test)_[A-Za-z0-9]{'{16,}'}</code>. Re-run{' '}
-            <code>bwctl</code> and update <code>.env.local</code>.
+            <code>pk_(live|test)_[A-Za-z0-9]{'{16,}'}</code>. Copy a fresh key
+            from your Brevwick dashboard into <code>.env.local</code>.
           </p>
         )}
         {error === 'missing-endpoint' && (
           <p style={{ color: '#b42318' }}>
-            Missing <code>NEXT_PUBLIC_API_BASE</code>. Point it at your local{' '}
-            <code>brevwick-api</code> (e.g. <code>http://localhost:8080</code>)
-            in <code>.env.local</code>.
+            Missing <code>NEXT_PUBLIC_API_BASE</code>. Point it at your Brevwick
+            ingest endpoint (e.g. <code>http://localhost:8080</code> for a local
+            instance) in <code>.env.local</code>.
           </p>
         )}
       </section>
