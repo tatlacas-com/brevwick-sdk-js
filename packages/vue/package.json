@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-vue",
-  "version": "1.0.0",
+  "version": "1.0.1-beta.0",
   "description": "Brevwick Vue 3 bindings — plugin, FAB component, useFeedback composable. Drop-in for any Vue app.",
   "license": "MIT",
   "type": "module",
@@ -27,7 +27,7 @@
     "test:cover": "vitest run --coverage",
     "type-check": "tsc --noEmit"
   },
-  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "homepage": "https://brevwick.dev/docs/sdk/vue",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in Brevwick. This repo publishes two npm packages (`@tatlacas/brevwick-sdk`, `@tatlacas/brevwick-react`) from a pnpm workspace.
+Thanks for your interest in Brevwick. This repo publishes seven linked npm packages from a pnpm workspace: `@tatlacas/brevwick-sdk` (framework-agnostic core) plus six adapters (`-react`, `-solid`, `-vue`, `-svelte`, `-angular`, `-react-native`).
 
 ## Prerequisites
 
@@ -77,18 +77,29 @@ The `dependencies` entries stay after publish; the `pnpm.overrides` block **must
 
 ## Branching & PR workflow
 
+Two long-lived branches:
+
+| Branch          | npm dist-tag | Purpose                                                         |
+| --------------- | ------------ | --------------------------------------------------------------- |
+| `dev` (default) | `beta`       | Day-to-day integration; merges publish `-beta.N` to npm `beta`  |
+| `main`          | `latest`     | Stable releases only — fed exclusively by `chore/promote-*` PRs |
+
 ```
-main (protected)
+dev (protected, default)
   └── feat/<short-description>
   └── fix/<short-description>
   └── chore/<short-description>
+
+main (protected)
+  └── chore/promote-<version>     ← only via scripts/promote-stable.sh
+  └── changeset-release/main      ← only auto-opened by changesets/action
 ```
 
-1. `git fetch origin` then create a branch from `origin/main` (never from local `main` — may be stale).
+1. `git fetch origin` then branch from `origin/dev` (never from local `dev` — may be stale).
 2. Make changes, commit with conventional commits.
-3. Push the branch and create a PR with `gh pr create`.
+3. Push the branch and create a PR with `gh pr create` — base defaults to `dev`.
 4. PR body references the issue (`Closes #<number>`) where applicable. Link SDD § 12 for public-API changes.
-5. Wait for CI to pass. **Squash-merge** into `main` (the only allowed merge method).
+5. Wait for CI to pass. **Squash-merge** into `dev` (the only allowed merge method on either branch).
 
 ### Commit conventions
 
@@ -96,19 +107,19 @@ main (protected)
 - Subject ≤ 72 chars
 - **Commits must be signed** (GPG or SSH). Unsigned commits fail `verify-signatures`.
 
-### Branch protection on `main`
+### Branch protection
+
+Both `dev` and `main` are protected:
 
 - Squash-merge only; no direct push, no force-push, no deletion.
 - Required status checks: `check`, `codecov/patch`, `codecov/project`, `size-check`.
 - Stale reviews dismissed on new push.
 
-### Deploy branches
+`main` additionally enforces (via `guard-deploy-branches.yml`) that incoming PRs come from `chore/promote-*` or `changeset-release/main` only — direct `dev → main` PRs are blocked.
 
-`beta` and `stable` (if/when introduced) are deploy branches — PRs to them must originate from `main` (enforced by `guard-deploy-branches.yml`).
+## Releases
 
-## Changesets
-
-Releases are driven by [Changesets](https://github.com/changesets/changesets). Both packages are **linked** (version in lockstep) pre-1.0 and currently in **pre-release mode** (`beta`) — `.changeset/pre.json` pins the tag so `changeset version` emits `1.0.0-beta.N` suffixes until the next `changeset pre exit`.
+Driven by [Changesets](https://github.com/changesets/changesets). All seven packages are **linked** in `.changeset/config.json` and bump in lockstep.
 
 ### Add a changeset
 
@@ -118,26 +129,40 @@ On any PR that changes `packages/**`:
 pnpm changeset
 ```
 
-Pick the affected package(s), the bump type, write a short summary. Commit the generated `.changeset/*.md` file.
+Pick the affected package(s), the bump type (`major` / `minor` / `patch`), write a short summary. Commit the generated `.changeset/*.md` file.
 
-CI's `changeset-check` fails the PR if no changeset is present (except when the PR author is `github-actions[bot]`, i.e. the automated Version Packages PR).
+CI's `changeset-check` fails the PR if no changeset is present. For changes that genuinely don't need a release entry (typo fixes, doc-only merges), use `pnpm changeset add --empty`.
 
-### Bump types (pre-1.0, `0.x.y` — historical guidance for when we exit beta)
+### Beta release (publish to npm `beta` dist-tag)
 
-- `patch` — bug fixes, internal refactors
-- `minor` — anything else (no SemVer guarantee during `0.x`)
+The 99% case. Merge feature PRs into `dev`. `release-dev.yml` opens or updates a **Version Packages (dev)** PR. Squash-merging that PR publishes the new `-beta.N` to the npm `beta` dist-tag with [provenance](https://docs.npmjs.com/generating-provenance-statements). GitHub Releases are generated automatically from the changelogs.
 
-### Release flow
+### Stable release (publish to npm `latest`)
 
-1. On merge to `main`, `changesets/action@v1` runs.
-2. If pending changesets exist, the action opens (or updates) a **Version Packages** PR that consumes them, bumps both packages in lockstep, and updates changelogs.
-3. **Squash-merging the Version Packages PR** triggers the release workflow on `main`, which runs `pnpm release` — building and publishing both packages to npm under the `beta` dist-tag with [provenance](https://docs.npmjs.com/generating-provenance-statements).
-4. GitHub Releases are generated automatically from the changelog body.
+When ready to cut a stable:
+
+```bash
+git fetch origin
+git checkout -b chore/promote-<version> origin/main
+./scripts/promote-stable.sh
+```
+
+The script merges `dev` into the chore branch, runs `pnpm changeset pre exit`, and opens a `chore/promote-<version> → main` PR. After it merges, `release.yml` on `main` opens an auto **Version Packages** PR with stable bumps; squash-merging that publishes to `latest`.
+
+### Resume the beta channel after stable ships
+
+```bash
+git fetch origin
+git checkout -b chore/resume-dev-<version> origin/dev
+./scripts/resume-dev.sh
+```
+
+The script merges `main` into the chore branch (brings the stable baselines into `dev`), runs `pnpm changeset pre enter beta`, and opens a PR into `dev`. After it merges, the next feature changeset on `dev` produces `<next>.0-beta.0`.
 
 ### npm dist-tags
 
-- `npm install @tatlacas/brevwick-sdk@beta` — canonical install during the beta line.
-- `npm install @tatlacas/brevwick-sdk` — resolves to `latest` once stabilisation ships. `latest` is intentionally unpopulated during the beta line. Full policy in SDD § 12.
+- `npm install @tatlacas/brevwick-sdk` — resolves to `latest` (current stable).
+- `npm install @tatlacas/brevwick-sdk@beta` — current prerelease line.
 
 ## Repo secrets
 

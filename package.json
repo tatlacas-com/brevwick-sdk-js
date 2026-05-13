@@ -22,7 +22,7 @@
     "changeset": "changeset",
     "version-packages": "changeset version && pnpm install --lockfile-only && pnpm -r --if-present run prebuild",
     "release": "pnpm build && changeset publish",
-    "release:beta": "pnpm build && changeset publish --tag beta"
+    "release:beta": "pnpm build && changeset publish"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.6.0",

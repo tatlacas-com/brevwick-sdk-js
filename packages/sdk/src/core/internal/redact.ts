@@ -1,6 +1,6 @@
 /**
- * Client-side redaction. Mirrors the server-side sanitiser in brevwick-api;
- * we redact early so secrets never even leave the device.
+ * Client-side redaction. Mirrors the server-side ingest sanitiser; we
+ * redact early so secrets never even leave the device.
  *
  * Consumed internally by the submit pipeline + the console / network rings.
  * Not re-exported on the public surface — callers tune behaviour via

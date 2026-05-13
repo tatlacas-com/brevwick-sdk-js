@@ -138,8 +138,8 @@ describe('captureScreenshot', () => {
 
   it('defaults the capture target to document.body so calls match modern-screenshot README usage', async () => {
     // Asserts the public contract. The body-default partially mitigated
-    // the symptom reported in tatlacas-com/brevwick-web#254 (a ~2 KiB
-    // blank image when called with no args); the actual root cause is
+    // the symptom reported in early integrations (a ~2 KiB blank image
+    // when called with no args); the actual root cause is
     // documented in the `compensateInnerScrolls` JSDoc in screenshot.ts.
     //
     // NOTE: `modern-screenshot` is mocked in this suite, so this test
@@ -300,9 +300,10 @@ describe('captureScreenshot', () => {
 
   it('preserves :root CSS custom properties on body subtree at capture time', async () => {
     // Regression guard for the CSS-variable inheritance concern raised
-    // in PR #103 review: brevwick-web defines `--brw-*` design tokens on
-    // `:root` (i.e. `<html>`). When the capture root is `document.body`
-    // (the new default), a body descendant must STILL be able to resolve
+    // in PR #103 review: the consumer that reproduced the bug defines
+    // `--brw-*` design tokens on `:root` (i.e. `<html>`). When the
+    // capture root is `document.body` (the new default), a body
+    // descendant must STILL be able to resolve
     // those tokens via `getComputedStyle` at the moment `domToBlob` is
     // invoked — otherwise the rasterized subtree would render with
     // unresolved `var()` colours.
@@ -396,7 +397,7 @@ describe('captureScreenshot — inner-scroll compensation', () => {
   // We override those properties with `Object.defineProperty` so the
   // SDK's `isScrollableContainer` heuristic sees a "real" scrollable
   // box. The shape mirrors the live-page console snapshot from the
-  // brevwick-web reproduction (a Tailwind `<main class="overflow-y-auto">`
+  // original reproduction (a Tailwind `<main class="overflow-y-auto">`
   // with `clientHeight: 693`, `scrollHeight: 2144`, `scrollTop: 193.5`).
   function makeScrollable(opts: {
     overflow?: string;
@@ -439,7 +440,7 @@ describe('captureScreenshot — inner-scroll compensation', () => {
   }
 
   it('translates direct children of inner overflow:auto containers by -scrollLeft/-scrollTop during capture', async () => {
-    // Mirrors the brevwick-web repro: a Tailwind <main overflow-y-auto>
+    // Mirrors the original repro: a Tailwind <main overflow-y-auto>
     // scrolled mid-way down. Without this pass, modern-screenshot would
     // rasterize the TOP of the container's scroll extent.
     const main = makeScrollable({

@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-svelte",
-  "version": "1.0.0",
+  "version": "1.0.1-beta.0",
   "description": "Brevwick Svelte bindings — context, FAB, getFeedback. Drop-in for Svelte 5 and SvelteKit apps.",
   "license": "MIT",
   "type": "module",
@@ -30,7 +30,7 @@
     "test:cover": "vitest run --coverage",
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
-  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "homepage": "https://brevwick.dev/docs/sdk/svelte",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",

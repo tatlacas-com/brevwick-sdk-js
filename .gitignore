@@ -24,3 +24,14 @@ playwright-report/
 # Includes a per-machine `devices.json` (last-used emulator IDs) and a
 # `README.md` that just describes the dir. None of it belongs in source.
 .expo/
+
+# Internal initiative-planning docs. Used by maintainers when bundling
+# multi-issue work into a worktree-per-PR layout; reference private
+# sibling repos and PR numbers and are not useful to public consumers.
+*-worktree.md
+worktrees-*.md
+
+# Local PR-review scratchpads written by the review agents. Internal
+# only — checked-in copies leak private repo references and reviewer
+# notes that belong in the PR thread, not the SDK tree.
+notes/reviews/
