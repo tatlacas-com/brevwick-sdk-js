@@ -30,7 +30,7 @@
     "test:cover": "vitest run --coverage",
     "type-check": "node scripts/generate-version.mjs && tsc --noEmit -p tsconfig.lib.json"
   },
-  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "homepage": "https://brevwick.dev/docs/sdk/angular",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",
