@@ -21,5 +21,9 @@
     "@tatlacas/brevwick-svelte": "1.0.0",
     "@tatlacas/brevwick-vue": "1.0.0"
   },
-  "changesets": []
+  "changesets": [
+    "kind-meals-dress",
+    "quiet-knives-walk",
+    "seo-homepage-backlink"
+  ]
 }

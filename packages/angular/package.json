@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-angular",
-  "version": "1.0.0",
+  "version": "1.0.1-beta.0",
   "description": "Brevwick Angular bindings — provideBrevwick, BrevwickService, bw-feedback-button standalone component. Angular 17+ standalone-only with Signals reactivity.",
   "license": "MIT",
   "type": "module",
