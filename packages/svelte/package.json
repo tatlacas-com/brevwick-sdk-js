@@ -30,7 +30,7 @@
     "test:cover": "vitest run --coverage",
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
-  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "homepage": "https://brevwick.dev/docs/sdk/svelte",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",

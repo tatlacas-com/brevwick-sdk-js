@@ -27,7 +27,7 @@
     "test:cover": "vitest run --coverage",
     "type-check": "tsc --noEmit"
   },
-  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "homepage": "https://brevwick.dev/docs/sdk",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",
