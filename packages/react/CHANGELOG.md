@@ -1,5 +1,18 @@
 # brevwick-react
 
+## 1.0.1-beta.0
+
+### Patch Changes
+
+- [#135](https://github.com/tatlacas-com/brevwick-sdk-js/pull/135) [`65d17bb`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/65d17bb7f7206f60ddd4bf526a716b85f78c2b14) Thanks [@tatlacas](https://github.com/tatlacas)! - Point each package's `homepage` field at the framework-specific docs page on
+  `brevwick.dev` instead of the GitHub repo. npm renders `homepage` as a
+  prominent link on the package page, and Google treats `npmjs.com/package/<x>`
+  as a high-authority backlink source — pointing it at `brevwick.dev` gives
+  the brand reciprocal-link credit alongside the JSON-LD `sameAs` graph the
+  website ships in its marketing layout.
+- Updated dependencies [[`65d17bb`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/65d17bb7f7206f60ddd4bf526a716b85f78c2b14)]:
+  - @tatlacas/brevwick-sdk@1.0.1-beta.0
+
 ## 1.0.0
 
 ### Major Changes
@@ -9,7 +22,7 @@
   - `SubmitResult` success shape: `{ ok: true; report_id: string }` →
     `{ ok: true; issue_id: string }`.
   - Ingest endpoint path: `POST /v1/ingest/reports` → `POST /v1/ingest/issues`
-    (paired server-contract change tracked in brevwick-api + SDD § 12).
+    (paired server-contract change).
   - JSDoc, wire field names, test fixtures, and example prose all follow
     the same rename.
 
@@ -150,12 +163,12 @@
 
 - [#79](https://github.com/tatlacas-com/brevwick-sdk-js/pull/79) [`15138b9`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/15138b9c8882697599bd5056424390756830e53d) Thanks [@tatlacas](https://github.com/tatlacas)! - Landing-parity bundle for the SDK payload — closes [#75](https://github.com/tatlacas-com/brevwick-sdk-js/issues/75), [#76](https://github.com/tatlacas-com/brevwick-sdk-js/issues/76), [#77](https://github.com/tatlacas-com/brevwick-sdk-js/issues/77).
   - **Console ring ([#75](https://github.com/tatlacas-com/brevwick-sdk-js/issues/75)):** patches all five console levels (`log` / `info` / `warn` / `error` / `debug`) by default into a 50-entry FIFO. New `BrevwickRingsConfig.console` accepts the legacy `boolean` shorthand or the object form `{ levels?, max? }` (hard ceiling 200) for finer-grained control. Existing `error` + unhandled-rejection paths stay regardless of the levels filter.
-  - **Network ring ([#76](https://github.com/tatlacas-com/brevwick-sdk-js/issues/76)):** captures every completed fetch + XHR (success + failure) by default into a 20-entry FIFO. New `BrevwickRingsConfig.network` accepts `boolean` or `{ captureSuccess?, max? }` (hard ceiling 100). `NetworkEntry.error` is now optional. **Wire-contract change:** the ingest payload renames `network_errors` → `network_calls`; the companion `brevwick-api` change ships in lockstep.
+  - **Network ring ([#76](https://github.com/tatlacas-com/brevwick-sdk-js/issues/76)):** captures every completed fetch + XHR (success + failure) by default into a 20-entry FIFO. New `BrevwickRingsConfig.network` accepts `boolean` or `{ captureSuccess?, max? }` (hard ceiling 100). `NetworkEntry.error` is now optional. **Wire-contract change:** the ingest payload renames `network_errors` → `network_calls`; the server-side ingest mirrors the rename in lockstep.
   - **Redact expansion ([#77](https://github.com/tatlacas-com/brevwick-sdk-js/issues/77)):** the on-device redactor gains card numbers (Luhn-gated to skip false positives), IPv4 / IPv6 literals, US SSN + UK NI numbers, E.164 phone numbers (digit-count sanity check), AWS access keys, and GitHub tokens. New `BrevwickConfig.redact: { disable?, custom? }` lets projects turn off built-ins by name (`'auth' | 'cookie' | 'bearer' | 'jwt' | 'email' | 'card' | 'ip' | 'ssn' | 'phone' | 'aws' | 'github' | 'base64'`) or extend with project-specific patterns.
 
   **Bundle budget bump:** the eager `core` chunk's gzip ceiling moved from 2.2 kB → 2.85 kB to absorb the new ring-config + redact-config validators in `core/validate.ts`. The expanded redact patterns + Luhn helper themselves stay in the dynamic-imported ring + submit chunks. Mirrored in `CLAUDE.md`, `.size-limit.js`, and `chunk-split.test.ts`.
 
-- [#24](https://github.com/tatlacas-com/brevwick-sdk-js/pull/24) [`07a7ab2`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/07a7ab21bd2c867a3285c0780140b1200d3425b0) Thanks [@tatlacas](https://github.com/tatlacas)! - Allow `http://` endpoints on loopback hostnames (`localhost`, `127.0.0.1`, `[::1]`) so integrators can point `createBrevwick` at a local `brevwick-api` without standing up TLS. Non-loopback hosts still require `https:`. The eager-bundle gzip budget is bumped from < 2 kB to < 2.2 kB to accommodate the three extra hostname checks (SDD § 12 + `CLAUDE.md` updated in lockstep). `.localhost` subdomain aliases are NOT accepted; use `127.0.0.1` instead.
+- [#24](https://github.com/tatlacas-com/brevwick-sdk-js/pull/24) [`07a7ab2`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/07a7ab21bd2c867a3285c0780140b1200d3425b0) Thanks [@tatlacas](https://github.com/tatlacas)! - Allow `http://` endpoints on loopback hostnames (`localhost`, `127.0.0.1`, `[::1]`) so integrators can point `createBrevwick` at a local Brevwick API without standing up TLS. Non-loopback hosts still require `https:`. The eager-bundle gzip budget is bumped from < 2 kB to < 2.2 kB to accommodate the three extra hostname checks (SDD § 12 + `CLAUDE.md` updated in lockstep). `.localhost` subdomain aliases are NOT accepted; use `127.0.0.1` instead.
 
 - [#21](https://github.com/tatlacas-com/brevwick-sdk-js/pull/21) [`91adb28`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/91adb288ce52712c5e618e0b73d803650667a55a) Thanks [@tatlacas](https://github.com/tatlacas)! - Add the network ring: patches `globalThis.fetch` and `XMLHttpRequest.prototype.open/send/setRequestHeader` on install to capture any request with status ≥ 400 or that throws / aborts / times out. Captured entries include sanitised request + response headers (allow-list only — `content-type`, `accept`, `x-request-id`, etc.), a redacted + capped request body (2 kB) and response body (4 kB), and duration. Sensitive query parameters (`token|auth|key|session|sig`) are stripped from the captured URL. Binary and form-data bodies surface as `[binary N bytes]` / `[form-data]` markers. Requests to the configured ingest endpoint and requests carrying the `X-Brevwick-SDK` header are skipped to avoid submit-time feedback loops; the loop guard matches on origin + path boundary so sibling brand domains such as `api.brevwick.company` are not silently dropped. XHR `abort` and `timeout` are captured alongside `error` with distinct labels.
 
@@ -559,7 +572,7 @@ flex-end` keeps the send button pinned to the bottom as the textarea
   window — Tailwind admin shells (`<main class="overflow-y-auto">`),
   dashboards with sticky headers and a scrolling content well, anything
   that pins `<html>`/`<body>` to viewport size and scrolls a child —
-  were the original failure mode behind the brevwick-web#254 / PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
+  were the original failure mode behind the PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
   "blank screenshot" reports. `modern-screenshot` clones the capture
   subtree into an SVG `<foreignObject>` and the clone resets `scrollTop`
   and `scrollLeft` on every overflow:auto/scroll descendant to (0, 0).
@@ -705,7 +718,7 @@ flex-end` keeps the send button pinned to the bottom as the textarea
   window — Tailwind admin shells (`<main class="overflow-y-auto">`),
   dashboards with sticky headers and a scrolling content well, anything
   that pins `<html>`/`<body>` to viewport size and scrolls a child —
-  were the original failure mode behind the brevwick-web#254 / PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
+  were the original failure mode behind the PR [#103](https://github.com/tatlacas-com/brevwick-sdk-js/issues/103)
   "blank screenshot" reports. `modern-screenshot` clones the capture
   subtree into an SVG `<foreignObject>` and the clone resets `scrollTop`
   and `scrollLeft` on every overflow:auto/scroll descendant to (0, 0).
@@ -889,7 +902,7 @@ Bundler`) trying to resolve `dist/` before it has been built.
 
 - [#79](https://github.com/tatlacas-com/brevwick-sdk-js/pull/79) [`15138b9`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/15138b9c8882697599bd5056424390756830e53d) Thanks [@tatlacas](https://github.com/tatlacas)! - Landing-parity bundle for the SDK payload — closes [#75](https://github.com/tatlacas-com/brevwick-sdk-js/issues/75), [#76](https://github.com/tatlacas-com/brevwick-sdk-js/issues/76), [#77](https://github.com/tatlacas-com/brevwick-sdk-js/issues/77).
   - **Console ring ([#75](https://github.com/tatlacas-com/brevwick-sdk-js/issues/75)):** patches all five console levels (`log` / `info` / `warn` / `error` / `debug`) by default into a 50-entry FIFO. New `BrevwickRingsConfig.console` accepts the legacy `boolean` shorthand or the object form `{ levels?, max? }` (hard ceiling 200) for finer-grained control. Existing `error` + unhandled-rejection paths stay regardless of the levels filter.
-  - **Network ring ([#76](https://github.com/tatlacas-com/brevwick-sdk-js/issues/76)):** captures every completed fetch + XHR (success + failure) by default into a 20-entry FIFO. New `BrevwickRingsConfig.network` accepts `boolean` or `{ captureSuccess?, max? }` (hard ceiling 100). `NetworkEntry.error` is now optional. **Wire-contract change:** the ingest payload renames `network_errors` → `network_calls`; the companion `brevwick-api` change ships in lockstep.
+  - **Network ring ([#76](https://github.com/tatlacas-com/brevwick-sdk-js/issues/76)):** captures every completed fetch + XHR (success + failure) by default into a 20-entry FIFO. New `BrevwickRingsConfig.network` accepts `boolean` or `{ captureSuccess?, max? }` (hard ceiling 100). `NetworkEntry.error` is now optional. **Wire-contract change:** the ingest payload renames `network_errors` → `network_calls`; the server-side ingest mirrors the rename in lockstep.
   - **Redact expansion ([#77](https://github.com/tatlacas-com/brevwick-sdk-js/issues/77)):** the on-device redactor gains card numbers (Luhn-gated to skip false positives), IPv4 / IPv6 literals, US SSN + UK NI numbers, E.164 phone numbers (digit-count sanity check), AWS access keys, and GitHub tokens. New `BrevwickConfig.redact: { disable?, custom? }` lets projects turn off built-ins by name (`'auth' | 'cookie' | 'bearer' | 'jwt' | 'email' | 'card' | 'ip' | 'ssn' | 'phone' | 'aws' | 'github' | 'base64'`) or extend with project-specific patterns.
 
   **Bundle budget bump:** the eager `core` chunk's gzip ceiling moved from 2.2 kB → 2.85 kB to absorb the new ring-config + redact-config validators in `core/validate.ts`. The expanded redact patterns + Luhn helper themselves stay in the dynamic-imported ring + submit chunks. Mirrored in `CLAUDE.md`, `.size-limit.js`, and `chunk-split.test.ts`.
@@ -1144,7 +1157,7 @@ captureScreenshot, status, reset }` with a Svelte `Readable` `status`
   - `SubmitResult` success shape: `{ ok: true; report_id: string }` →
     `{ ok: true; issue_id: string }`.
   - Ingest endpoint path: `POST /v1/ingest/reports` → `POST /v1/ingest/issues`
-    (paired server-contract change tracked in brevwick-api + SDD § 12).
+    (paired server-contract change).
   - JSDoc, wire field names, test fixtures, and example prose all follow
     the same rename.
 
@@ -1195,7 +1208,7 @@ captureScreenshot, status, reset }` with a Svelte `Readable` `status`
 
 - [#16](https://github.com/tatlacas-com/brevwick-sdk-js/pull/16) [`7a716bb`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/7a716bbd342b18b89ac44085cdc8143655078eb2) Thanks [@tatlacas](https://github.com/tatlacas)! - Add `createBrevwick(config)` factory with `install()` / `uninstall()` lifecycle and bounded FIFO ring buffers (console 50, network 50, routes 20). Canonicalises the `endpoint` so typo-equivalents (trailing slash, host casing) collapse to the same singleton key. `uninstall()` evicts the instance from the singleton registry so a subsequent `createBrevwick` call with the same key returns a fresh, installable instance. Ring modules land in follow-up PRs ([#2](https://github.com/tatlacas-com/brevwick-sdk-js/issues/2) / [#3](https://github.com/tatlacas-com/brevwick-sdk-js/issues/3)) and are wired in by direct import, not module-side-effect registration, so the SDK's `"sideEffects": false` contract stays safe under tree-shaking. Freezes the public surface to exactly `createBrevwick`, `Brevwick`, `BrevwickConfig`, `FeedbackInput`, `SubmitResult`, `FeedbackAttachment`, `Environment`.
 
-- [#24](https://github.com/tatlacas-com/brevwick-sdk-js/pull/24) [`07a7ab2`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/07a7ab21bd2c867a3285c0780140b1200d3425b0) Thanks [@tatlacas](https://github.com/tatlacas)! - Allow `http://` endpoints on loopback hostnames (`localhost`, `127.0.0.1`, `[::1]`) so integrators can point `createBrevwick` at a local `brevwick-api` without standing up TLS. Non-loopback hosts still require `https:`. The eager-bundle gzip budget is bumped from < 2 kB to < 2.2 kB to accommodate the three extra hostname checks (SDD § 12 + `CLAUDE.md` updated in lockstep). `.localhost` subdomain aliases are NOT accepted; use `127.0.0.1` instead.
+- [#24](https://github.com/tatlacas-com/brevwick-sdk-js/pull/24) [`07a7ab2`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/07a7ab21bd2c867a3285c0780140b1200d3425b0) Thanks [@tatlacas](https://github.com/tatlacas)! - Allow `http://` endpoints on loopback hostnames (`localhost`, `127.0.0.1`, `[::1]`) so integrators can point `createBrevwick` at a local Brevwick API without standing up TLS. Non-loopback hosts still require `https:`. The eager-bundle gzip budget is bumped from < 2 kB to < 2.2 kB to accommodate the three extra hostname checks (SDD § 12 + `CLAUDE.md` updated in lockstep). `.localhost` subdomain aliases are NOT accepted; use `127.0.0.1` instead.
 
 - [#21](https://github.com/tatlacas-com/brevwick-sdk-js/pull/21) [`91adb28`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/91adb288ce52712c5e618e0b73d803650667a55a) Thanks [@tatlacas](https://github.com/tatlacas)! - Add the network ring: patches `globalThis.fetch` and `XMLHttpRequest.prototype.open/send/setRequestHeader` on install to capture any request with status ≥ 400 or that throws / aborts / times out. Captured entries include sanitised request + response headers (allow-list only — `content-type`, `accept`, `x-request-id`, etc.), a redacted + capped request body (2 kB) and response body (4 kB), and duration. Sensitive query parameters (`token|auth|key|session|sig`) are stripped from the captured URL. Binary and form-data bodies surface as `[binary N bytes]` / `[form-data]` markers. Requests to the configured ingest endpoint and requests carrying the `X-Brevwick-SDK` header are skipped to avoid submit-time feedback loops; the loop guard matches on origin + path boundary so sibling brand domains such as `api.brevwick.company` are not silently dropped. XHR `abort` and `timeout` are captured alongside `error` with distinct labels.
 

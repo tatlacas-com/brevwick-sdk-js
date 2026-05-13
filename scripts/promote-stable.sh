@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Open a promotion PR from beta -> main.
+# Open a promotion PR from dev -> main.
 #
 # Run from a clean working tree on a fresh branch off origin/main:
 #   git fetch origin
@@ -7,15 +7,17 @@
 #   ./scripts/promote-stable.sh
 #
 # What it does:
-#   1. Merges origin/beta into the current branch.
+#   1. Merges origin/dev into the current branch.
 #   2. Runs `pnpm changeset pre exit` so the next version run produces stable bumps.
 #   3. Commits the result.
-#   4. Pushes and opens a PR titled "chore(release): promote beta -> main".
+#   4. Pushes and opens a PR titled "chore(release): promote dev -> main".
 #
 # After the PR merges, release.yml on main will open a stable "Version Packages"
 # PR. Merging that publishes to the npm `latest` dist-tag.
 #
-# Once stable has shipped, run scripts/resume-beta.sh to put beta back into pre mode.
+# Once stable has shipped, run scripts/resume-dev.sh to put dev back into pre mode.
+# Note: the npm prerelease dist-tag is `beta` (intentionally diverges from the
+# branch name) — see CLAUDE.md "Release Channels".
 
 set -euo pipefail
 
@@ -25,15 +27,15 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 current_branch=$(git rev-parse --abbrev-ref HEAD)
-if [ "$current_branch" = "main" ] || [ "$current_branch" = "beta" ]; then
+if [ "$current_branch" = "main" ] || [ "$current_branch" = "dev" ]; then
   echo "Refusing to run on '$current_branch'. Create a chore/promote-* branch first." >&2
   exit 1
 fi
 
 git fetch origin
 
-echo "==> Merging origin/beta into $current_branch"
-git merge --no-ff origin/beta -m "chore(release): merge beta into main for promotion"
+echo "==> Merging origin/dev into $current_branch"
+git merge --no-ff origin/dev -m "chore(release): merge dev into main for promotion"
 
 echo "==> Exiting changesets pre mode"
 pnpm changeset pre exit
@@ -47,17 +49,17 @@ git push -u origin "$current_branch"
 echo "==> Opening PR"
 gh pr create \
   --base main \
-  --title "chore(release): promote beta -> main" \
+  --title "chore(release): promote dev -> main" \
   --body "$(cat <<'PREOF'
 ## Summary
-- Merges current `beta` into `main`.
+- Merges current `dev` into `main`.
 - Exits changesets pre mode so the next version run on `main` produces stable bumps.
 
 ## Next steps
 - Merge this PR.
 - `release.yml` on `main` will open a "Version Packages" PR with stable bumps.
 - Merging that PR publishes to the npm `latest` dist-tag.
-- After stable ships, run `scripts/resume-beta.sh` to put `beta` back into pre mode.
+- After stable ships, run `scripts/resume-dev.sh` to put `dev` back into pre mode.
 
 ## Test plan
 - [ ] CI passes on this PR.

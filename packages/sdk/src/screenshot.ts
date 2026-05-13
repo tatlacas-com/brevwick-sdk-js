@@ -14,9 +14,9 @@ export interface CaptureScreenshotOpts {
    * descendant the user can see should also be compensated.
    *
    * What was previously root-caused incorrectly: the lineage of
-   * "blank capture" reports against this code path
-   * (brevwick-web#254 → this repo's PR #103) was originally hypothesised
-   * to be an `<html>`-inside-`<foreignObject>` flow-content interaction.
+   * "blank capture" reports against this code path (this repo's PR #103)
+   * was originally hypothesised to be an `<html>`-inside-`<foreignObject>`
+   * flow-content interaction.
    * That hypothesis was wrong. The empirically observed cloning
    * behaviour of `modern-screenshot` is that `scrollTop`/`scrollLeft`
    * land at (0, 0) on every overflow:auto/scroll descendant once the
@@ -177,10 +177,9 @@ function restoreSkippedNodes(nodes: SkippedNode[]): void {
  * therefore rasterizes the TOP of that container's scroll extent
  * instead of what the user is looking at. That manifests as a
  * mostly-blank or partial-content WebP — the failure mode reported
- * repeatedly against the React SDK (brevwick-web#254 lineage; PR #103
- * in this repo flipped the default capture root from `documentElement`
- * to `body` in response but did not address the underlying
- * inner-scroll reset). We have not pinned this to a Chromium issue
+ * repeatedly against the React SDK (PR #103 in this repo flipped the
+ * default capture root from `documentElement` to `body` in response
+ * but did not address the underlying inner-scroll reset). We have not pinned this to a Chromium issue
  * or a specific `modern-screenshot` source line; the compensation
  * pass corrects the observable symptom rather than the upstream cause.
  *

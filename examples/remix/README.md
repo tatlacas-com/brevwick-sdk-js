@@ -43,4 +43,4 @@ server-only and never lands in the client bundle. There is **no**
 This example posts to the public Brevwick ingest at `https://api.brevwick.com`
 by default — supplying a real `pk_test_…` key will deliver issues to your
 project inbox. Override via the `endpoint` field on the `BrevwickConfig` in
-`app/configured-widget.tsx` if you are running a local `brevwick-api`.
+`app/configured-widget.tsx` if you are pointing at a different ingest host.

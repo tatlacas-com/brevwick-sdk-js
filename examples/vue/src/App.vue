@@ -24,7 +24,7 @@ defineProps<{ configError: ConfigError }>();
         The floating <strong>Feedback</strong> button is rendered by
         <code>&lt;FeedbackButton /&gt;</code> from
         <code>@tatlacas/brevwick-vue</code>. Click it, fill the dialog, submit,
-        and check <code>brevwick-web</code>&rsquo;s inbox.
+        and check your Brevwick dashboard inbox.
       </p>
       <p v-if="configError === 'missing-key'" style="color: #b42318">
         Missing <code>VITE_BREVWICK_PROJECT_KEY</code>. Copy
@@ -36,9 +36,9 @@ defineProps<{ configError: ConfigError }>();
         <code>pk_(live|test)_[A-Za-z0-9]{16,}</code>.
       </p>
       <p v-else-if="configError === 'missing-endpoint'" style="color: #b42318">
-        Missing <code>VITE_BREVWICK_ENDPOINT</code>. Point it at your local
-        <code>brevwick-api</code> (e.g. <code>http://localhost:8080</code>) in
-        <code>.env.local</code>.
+        Missing <code>VITE_BREVWICK_ENDPOINT</code>. Point it at your Brevwick
+        ingest host (e.g. <code>http://localhost:8080</code> for a local
+        instance) in <code>.env.local</code>.
       </p>
     </section>
     <FeedbackButton v-if="configError === null" position="bottom-right" />

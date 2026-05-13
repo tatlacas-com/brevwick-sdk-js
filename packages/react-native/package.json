@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-react-native",
-  "version": "1.0.0",
+  "version": "1.0.1-beta.0",
   "description": "Brevwick React Native bindings — drop-in QA feedback widget for Expo and bare React Native apps.",
   "license": "MIT",
   "type": "module",
@@ -33,7 +33,7 @@
     "test:cover": "vitest run --coverage",
     "type-check": "node scripts/generate-version.mjs && tsc --noEmit"
   },
-  "homepage": "https://github.com/tatlacas-com/brevwick-sdk-js",
+  "homepage": "https://brevwick.dev/docs/sdk/react-native",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tatlacas-com/brevwick-sdk-js.git",

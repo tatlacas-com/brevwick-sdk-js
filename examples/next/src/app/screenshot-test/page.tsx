@@ -10,10 +10,10 @@
  * The page is intentionally _not_ linked from the example app's home page —
  * it exists only to be hit by `examples/next/e2e/screenshot.spec.ts`. Test
  * fixture, not a user-facing demo. Lives under the example app rather than
- * a standalone Vite shell because brevwick-web's recurring "blank
- * screenshot" reports all originated from a Next.js host, and reproducing
- * the failure mode against the same framework + version is the only honest
- * way to lock the regression.
+ * a standalone Vite shell because the recurring "blank screenshot" reports
+ * all originated from a Next.js host, and reproducing the failure mode
+ * against the same framework + version is the only honest way to lock the
+ * regression.
  */
 
 import { useEffect, type ReactElement } from 'react';
