@@ -1,5 +1,18 @@
 # @tatlacas/brevwick-angular
 
+## 1.0.1-beta.0
+
+### Patch Changes:
+
+- [#135](https://github.com/tatlacas-com/brevwick-sdk-js/pull/135) [`65d17bb`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/65d17bb7f7206f60ddd4bf526a716b85f78c2b14) Thanks [@tatlacas](https://github.com/tatlacas)! - Point each package's `homepage` field at the framework-specific docs page on
+  `brevwick.dev` instead of the GitHub repo. npm renders `homepage` as a
+  prominent link on the package page, and Google treats `npmjs.com/package/<x>`
+  as a high-authority backlink source — pointing it at `brevwick.dev` gives
+  the brand reciprocal-link credit alongside the JSON-LD `sameAs` graph the
+  website ships in its marketing layout.
+- Updated dependencies [[`65d17bb`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/65d17bb7f7206f60ddd4bf526a716b85f78c2b14)]:
+  - @tatlacas/brevwick-sdk@1.0.1-beta.0
+
 ## 1.0.0
 
 ### Minor Changes
