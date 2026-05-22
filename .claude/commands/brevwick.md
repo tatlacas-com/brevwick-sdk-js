@@ -82,7 +82,7 @@ After fetch, if `STATE` is closed/done/cancelled/won't-fix → abort: `Issue is 
 
 ## STEP 3 — Assess (no edits yet)
 
-Read the current repo's `CLAUDE.md` (`git rev-parse --show-toplevel` → `CLAUDE.md`).
+Read the current repo's `CLAUDE.md` (`git rev-parse --show-toplevel` → `CLAUDE.md`). Read any `*-worktree.md` files at the repo root for active-initiative context.
 
 Apply this decision matrix to the fetched issue:
 
@@ -210,7 +210,7 @@ PREOF
 )"
 ```
 
-Print the PR URL. Suggest (do **not** auto-run): `Run /pr-review <PR-url> when ready for review.`
+Print the PR URL. Suggest (do **not** auto-run): offer to launch the **`pr-reviewer` agent** on this PR — it reviews against the issue requirements and this repo's standards in its own isolated context, with project review memory.
 
 ## STEP 9 — Done
 
