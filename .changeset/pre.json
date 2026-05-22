@@ -13,18 +13,13 @@
     "brevwick-example-vanilla": "0.0.0",
     "brevwick-example-vite-react": "0.0.0",
     "brevwick-example-vue": "0.0.0",
-    "@tatlacas/brevwick-angular": "1.0.1-beta.0",
-    "@tatlacas/brevwick-react": "1.0.1-beta.0",
-    "@tatlacas/brevwick-react-native": "1.0.1-beta.0",
-    "@tatlacas/brevwick-sdk": "1.0.1-beta.0",
-    "@tatlacas/brevwick-solid": "1.0.1-beta.0",
-    "@tatlacas/brevwick-svelte": "1.0.1-beta.0",
-    "@tatlacas/brevwick-vue": "1.0.1-beta.0"
+    "@tatlacas/brevwick-angular": "1.0.2",
+    "@tatlacas/brevwick-react": "1.0.2",
+    "@tatlacas/brevwick-react-native": "1.0.1",
+    "@tatlacas/brevwick-sdk": "1.0.1",
+    "@tatlacas/brevwick-solid": "1.0.2",
+    "@tatlacas/brevwick-svelte": "1.0.2",
+    "@tatlacas/brevwick-vue": "1.0.2"
   },
-  "changesets": [
-    "feedback-status-row-checklist",
-    "kind-meals-dress",
-    "quiet-knives-walk",
-    "seo-homepage-backlink"
-  ]
+  "changesets": []
 }

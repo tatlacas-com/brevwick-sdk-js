@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-vue",
-  "version": "1.0.1-beta.1",
+  "version": "1.0.2",
   "description": "Brevwick Vue 3 bindings — plugin, FAB component, useFeedback composable. Drop-in for any Vue app.",
   "license": "MIT",
   "type": "module",

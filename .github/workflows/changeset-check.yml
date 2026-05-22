@@ -17,6 +17,8 @@ jobs:
       github.event.pull_request.draft == false
       && github.event.pull_request.user.login != 'github-actions[bot]'
       && !contains(github.event.pull_request.labels.*.name, 'release')
+      && !startsWith(github.head_ref, 'chore/promote-')
+      && !startsWith(github.head_ref, 'chore/resume-dev-')
     runs-on: ubuntu-latest
     env:
       BASE_REF: ${{ github.base_ref }}
