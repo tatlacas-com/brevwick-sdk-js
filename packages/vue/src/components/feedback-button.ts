@@ -93,8 +93,9 @@ const PHASE_RANK: Record<FeedbackPhase, number> = {
 
 /**
  * Stagger between staged-status rows in milliseconds. Applied as
- * `transition-delay` per row so the rows fade in sequentially even when
- * the underlying SDK phase events fire microseconds apart.
+ * `animation-delay` per row (the rows mount with a CSS @keyframes
+ * entrance, not a transition) so the rows fade in sequentially even
+ * when the underlying SDK phase events fire microseconds apart.
  */
 const STATUS_ROW_STAGGER_MS = 200;
 
@@ -609,36 +610,40 @@ export const FeedbackButton = defineComponent({
         );
       }
 
-      if (showCaptured) {
-        children.push(
-          renderStatusRow(
-            'check',
-            // Row 1 anchors the cascade at 0 ms; rows 2 + 3 stagger off it.
-            0,
-            'captured',
-            'Captured route, console, network, device',
-          ),
-        );
-      }
-      if (showSanitised) {
-        children.push(
-          renderStatusRow(
-            'check',
-            reducedMotion.value ? 0 : STATUS_ROW_STAGGER_MS,
-            'sanitised',
-            'PII-sanitised, packaged',
-          ),
-        );
-      }
-      if (showFormatting) {
-        children.push(
-          renderStatusRow(
-            'spinner',
-            reducedMotion.value ? 0 : STATUS_ROW_STAGGER_MS * 2,
-            'formatting',
-            'Formatting with AI…',
-          ),
-        );
+      if (showCaptured || showSanitised || showFormatting) {
+        const rows: Array<VNode> = [];
+        if (showCaptured) {
+          rows.push(
+            renderStatusRow(
+              'check',
+              // Row 1 anchors the cascade at 0 ms; rows 2 + 3 stagger off it.
+              0,
+              'captured',
+              'Captured route, console, network, device',
+            ),
+          );
+        }
+        if (showSanitised) {
+          rows.push(
+            renderStatusRow(
+              'check',
+              reducedMotion.value ? 0 : STATUS_ROW_STAGGER_MS,
+              'sanitised',
+              'PII-sanitised, packaged',
+            ),
+          );
+        }
+        if (showFormatting) {
+          rows.push(
+            renderStatusRow(
+              'spinner',
+              reducedMotion.value ? 0 : STATUS_ROW_STAGGER_MS * 2,
+              'formatting',
+              'Formatting with AI…',
+            ),
+          );
+        }
+        children.push(h('div', { class: 'brw-status-rows' }, rows));
       }
       if (showRetryRow && submitErrorTagged.value) {
         children.push(renderRetryRow(submitErrorTagged.value));
@@ -766,7 +771,7 @@ export const FeedbackButton = defineComponent({
         {
           key: dataRow,
           class: 'brw-status-row',
-          style: { transitionDelay: `${delayMs}ms` },
+          style: { animationDelay: `${delayMs}ms` },
           'data-brw-row': dataRow,
         },
         [indicator, h('span', { class: 'brw-status-row-label' }, label)],

@@ -1,0 +1,29 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash -c 'i=$(cat); d=$(printf \"%s\" \"$i\" | jq -r \".workspace.project_dir // .cwd // empty\"); [ -n \"$d\" ] && [ -f \"$d/.claude/statusline.sh\" ] && printf \"%s\" \"$i\" | bash \"$d/.claude/statusline.sh\"'"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-link.sh\""
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-link.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

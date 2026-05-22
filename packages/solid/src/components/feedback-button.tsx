@@ -716,28 +716,32 @@ function Thread(props: ThreadProps): JSX.Element {
           </div>
         )}
       </Show>
-      <Show when={showCaptured()}>
-        <StatusRow variant="check" delayMs={0} dataRow="captured">
-          Captured route, console, network, device
-        </StatusRow>
-      </Show>
-      <Show when={showSanitised()}>
-        <StatusRow
-          variant="check"
-          delayMs={props.reducedMotion ? 0 : STATUS_ROW_STAGGER_MS}
-          dataRow="sanitised"
-        >
-          PII-sanitised, packaged
-        </StatusRow>
-      </Show>
-      <Show when={showFormatting()}>
-        <StatusRow
-          variant="spinner"
-          delayMs={props.reducedMotion ? 0 : STATUS_ROW_STAGGER_MS * 2}
-          dataRow="formatting"
-        >
-          Formatting with AI…
-        </StatusRow>
+      <Show when={showCaptured() || showSanitised() || showFormatting()}>
+        <div class="brw-status-rows">
+          <Show when={showCaptured()}>
+            <StatusRow variant="check" delayMs={0} dataRow="captured">
+              Captured route, console, network, device
+            </StatusRow>
+          </Show>
+          <Show when={showSanitised()}>
+            <StatusRow
+              variant="check"
+              delayMs={props.reducedMotion ? 0 : STATUS_ROW_STAGGER_MS}
+              dataRow="sanitised"
+            >
+              PII-sanitised, packaged
+            </StatusRow>
+          </Show>
+          <Show when={showFormatting()}>
+            <StatusRow
+              variant="spinner"
+              delayMs={props.reducedMotion ? 0 : STATUS_ROW_STAGGER_MS * 2}
+              dataRow="formatting"
+            >
+              Formatting with AI…
+            </StatusRow>
+          </Show>
+        </div>
       </Show>
       <Show when={showRetryRow() && props.submitErrorTagged()}>
         {(err) => <RetryRow error={err()} onRetry={props.onRetry} />}
@@ -769,12 +773,14 @@ interface StatusRowProps {
  *
  * The `data-brw-row` attribute exists for the test suite to query rows by
  * their role-in-the-pipeline without coupling to the visible label.
+ * Stagger is applied as an `animation-delay` so the rows fade in
+ * sequentially under the shared entrance keyframe.
  */
 function StatusRow(props: StatusRowProps): JSX.Element {
   return (
     <div
       class="brw-status-row"
-      style={{ 'transition-delay': `${props.delayMs}ms` }}
+      style={{ 'animation-delay': `${props.delayMs}ms` }}
       data-brw-row={props.dataRow}
     >
       <Switch>
