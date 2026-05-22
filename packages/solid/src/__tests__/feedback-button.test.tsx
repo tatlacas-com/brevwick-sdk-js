@@ -398,6 +398,11 @@ describe('<FeedbackButton> — error paths', () => {
     expect(row).toHaveAttribute('role', 'alert');
     expect(row).toHaveAttribute('data-brw-error-code', 'INGEST_REJECTED');
     expect(row.textContent).toContain('quota exceeded');
+    // The retry row is a standalone alert — it must sit OUTSIDE the
+    // `.brw-status-rows` checklist wrapper so the dashed-divider styling
+    // does not bleed into the failure state. Pins the structural
+    // relationship against an accidental fold-back during future refactors.
+    expect(row.closest('.brw-status-rows')).toBeNull();
   });
 
   it('invokes onSubmit with the { ok: false, error } shape on failure', async () => {
@@ -556,6 +561,37 @@ describe('<FeedbackButton> — staged-status rows (#74)', () => {
     await waitFor(() => expect(getStatusRow('formatting')).not.toBeNull());
   });
 
+  it('.brw-status-rows wrapper is absent at idle and present once a row mounts', async () => {
+    // Pins the structural contract documented at packages/solid/src/styles.ts:
+    // the dashed-divider checklist wrapper exists only while at least one of
+    // the three staged rows is visible, and the captured row sits inside it.
+    // Mirrors the React assertion so both adapters stay in lockstep.
+    parkSubmit();
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
+    mount();
+    openPanel();
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+
+    // Negative: panel open, nothing sent yet → no wrapper in the DOM.
+    expect(document.querySelector('.brw-status-rows')).toBeNull();
+
+    typeDraft('wrapper-presence-test');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    phaseBus.emit('phase', { phase: 'capturing-done' });
+    await waitFor(() => expect(getStatusRow('captured')).not.toBeNull());
+
+    // Positive: once the captured row is visible the wrapper exists and
+    // contains that row.
+    const wrapper = document.querySelector('.brw-status-rows');
+    expect(wrapper).not.toBeNull();
+    const captured = getStatusRow('captured');
+    expect(captured).not.toBeNull();
+    expect(captured!.closest('.brw-status-rows')).toBe(wrapper);
+  });
+
   it('AI row is suppressed when getConfig().ai_enabled === false', async () => {
     parkSubmit();
     getConfig.mockResolvedValue({
@@ -603,7 +639,7 @@ describe('<FeedbackButton> — staged-status rows (#74)', () => {
     const rows = document.querySelectorAll<HTMLElement>('[data-brw-row]');
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row.style.transitionDelay).toBe('0ms');
+      expect(row.style.animationDelay).toBe('0ms');
     }
   });
 });
