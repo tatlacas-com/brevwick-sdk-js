@@ -543,7 +543,7 @@ describe('BwFeedbackButtonComponent', () => {
       '[data-brw-row="sanitised"]',
     ) as HTMLElement;
     expect(row).not.toBeNull();
-    expect(row.style.transitionDelay).toBe('0ms');
+    expect(row.style.animationDelay).toBe('0ms');
   });
 
   // ── Async safety ─────────────────────────────────────────────────────────
@@ -966,7 +966,7 @@ describe('BwFeedbackButtonComponent', () => {
       const row = fixture.nativeElement.querySelector(
         '[data-brw-row="sanitised"]',
       ) as HTMLElement;
-      expect(row.style.transitionDelay).toBe('0ms');
+      expect(row.style.animationDelay).toBe('0ms');
       void cmp;
     } finally {
       window.matchMedia = original;

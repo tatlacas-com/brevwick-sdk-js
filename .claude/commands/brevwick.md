@@ -1,7 +1,7 @@
 ---
 description: brevwick-sdk-js — fetch, assess, and implement a tracker issue end-to-end (pnpm workspace) with full CI gauntlet (+pnpm size for bundle-budgeted code), worktree, and auto-PR.
 argument-hint: '<issue-url — GitHub, Jira, or Linear>'
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash(git:*), Bash(gh:*), Bash(curl:*), Bash(jq:*), Bash(make:*), Bash(pnpm:*), Bash(npm:*), Bash(flutter:*), Bash(dart:*), Bash(go:*), Bash(test:*), Bash(grep:*), Bash(cat:*), Task, WebFetch, WebSearch
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash(git:*), Bash(gh:*), Bash(curl:*), Bash(jq:*), Bash(make:*), Bash(pnpm:*), Bash(npm:*), Bash(flutter:*), Bash(dart:*), Bash(go:*), Bash(test:*), Bash(grep:*), Bash(cat:*), Task, EnterWorktree, WebFetch, WebSearch
 ---
 
 You are landing a single issue end-to-end. Parse `$ARGUMENTS` as an issue URL. If empty, ask the user for one and stop.
@@ -118,10 +118,11 @@ REPO_BASENAME=$(basename "$ROOT")
 cd "$ROOT"
 git fetch origin
 git worktree add "../${REPO_BASENAME}-issue-${ID}" -b "${PREFIX}/issue-${ID}-${SLUG}" origin/main
-cd "../${REPO_BASENAME}-issue-${ID}"
 ```
 
 If the worktree path already exists, abort: `Worktree ../<…> already exists — resume in that directory or remove it first.`
+
+**Now switch the session into the worktree.** A shell `cd` will NOT move the session — the Bash tool resets the working directory after every call, so each `cd` lasts exactly one command. The only way to relocate the whole session is the **`EnterWorktree` tool**: call it with the `path` parameter (NOT `name`) set to the worktree you just created. `EnterWorktree` does NOT run a shell, so you must pass a **literal absolute path** — not a `$(…)` expression. Resolve it first in a Bash call (e.g. `cd "../${REPO_BASENAME}-issue-${ID}" && pwd`, or read it from `git worktree list`), then pass that printed path verbatim. It must already appear in `git worktree list` — the `git worktree add` above registered it; unregistered paths are rejected. This persistently moves the session, so every later Bash, Read, Edit, and the entire CI gauntlet run from inside the worktree with no per-command `cd`. Because the worktree was _entered_ (not created) by the tool, `ExitWorktree` refuses to remove it — honouring the "never remove a worktree" rule. Do not fall back to `cd` anywhere after this point.
 
 ## STEP 5 — Implement
 
@@ -209,11 +210,11 @@ PREOF
 )"
 ```
 
-Print the PR URL. Suggest (do **not** auto-run): `Run /pr-review <PR-url> when ready for review.`
+Print the PR URL. Suggest (do **not** auto-run): offer to launch the **`pr-reviewer` agent** on this PR — it reviews against the issue requirements and this repo's standards in its own isolated context, with project review memory.
 
 ## STEP 9 — Done
 
-Do not remove the worktree. Do not switch back to the main checkout. Stop here.
+Do not remove the worktree. Do not call `ExitWorktree` — leave the session inside the worktree so the user lands there. Do not `cd` back to the main checkout. Stop here.
 
 ---
 

@@ -42,6 +42,18 @@ If the original issue or `worktree.md` called for it, it ships here. If a bug / 
 - `eslint.config.mjs`, `tsconfig.base.json`, `pnpm-workspace.yaml`
 - Per-package `tsup.config.ts`, `tsconfig.json`, `package.json`
 
+### Step 2.5 — Cross-Repo Contract Findings
+
+When a finding concerns an ingest call, request payload, header, or parsed response, ground the fix in what the source repo **actually** ships on its canonical remote branch — never patch from memory. **brevwick-api** (`../brevwick-api`, `origin/main`) is the source of truth for ingest endpoints/headers/payloads; SDD § 12 governs the contract.
+
+```bash
+git -C ../brevwick-api fetch --quiet origin
+git -C ../brevwick-api show origin/main:internal/handler/ingest/handler.go
+git -C ../brevwick-api grep -n 'X-Brevwick' origin/main -- 'internal/handler'
+```
+
+Make this SDK match the verified API contract (field names, headers, endpoint/method) and add/keep a test asserting that shape. If the drift is genuinely the API's bug, that is an upstream fix, not a client-side band-aid — make every correct change here, then surface the upstream gap precisely in your return summary. Remember a wire change here ripples to brevwick-sdk-flutter (which mirrors this SDK byte-for-byte): land the SDD § 12 update in the same PR. This is a real cross-repo block, not a scapegoat.
+
 ### Step 3 — Triage
 
 - **MUST FIX** — rule / bug / completeness / missing test

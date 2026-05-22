@@ -15,6 +15,7 @@ HARD blockers. Any violation → **CHANGES REQUIRED**.
 1. **Clean architecture compliance** — `@tatlacas/brevwick-sdk` stays framework-agnostic. React types / hooks / JSX belong ONLY in `@tatlacas/brevwick-react`. No leaking React, DOM, or Node-only APIs into the core. Public API surface is intentional and tree-shakeable. Module boundaries in `CLAUDE.md` are absolute.
 2. **Clean code** — SOLID, DRY, KISS, meaningful names, single responsibility, small functions, no dead code, no commented-out code, no `any`, no stale TODOs, no deep nesting.
 3. **Completeness** — every acceptance criterion implemented. No stubs / placeholders / "follow-up" work.
+4. **Cross-repo contract fidelity** — every ingest call, request payload, header, and parsed response is verified against the source-of-truth repo as it actually exists on its canonical remote branch (see _Step 2.5 — Cross-Repo Contract Verification_). An unverified or drifting contract is a HARD blocker, not a nit.
 
 ## Process
 
@@ -29,6 +30,44 @@ HARD blockers. Any violation → **CHANGES REQUIRED**.
 - Repo `CLAUDE.md`, parent `CLAUDE.md`
 - `eslint.config.mjs`, `tsconfig.base.json`, `pnpm-workspace.yaml`
 - Per-package `package.json`, `tsup.config.ts`, `tsconfig.json`
+
+### Step 2.5 — Cross-Repo Contract Verification (NON-NEGOTIABLE)
+
+Most production incidents on this project trace to a contract drifting out of sync. Any code in this PR that crosses a repo boundary — an ingest call, a request payload, a header, a parsed response, a status/error code, an enum value — MUST be validated against the **source-of-truth repo as it actually exists on its canonical remote branch**: never against memory, never against the author's assumption, never against a possibly-stale local checkout.
+
+**Source-of-truth map for brevwick-sdk-js:**
+
+- **brevwick-api** (`../brevwick-api`) is the source of truth for the ingest + backend contract this SDK calls. Validate request payloads, headers (`pk_live_*` project keys, `X-Brevwick-*`), endpoint paths/methods, and parsed responses against the actual ingest handlers (`internal/handler/*`, the `ProjectKeyAuth` routes) on `origin/main`.
+- **brevwick-ops** (`../brevwick-ops`) `docs/brevwick-sdd.md` § 12 is the source of truth for the client SDK contract.
+- This repo's `packages/sdk/src/types.ts` + `core/validate.ts` are themselves the byte-for-byte source of truth that **brevwick-sdk-flutter** mirrors — a wire change here ripples there; flag it so the SDD update lands in the same change.
+
+**How to verify — read the canonical remote, never the dirty local tree:**
+
+The sibling repos sit next to this one in the workspace (`../<repo>`). Fetch and read the canonical branch directly; a local working copy may be a stale checkout or an in-progress worktree.
+
+```bash
+# Refresh the remote ref, then read the contract straight from origin/main
+git -C ../brevwick-api fetch --quiet origin
+git -C ../brevwick-api show origin/main:internal/handler/ingest/handler.go
+git -C ../brevwick-api grep -n 'X-Brevwick' origin/main -- 'internal/handler'
+```
+
+If a sibling repo is not checked out locally, read it from GitHub — still the canonical default branch, never a feature branch:
+
+```bash
+gh api repos/tatlacas-com/brevwick-api/contents/internal/handler/ingest/handler.go --jq '.content' | base64 -d
+gh search code --repo tatlacas-com/brevwick-api X-Brevwick
+```
+
+**For every cross-repo touchpoint, confirm field by field:**
+
+- The ingest endpoint path and HTTP method exist on the API exactly as called.
+- Every request field/header this SDK sends is one the API actually binds and validates; every field the API requires is sent.
+- Every response field this SDK reads is one the API actually returns on `origin/main` — name, JSON casing, type, nullability, enum/string values all match.
+- Status codes and error codes handled here match what the API actually returns.
+- Where SDD § 12 governs the contract, the implementation matches the SDD too.
+
+**Verdict gate:** if any cross-repo touchpoint cannot be confirmed against the source repo's canonical branch — the field/header/endpoint does not exist there, the shapes diverge, or the source repo could not be read — the item is a **CRITICAL** failure and the verdict is **CHANGES REQUIRED**. "Probably matches" is not confirmation. Never approve an unverified contract.
 
 ### Step 3 — Review Every Changed File
 
@@ -121,6 +160,10 @@ Save to `notes/reviews/pr-<N>-claude-review.md`:
 
 - [ ] ...
 
+## Cross-Repo Contracts (NON-NEGOTIABLE)
+
+- [ ] `<pkg>/<file:line>` — <touchpoint> verified against `<repo>` `<canonical branch>`:`<source file>` | DRIFT: <what diverges>
+
 ## Clean Architecture (NON-NEGOTIABLE)
 
 - [ ] `<pkg>/<file:line>` — ...
@@ -179,7 +222,8 @@ The parent session is responsible for the chain. A review without a fix pass is 
 
 - Specific package + file:line for every finding
 - No "consider" / "maybe"
-- Verdict `APPROVED` only on a fully clean PR
+- Verdict `APPROVED` only on a fully clean PR with every cross-repo contract confirmed against the source repo's canonical branch
+- Never approve a cross-repo contract you could not verify against the source repo — unverifiable equals CHANGES REQUIRED
 
 ## Persistent Agent Memory
 
