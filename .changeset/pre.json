@@ -22,6 +22,7 @@
     "@tatlacas/brevwick-vue": "1.0.1-beta.0"
   },
   "changesets": [
+    "feedback-status-row-checklist",
     "kind-meals-dress",
     "quiet-knives-walk",
     "seo-homepage-backlink"

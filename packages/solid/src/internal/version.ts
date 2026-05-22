@@ -11,4 +11,4 @@
  * with their own toolchain — that path bypasses tsup's `define` pass, so
  * the literal must already be in the source the bundler reads.
  */
-export const BREVWICK_SOLID_VERSION: string = '1.0.1-beta.0';
+export const BREVWICK_SOLID_VERSION: string = '1.0.1-beta.1';
