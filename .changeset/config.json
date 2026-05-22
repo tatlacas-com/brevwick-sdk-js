@@ -5,8 +5,7 @@
     { "repo": "tatlacas-com/brevwick-sdk-js" }
   ],
   "commit": false,
-  "fixed": [],
-  "linked": [
+  "fixed": [
     [
       "@tatlacas/brevwick-sdk",
       "@tatlacas/brevwick-react",
@@ -17,6 +16,7 @@
       "@tatlacas/brevwick-react-native"
     ]
   ],
+  "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

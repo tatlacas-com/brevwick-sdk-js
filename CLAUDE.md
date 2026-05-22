@@ -74,7 +74,7 @@ Every payload that leaves the device runs through `redact()` first. Adding a new
 
 ## Versioning
 
-All seven packages move together (linked in `.changeset/config.json`). Versions follow SemVer from `1.0.0` onward — the `1.0.0-beta.X` train is the lead-up to the first stable.
+All seven packages move together (`fixed` group in `.changeset/config.json`) — every release bumps every package to the same version, even if a changeset only mentions one of them, so consumers always install matching versions across the SDK + every adapter. Versions follow SemVer from `1.0.0` onward — the `1.0.0-beta.X` train is the lead-up to the first stable.
 
 - `feat:` — minor bump
 - `fix:` / `refactor:` — patch bump
