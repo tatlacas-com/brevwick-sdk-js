@@ -1,0 +1,25 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "brevwick-example-angular": "0.0.0",
+    "brevwick-example-astro": "0.0.0",
+    "brevwick-example-cra": "0.0.0",
+    "brevwick-example-next": "0.0.0",
+    "brevwick-example-react-native": "0.0.0",
+    "brevwick-example-remix": "0.0.0",
+    "brevwick-example-solid": "0.0.0",
+    "brevwick-example-svelte": "0.0.0",
+    "brevwick-example-vanilla": "0.0.0",
+    "brevwick-example-vite-react": "0.0.0",
+    "brevwick-example-vue": "0.0.0",
+    "@tatlacas/brevwick-angular": "1.0.2",
+    "@tatlacas/brevwick-react": "1.0.2",
+    "@tatlacas/brevwick-react-native": "1.0.1",
+    "@tatlacas/brevwick-sdk": "1.0.1",
+    "@tatlacas/brevwick-solid": "1.0.2",
+    "@tatlacas/brevwick-svelte": "1.0.2",
+    "@tatlacas/brevwick-vue": "1.0.2"
+  },
+  "changesets": []
+}
