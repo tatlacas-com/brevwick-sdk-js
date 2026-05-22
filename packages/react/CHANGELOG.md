@@ -1,10 +1,10 @@
 # brevwick-react
 
-## 1.0.1-beta.1
+## 1.0.2
 
 ### Patch Changes
 
-- [#147](https://github.com/tatlacas-com/brevwick-sdk-js/pull/147) [`d3b3722`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/d3b37225bcc093ee93ad85d9397e6bcc184aee21) Thanks [@tatlacas](https://github.com/tatlacas)! - Re-style the in-widget staged-status rows ("Captured route, console, network,
+- [#149](https://github.com/tatlacas-com/brevwick-sdk-js/pull/149) [`6623293`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/66232935f708b77b8b14aaafb651d9ee64271849) Thanks [@tatlacas](https://github.com/tatlacas)! - Re-style the in-widget staged-status rows ("Captured route, console, network,
   device" / "PII-sanitised, packaged" / "Formatting with AI…") to match the
   marketing landing page's `AnimatedDemo` widget mock across every web-rendered
   adapter — React, Solid, Vue, Svelte, and Angular. Previously the rows rendered
@@ -21,6 +21,19 @@
   chrome — padding, radius, red border, transparent background — because it
   remains a separate failure CTA, not a checklist line. React Native is
   excluded — different rendering surface, native `StyleSheet` not CSS.
+
+## 1.0.1
+
+### Patch Changes
+
+- [#139](https://github.com/tatlacas-com/brevwick-sdk-js/pull/139) [`a1196fa`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/a1196fa2838ce1893a88915062c660f4727aabc9) Thanks [@tatlacas](https://github.com/tatlacas)! - Point each package's `homepage` field at the framework-specific docs page on
+  `brevwick.dev` instead of the GitHub repo. npm renders `homepage` as a
+  prominent link on the package page, and Google treats `npmjs.com/package/<x>`
+  as a high-authority backlink source — pointing it at `brevwick.dev` gives
+  the brand reciprocal-link credit alongside the JSON-LD `sameAs` graph the
+  website ships in its marketing layout.
+- Updated dependencies [[`a1196fa`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/a1196fa2838ce1893a88915062c660f4727aabc9)]:
+  - @tatlacas/brevwick-sdk@1.0.1
 
 ## 1.0.1-beta.0
 

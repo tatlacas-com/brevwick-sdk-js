@@ -82,7 +82,7 @@ After fetch, if `STATE` is closed/done/cancelled/won't-fix → abort: `Issue is 
 
 ## STEP 3 — Assess (no edits yet)
 
-Read the current repo's `CLAUDE.md` (`git rev-parse --show-toplevel` → `CLAUDE.md`). Read any `*-worktree.md` files at the repo root for active-initiative context.
+Read the current repo's `CLAUDE.md` (`git rev-parse --show-toplevel` → `CLAUDE.md`).
 
 Apply this decision matrix to the fetched issue:
 
