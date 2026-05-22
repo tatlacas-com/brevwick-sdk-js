@@ -2803,6 +2803,40 @@ describe('<FeedbackButton> staged-status UX (#74)', () => {
     expect(getStatusRow('formatting')).not.toBeNull();
   });
 
+  it('.brw-status-rows wrapper is absent at idle and present once a row mounts', async () => {
+    // Pins the structural contract documented at packages/react/src/styles.ts:533-543:
+    // the dashed-divider checklist wrapper exists only while at least one of
+    // the three staged rows is visible, and the captured row sits inside it.
+    // Without this guard a future refactor could either unmount the wrapper
+    // (losing the divider) or render an empty wrapper at idle (a phantom
+    // checklist) and CI would not catch it.
+    parkSubmit();
+    getConfig.mockResolvedValue({
+      ai_enabled: true,
+      ai_submitter_choice_allowed: false,
+    });
+    mount();
+    openPanel();
+
+    // Negative: panel open, nothing sent yet → no wrapper in the DOM.
+    expect(document.querySelector('.brw-status-rows')).toBeNull();
+
+    typeDraft('wrapper-presence-test');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await act(async () => {
+      phaseBus.emit('phase', { phase: 'capturing-done' });
+    });
+
+    // Positive: once the first row (captured, fired by capturing-done →
+    // phase === 'sanitising') is visible, the wrapper exists and contains
+    // that row.
+    const wrapper = document.querySelector('.brw-status-rows');
+    expect(wrapper).not.toBeNull();
+    const captured = getStatusRow('captured');
+    expect(captured).not.toBeNull();
+    expect(captured!.closest('.brw-status-rows')).toBe(wrapper);
+  });
+
   it('AI row is suppressed when getConfig().ai_enabled === false', async () => {
     parkSubmit();
     getConfig.mockResolvedValue({
@@ -2894,6 +2928,11 @@ describe('<FeedbackButton> staged-status UX (#74)', () => {
       expect(row).toHaveAttribute('role', 'alert');
       expect(row).toHaveAttribute('data-brw-error-code', code);
       expect(row?.textContent).toContain(message);
+      // The retry row is a standalone alert — it must sit OUTSIDE the
+      // `.brw-status-rows` checklist wrapper so the dashed-divider styling
+      // does not bleed into the failure state. Pins the structural
+      // relationship against an accidental fold-back during future refactors.
+      expect(row!.closest('.brw-status-rows')).toBeNull();
 
       // Retry click re-runs `submit()` with the same FeedbackInput. The
       // second call is mocked to succeed so the assistant receipt lands.

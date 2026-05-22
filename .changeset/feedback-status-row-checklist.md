@@ -22,5 +22,4 @@ message as bubbles. The per-row stagger now correctly targets
 the cascade is no longer a no-op. The retry row keeps its standalone alert
 chrome — padding, radius, red border, transparent background — because it
 remains a separate failure CTA, not a checklist line. React Native is
-intentionally out of scope (different rendering surface, native StyleSheet
-not CSS).
+excluded — different rendering surface, native `StyleSheet` not CSS.
