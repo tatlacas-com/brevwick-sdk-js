@@ -763,33 +763,37 @@ function Thread({
           {submitError}
         </div>
       )}
-      {showCaptured && (
-        <StatusRow
-          variant="check"
-          // Row 1 anchors the cascade at 0 ms; rows 2 and 3 stagger off it.
-          delayMs={0}
-          dataRow="captured"
-        >
-          Captured route, console, network, device
-        </StatusRow>
-      )}
-      {showSanitised && (
-        <StatusRow
-          variant="check"
-          delayMs={reducedMotion ? 0 : STATUS_ROW_STAGGER_MS}
-          dataRow="sanitised"
-        >
-          PII-sanitised, packaged
-        </StatusRow>
-      )}
-      {showFormatting && (
-        <StatusRow
-          variant="spinner"
-          delayMs={reducedMotion ? 0 : STATUS_ROW_STAGGER_MS * 2}
-          dataRow="formatting"
-        >
-          Formatting with AI…
-        </StatusRow>
+      {(showCaptured || showSanitised || showFormatting) && (
+        <div className="brw-status-rows" data-brw-status-rows="">
+          {showCaptured && (
+            <StatusRow
+              variant="check"
+              // Row 1 anchors the cascade at 0 ms; rows 2 and 3 stagger off it.
+              delayMs={0}
+              dataRow="captured"
+            >
+              Captured route, console, network, device
+            </StatusRow>
+          )}
+          {showSanitised && (
+            <StatusRow
+              variant="check"
+              delayMs={reducedMotion ? 0 : STATUS_ROW_STAGGER_MS}
+              dataRow="sanitised"
+            >
+              PII-sanitised, packaged
+            </StatusRow>
+          )}
+          {showFormatting && (
+            <StatusRow
+              variant="spinner"
+              delayMs={reducedMotion ? 0 : STATUS_ROW_STAGGER_MS * 2}
+              dataRow="formatting"
+            >
+              Formatting with AI…
+            </StatusRow>
+          )}
+        </div>
       )}
       {showRetryRow && submitErrorTagged && (
         <RetryRow error={submitErrorTagged} onRetry={onRetry} />

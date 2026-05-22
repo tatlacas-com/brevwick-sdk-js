@@ -63,6 +63,10 @@ export const BREVWICK_CSS = `
      contract. No public alias; widget rules consume --brw-error-base
      directly. */
   --brw-error-base: #b91c1c;
+  /* Success / check colour for the staged-status checklist. Matches the
+     emerald used in the marketing AnimatedDemo so the in-widget checklist
+     reads as the same affordance the docs preview. */
+  --brw-success-base: #10b981;
 }
 @media (prefers-color-scheme: dark) {
   :where(:root) {
@@ -80,6 +84,8 @@ export const BREVWICK_CSS = `
     --brw-accent-base: #f8fafc;
     --brw-accent-fg-base: #0f172a;
     --brw-shadow-base: 0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 12px rgba(0, 0, 0, 0.35);
+    /* Brighter emerald (500→400) keeps the tick legible on dark panels. */
+    --brw-success-base: #34d399;
   }
 }
 .brw-root[data-brw-theme='light'] {
@@ -97,6 +103,7 @@ export const BREVWICK_CSS = `
   --brw-accent-base: #0f172a;
   --brw-accent-fg-base: #ffffff;
   --brw-shadow-base: 0 20px 48px rgba(15, 23, 42, 0.18), 0 6px 12px rgba(15, 23, 42, 0.08);
+  --brw-success-base: #10b981;
 }
 .brw-root[data-brw-theme='dark'] {
   --brw-panel-bg-base: #0b1220;
@@ -113,6 +120,7 @@ export const BREVWICK_CSS = `
   --brw-accent-base: #f8fafc;
   --brw-accent-fg-base: #0f172a;
   --brw-shadow-base: 0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 12px rgba(0, 0, 0, 0.35);
+  --brw-success-base: #34d399;
 }
 .brw-root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -475,37 +483,52 @@ export const BREVWICK_CSS = `
   border-color: var(--brw-accent, var(--brw-accent-base));
 }
 .brw-error { color: var(--brw-error-base); font-size: 12px; align-self: stretch; }
+/* Staged-status rows: progress indicators, not conversation bubbles.
+   They read as a compact stacked checklist under a dashed top divider,
+   matching the marketing AnimatedDemo widget mock. The retry row sits
+   outside the .brw-status-rows wrapper and keeps its own chrome
+   (padding, radius, border) so the failure case still reads as a
+   standalone alert. */
+.brw-status-rows {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--brw-divider, var(--brw-divider-base));
+}
 .brw-status-row {
-  align-self: flex-start;
-  max-width: 85%;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border-bottom-left-radius: 4px;
-  background: var(--brw-bubble-assistant-bg, var(--brw-bubble-assistant-bg-base));
-  color: var(--brw-fg, var(--brw-fg-base));
-  font-size: 13px;
-  line-height: 1.45;
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--brw-fg-muted, var(--brw-fg-muted-base));
   animation: brw-status-row-in 220ms ease-out both;
 }
 .brw-status-row-check {
   display: inline-flex;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   align-items: center;
   justify-content: center;
-  color: var(--brw-accent, var(--brw-accent-base));
+  color: var(--brw-success-base);
+  flex-shrink: 0;
 }
 .brw-status-row-check svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 .brw-status-row-label { flex: 1; }
 .brw-status-row--error {
+  align-self: stretch;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: transparent;
   color: var(--brw-error-base);
   border: 1px solid var(--brw-error-base);
+  font-size: 13px;
 }
 .brw-status-row-retry {
   margin-left: auto;

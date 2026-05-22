@@ -716,28 +716,32 @@ function Thread(props: ThreadProps): JSX.Element {
           </div>
         )}
       </Show>
-      <Show when={showCaptured()}>
-        <StatusRow variant="check" delayMs={0} dataRow="captured">
-          Captured route, console, network, device
-        </StatusRow>
-      </Show>
-      <Show when={showSanitised()}>
-        <StatusRow
-          variant="check"
-          delayMs={props.reducedMotion ? 0 : STATUS_ROW_STAGGER_MS}
-          dataRow="sanitised"
-        >
-          PII-sanitised, packaged
-        </StatusRow>
-      </Show>
-      <Show when={showFormatting()}>
-        <StatusRow
-          variant="spinner"
-          delayMs={props.reducedMotion ? 0 : STATUS_ROW_STAGGER_MS * 2}
-          dataRow="formatting"
-        >
-          Formatting with AI…
-        </StatusRow>
+      <Show when={showCaptured() || showSanitised() || showFormatting()}>
+        <div class="brw-status-rows" data-brw-status-rows="">
+          <Show when={showCaptured()}>
+            <StatusRow variant="check" delayMs={0} dataRow="captured">
+              Captured route, console, network, device
+            </StatusRow>
+          </Show>
+          <Show when={showSanitised()}>
+            <StatusRow
+              variant="check"
+              delayMs={props.reducedMotion ? 0 : STATUS_ROW_STAGGER_MS}
+              dataRow="sanitised"
+            >
+              PII-sanitised, packaged
+            </StatusRow>
+          </Show>
+          <Show when={showFormatting()}>
+            <StatusRow
+              variant="spinner"
+              delayMs={props.reducedMotion ? 0 : STATUS_ROW_STAGGER_MS * 2}
+              dataRow="formatting"
+            >
+              Formatting with AI…
+            </StatusRow>
+          </Show>
+        </div>
       </Show>
       <Show when={showRetryRow() && props.submitErrorTagged()}>
         {(err) => <RetryRow error={err()} onRetry={props.onRetry} />}
