@@ -1232,6 +1232,14 @@
     width: 12px;
     height: 12px;
   }
+  /* The shared .brw-svelte-spinner ships at 14px so it reads at full size
+     in the composer; inside the staged-status checklist it has to match
+     the 12px tick so the third row's indicator sits on the same baseline
+     as the first two. */
+  .brw-svelte-status-row .brw-svelte-spinner {
+    width: 12px;
+    height: 12px;
+  }
   .brw-svelte-status-row-label {
     flex: 1;
   }

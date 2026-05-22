@@ -1128,6 +1128,14 @@ function formatSize(bytes: number): string {
         width: 12px;
         height: 12px;
       }
+      /* The shared .brw-spinner ships at 14px so it reads at full size in
+         the composer; inside the staged-status checklist it has to match
+         the 12px tick so the third row's indicator sits on the same
+         baseline as the first two. */
+      .brw-status-row .brw-spinner {
+        width: 12px;
+        height: 12px;
+      }
       .brw-status-row-label {
         flex: 1;
       }
