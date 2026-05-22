@@ -62,7 +62,14 @@ if [ "$merge_status" -ne 0 ]; then
     printf '%s\n' "$version_files" | xargs git add --
   fi
 
-  conflicted_changesets=$(printf '%s\n' "$unmerged" | grep '^\.changeset/' || true)
+  # Only drop pre.json (about to be recreated) and per-changeset .md files.
+  # Never touch .changeset/README.md or .changeset/config.json — if those
+  # conflict it is a real config divergence the human needs to look at,
+  # and the unexpected-conflicts guard below will surface it.
+  conflicted_changesets=$(printf '%s\n' "$unmerged" \
+    | grep -E '^\.changeset/(pre\.json|[^/]+\.md)$' \
+    | grep -v '^\.changeset/README\.md$' \
+    || true)
   if [ -n "$conflicted_changesets" ]; then
     printf '%s\n' "$conflicted_changesets" | xargs git rm -f --
   fi
