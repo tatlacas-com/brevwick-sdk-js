@@ -35,9 +35,12 @@
   // reject downstream.
   const MAX_ATTACHMENTS = 5;
 
-  // Stagger between staged-status rows in milliseconds. Mirrors the React
-  // adapter (#74). Honoured only when the user has not requested reduced
-  // motion — see `prefersReducedMotion` below.
+  // Stagger between staged-status rows in milliseconds. Applied as
+  // `animation-delay` per row (the rows mount with a CSS @keyframes
+  // entrance, not a transition) so the rows fade in sequentially even
+  // when the underlying SDK phase events fire microseconds apart.
+  // Honoured only when the user has not requested reduced motion —
+  // see `prefersReducedMotion` below.
   const STATUS_ROW_STAGGER_MS = 200;
 
   // Phase ordinal mirrored from the React adapter (#74). Row 1 ("Captured")
@@ -632,70 +635,74 @@
             <div class="brw-svelte-error" role="alert">{submitError}</div>
           {/if}
 
-          {#if showCaptured}
-            <div
-              class="brw-svelte-status-row"
-              data-brw-row="captured"
-              style="transition-delay: 0ms; animation-delay: 0ms;"
-            >
-              <span class="brw-svelte-status-row-check" aria-hidden="true">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+          {#if showCaptured || showSanitised || showFormatting}
+            <div class="brw-svelte-status-rows">
+              {#if showCaptured}
+                <div
+                  class="brw-svelte-status-row"
+                  data-brw-row="captured"
+                  style="animation-delay: 0ms;"
                 >
-                  <path d="M5 12l5 5L20 7" />
-                </svg>
-              </span>
-              <span class="brw-svelte-status-row-label"
-                >Captured route, console, network, device</span
-              >
-            </div>
-          {/if}
-          {#if showSanitised}
-            <div
-              class="brw-svelte-status-row"
-              data-brw-row="sanitised"
-              style="transition-delay: {prefersReducedMotion
-                ? 0
-                : STATUS_ROW_STAGGER_MS}ms; animation-delay: {prefersReducedMotion
-                ? 0
-                : STATUS_ROW_STAGGER_MS}ms;"
-            >
-              <span class="brw-svelte-status-row-check" aria-hidden="true">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  <span class="brw-svelte-status-row-check" aria-hidden="true">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                  </span>
+                  <span class="brw-svelte-status-row-label"
+                    >Captured route, console, network, device</span
+                  >
+                </div>
+              {/if}
+              {#if showSanitised}
+                <div
+                  class="brw-svelte-status-row"
+                  data-brw-row="sanitised"
+                  style="animation-delay: {prefersReducedMotion
+                    ? 0
+                    : STATUS_ROW_STAGGER_MS}ms;"
                 >
-                  <path d="M5 12l5 5L20 7" />
-                </svg>
-              </span>
-              <span class="brw-svelte-status-row-label">PII-sanitised, packaged</span>
-            </div>
-          {/if}
-          {#if showFormatting}
-            <div
-              class="brw-svelte-status-row"
-              data-brw-row="formatting"
-              style="transition-delay: {prefersReducedMotion
-                ? 0
-                : STATUS_ROW_STAGGER_MS * 2}ms; animation-delay: {prefersReducedMotion
-                ? 0
-                : STATUS_ROW_STAGGER_MS * 2}ms;"
-            >
-              <span class="brw-svelte-spinner" aria-hidden="true"></span>
-              <span class="brw-svelte-status-row-label">Formatting with AI…</span>
+                  <span class="brw-svelte-status-row-check" aria-hidden="true">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                  </span>
+                  <span class="brw-svelte-status-row-label"
+                    >PII-sanitised, packaged</span
+                  >
+                </div>
+              {/if}
+              {#if showFormatting}
+                <div
+                  class="brw-svelte-status-row"
+                  data-brw-row="formatting"
+                  style="animation-delay: {prefersReducedMotion
+                    ? 0
+                    : STATUS_ROW_STAGGER_MS * 2}ms;"
+                >
+                  <span class="brw-svelte-spinner" aria-hidden="true"></span>
+                  <span class="brw-svelte-status-row-label"
+                    >Formatting with AI…</span
+                  >
+                </div>
+              {/if}
             </div>
           {/if}
           {#if showRetryRow && $submitErrorTagged}
@@ -894,6 +901,12 @@
     --brw-accent: #4f46e5;
     --brw-accent-fg: #ffffff;
     --brw-error: #b91c1c;
+    /* Success / check colour for the staged-status checklist. Matches the
+       emerald used in the marketing AnimatedDemo so the in-widget checklist
+       reads as the same affordance the docs preview. Widget-internal: no
+       public --brw-success alias by design — host overrides flow through
+       --brw-accent for chrome and don't need a knob for the green tick. */
+    --brw-success: #10b981;
     --brw-shadow:
       0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.12);
     color: var(--brw-fg);
@@ -922,6 +935,8 @@
     --brw-divider: #2a2b30;
     --brw-accent: #818cf8;
     --brw-accent-fg: #0b0b0c;
+    /* Brighter emerald (500→400) keeps the tick legible on dark panels. */
+    --brw-success: #34d399;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -939,6 +954,7 @@
       --brw-divider: #2a2b30;
       --brw-accent: #818cf8;
       --brw-accent-fg: #0b0b0c;
+      --brw-success: #34d399;
     }
   }
 
@@ -1173,43 +1189,66 @@
     min-height: 34px;
   }
 
-  /* Staged-status rows (#74). Visually mirrors the assistant bubble
-     surface (background, padding, radius) but lives outside the bubble
-     class family so it does not count as a conversation bubble for queries
-     that count messages — the rows are progress indicators, not messages.
-     The transition-delay / animation-delay are set inline per row so the
-     three rows fade in sequentially even when the underlying SDK phase
-     events fire microseconds apart. */
+  /* Staged-status rows: progress indicators, not conversation bubbles.
+     They sit under a dashed top divider as a compact stacked checklist,
+     mirroring the marketing AnimatedDemo widget mock — and intentionally
+     stay outside the bubble class family so message-count queries ignore
+     them. .brw-svelte-status-rows is the grouping container that owns
+     the divider + stacking; .brw-svelte-status-row is one ticked line.
+     The animation-delay is set inline per row so the three rows fade in
+     sequentially under the shared @keyframes entrance even when the
+     underlying SDK phase events fire microseconds apart. The
+     reduced-motion media query collapses the entrance to an instant
+     fade, pairing with the inline 0ms delay the template emits when
+     prefers-reduced-motion: reduce. */
+  .brw-svelte-status-rows {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 2px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--brw-divider);
+  }
   .brw-svelte-status-row {
-    align-self: flex-start;
-    max-width: 100%;
-    padding: 8px 12px;
-    border-radius: 12px;
-    border-bottom-left-radius: 4px;
-    background: var(--brw-bubble-assistant-bg);
-    color: var(--brw-fg);
-    font-size: 13px;
-    line-height: 1.45;
     display: flex;
     align-items: center;
     gap: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--brw-fg-muted);
     animation: brw-svelte-status-row-in 220ms ease-out both;
   }
   .brw-svelte-status-row-check {
     display: inline-flex;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     align-items: center;
     justify-content: center;
-    color: var(--brw-accent);
+    color: var(--brw-success);
+    flex-shrink: 0;
+  }
+  .brw-svelte-status-row-check svg {
+    width: 12px;
+    height: 12px;
   }
   .brw-svelte-status-row-label {
     flex: 1;
   }
+  /* The retry row is a standalone alert that sits outside the checklist
+     container, so it carries its own chrome — padding, radius, border —
+     instead of inheriting the checklist's tick-line minimalism. The
+     background stays transparent so the red border + red label read as
+     an alert overlay rather than a filled bubble surface. */
   .brw-svelte-status-row--error {
+    align-self: stretch;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: transparent;
     color: var(--brw-error);
     border: 1px solid var(--brw-error);
-    background: var(--brw-bubble-assistant-bg);
+    font-size: 13px;
+    line-height: 1.45;
   }
   .brw-svelte-status-row-retry {
     margin-left: auto;

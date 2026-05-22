@@ -603,7 +603,7 @@ describe('<FeedbackButton> — staged-status rows (#74)', () => {
     const rows = document.querySelectorAll<HTMLElement>('[data-brw-row]');
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row.style.transitionDelay).toBe('0ms');
+      expect(row.style.animationDelay).toBe('0ms');
     }
   });
 });

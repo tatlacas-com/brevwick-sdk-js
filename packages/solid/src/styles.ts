@@ -485,10 +485,11 @@ export const BREVWICK_CSS = `
 .brw-error { color: var(--brw-error-base); font-size: 12px; align-self: stretch; }
 /* Staged-status rows: progress indicators, not conversation bubbles.
    They read as a compact stacked checklist under a dashed top divider,
-   matching the marketing AnimatedDemo widget mock. The retry row sits
-   outside the .brw-status-rows wrapper and keeps its own chrome
-   (padding, radius, border) so the failure case still reads as a
-   standalone alert. */
+   matching the marketing AnimatedDemo widget mock. The animation-delay
+   is set inline per row so the rows fade in sequentially under the
+   shared @keyframes entrance. The retry row sits outside the
+   .brw-status-rows wrapper and keeps its own chrome (padding, radius,
+   border) so the failure case still reads as a standalone alert. */
 .brw-status-rows {
   align-self: stretch;
   display: flex;
@@ -521,6 +522,11 @@ export const BREVWICK_CSS = `
   height: 12px;
 }
 .brw-status-row-label { flex: 1; }
+/* The retry row is a standalone alert that sits outside the checklist
+   container, so it carries its own chrome — padding, radius, border —
+   instead of inheriting the checklist's tick-line minimalism. The
+   background stays transparent so the red border + red label read as
+   an alert overlay rather than a filled bubble surface. */
 .brw-status-row--error {
   align-self: stretch;
   padding: 10px 12px;
@@ -529,6 +535,7 @@ export const BREVWICK_CSS = `
   color: var(--brw-error-base);
   border: 1px solid var(--brw-error-base);
   font-size: 13px;
+  line-height: 1.45;
 }
 .brw-status-row-retry {
   margin-left: auto;

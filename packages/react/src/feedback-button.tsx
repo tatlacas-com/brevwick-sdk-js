@@ -683,10 +683,11 @@ const PHASE_RANK: Record<FeedbackPhase, number> = {
 
 /**
  * Stagger between staged-status rows in milliseconds. Applied as
- * `transition-delay` per row so the rows fade in sequentially even when
- * the underlying SDK phase events fire microseconds apart on a healthy
- * happy path. Honoured only when the user has not requested reduced
- * motion — see {@link usePrefersReducedMotion}.
+ * `animation-delay` per row (the rows mount with a CSS @keyframes
+ * entrance, not a transition) so the rows fade in sequentially even
+ * when the underlying SDK phase events fire microseconds apart on a
+ * healthy happy path. Honoured only when the user has not requested
+ * reduced motion — see {@link usePrefersReducedMotion}.
  */
 const STATUS_ROW_STAGGER_MS = 200;
 
@@ -764,7 +765,7 @@ function Thread({
         </div>
       )}
       {(showCaptured || showSanitised || showFormatting) && (
-        <div className="brw-status-rows" data-brw-status-rows="">
+        <div className="brw-status-rows">
           {showCaptured && (
             <StatusRow
               variant="check"
@@ -822,8 +823,8 @@ interface StatusRowProps {
  *
  * The `data-brw-row` attribute exists for the test suite to query rows by
  * their role-in-the-pipeline without coupling to the visible label.
- * Stagger is applied as a `transition-delay` so the rows fade in
- * sequentially under the shared bubble-entrance keyframe.
+ * Stagger is applied as an `animation-delay` so the rows fade in
+ * sequentially under the shared entrance keyframe.
  */
 function StatusRow({
   variant,
@@ -834,7 +835,7 @@ function StatusRow({
   return (
     <div
       className="brw-status-row"
-      style={{ transitionDelay: `${delayMs}ms` }}
+      style={{ animationDelay: `${delayMs}ms` }}
       data-brw-row={dataRow}
     >
       {variant === 'check' ? (

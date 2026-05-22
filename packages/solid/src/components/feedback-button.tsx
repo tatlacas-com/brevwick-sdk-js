@@ -717,7 +717,7 @@ function Thread(props: ThreadProps): JSX.Element {
         )}
       </Show>
       <Show when={showCaptured() || showSanitised() || showFormatting()}>
-        <div class="brw-status-rows" data-brw-status-rows="">
+        <div class="brw-status-rows">
           <Show when={showCaptured()}>
             <StatusRow variant="check" delayMs={0} dataRow="captured">
               Captured route, console, network, device
@@ -773,12 +773,14 @@ interface StatusRowProps {
  *
  * The `data-brw-row` attribute exists for the test suite to query rows by
  * their role-in-the-pipeline without coupling to the visible label.
+ * Stagger is applied as an `animation-delay` so the rows fade in
+ * sequentially under the shared entrance keyframe.
  */
 function StatusRow(props: StatusRowProps): JSX.Element {
   return (
     <div
       class="brw-status-row"
-      style={{ 'transition-delay': `${props.delayMs}ms` }}
+      style={{ 'animation-delay': `${props.delayMs}ms` }}
       data-brw-row={props.dataRow}
     >
       <Switch>

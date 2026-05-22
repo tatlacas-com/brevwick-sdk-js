@@ -536,11 +536,12 @@ export const BREVWICK_CSS = `
    stay outside the .brw-bubble class family so message-count queries
    ignore them. .brw-status-rows is the grouping container that owns the
    divider + stacking; .brw-status-row is one ticked line. The
-   transition-delay is set inline per row so the three rows fade in
-   sequentially even when the underlying SDK phase events fire
-   microseconds apart. The reduced-motion media query collapses the
-   entrance to an instant fade, pairing with the inline 0ms delay the
-   adapter passes when the user has prefers-reduced-motion: reduce. */
+   animation-delay is set inline per row so the three rows fade in
+   sequentially under the shared @keyframes entrance even when the
+   underlying SDK phase events fire microseconds apart. The
+   reduced-motion media query collapses the entrance to an instant fade,
+   pairing with the inline 0ms delay the adapter passes when the user
+   has prefers-reduced-motion: reduce. */
 .brw-status-rows {
   align-self: stretch;
   display: flex;
@@ -575,7 +576,11 @@ export const BREVWICK_CSS = `
 .brw-status-row-label { flex: 1; }
 /* The retry row is a standalone alert that sits outside the checklist
    container, so it carries its own chrome — padding, radius, border —
-   instead of inheriting the checklist's tick-line minimalism. */
+   instead of inheriting the checklist's tick-line minimalism. The
+   background stays transparent so the red border + red label read as
+   an alert overlay rather than a filled assistant-bubble surface; the
+   parent .brw-panel-bg shows through and the alert sits flush with the
+   surrounding checklist + composer chrome. */
 .brw-status-row--error {
   align-self: stretch;
   padding: 10px 12px;
@@ -584,6 +589,7 @@ export const BREVWICK_CSS = `
   color: var(--brw-error-base);
   border: 1px solid var(--brw-error-base);
   font-size: 13px;
+  line-height: 1.45;
 }
 .brw-status-row-retry {
   margin-left: auto;

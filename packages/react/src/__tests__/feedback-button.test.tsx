@@ -2857,12 +2857,14 @@ describe('<FeedbackButton> staged-status UX (#74)', () => {
       phaseBus.emit('phase', { phase: 'sanitising-done' });
     });
 
-    // Every visible status row must carry transitionDelay: 0ms — the
+    // Every visible status row must carry animationDelay: 0ms — the
     // adapter folds the 200 ms cascade flat under prefers-reduced-motion.
+    // Reading animationDelay (not transitionDelay) because the entrance
+    // is a CSS @keyframes animation, not a transition.
     const rows = document.querySelectorAll<HTMLElement>('[data-brw-row]');
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row.style.transitionDelay).toBe('0ms');
+      expect(row.style.animationDelay).toBe('0ms');
     }
   });
 

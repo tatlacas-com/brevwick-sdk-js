@@ -56,7 +56,8 @@ const COMPOSER_MAX_HEIGHT_PX = 120;
 
 /**
  * Stagger between staged-status rows in milliseconds. Applied as
- * `style.transitionDelay` per row so rows fade in sequentially even when
+ * `style.animationDelay` per row (the rows mount with a CSS @keyframes
+ * entrance, not a transition) so rows fade in sequentially even when
  * the underlying SDK phase events fire microseconds apart on a healthy
  * happy path. Honoured only when the user has not requested reduced motion.
  */
@@ -337,69 +338,76 @@ function formatSize(bytes: number): string {
               <div class="brw-error" role="alert">{{ msg }}</div>
             }
 
-            <!-- Staged status rows: row 1 (Captured) -->
-            @if (showCaptured()) {
-              <div
-                class="brw-status-row"
-                data-brw-row="captured"
-                style="transition-delay: 0ms"
-              >
-                <span class="brw-status-row-check" aria-hidden="true">
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
+            <!-- Staged status rows: dashed-divider checklist wrapper -->
+            @if (showCaptured() || showSanitised() || showFormattingRow()) {
+              <div class="brw-status-rows">
+                <!-- Row 1 (Captured) -->
+                @if (showCaptured()) {
+                  <div
+                    class="brw-status-row"
+                    data-brw-row="captured"
+                    style="animation-delay: 0ms"
                   >
-                    <path d="M5 12l5 5L20 7" />
-                  </svg>
-                </span>
-                <span class="brw-status-row-label"
-                  >Captured route, console, network, device</span
-                >
-              </div>
-            }
+                    <span class="brw-status-row-check" aria-hidden="true">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M5 12l5 5L20 7" />
+                      </svg>
+                    </span>
+                    <span class="brw-status-row-label"
+                      >Captured route, console, network, device</span
+                    >
+                  </div>
+                }
 
-            <!-- Row 2 (Sanitised) -->
-            @if (showSanitised()) {
-              <div
-                class="brw-status-row"
-                data-brw-row="sanitised"
-                [style.transition-delay.ms]="sanitisedDelayMs()"
-              >
-                <span class="brw-status-row-check" aria-hidden="true">
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
+                <!-- Row 2 (Sanitised) -->
+                @if (showSanitised()) {
+                  <div
+                    class="brw-status-row"
+                    data-brw-row="sanitised"
+                    [style.animation-delay.ms]="sanitisedDelayMs()"
                   >
-                    <path d="M5 12l5 5L20 7" />
-                  </svg>
-                </span>
-                <span class="brw-status-row-label"
-                  >PII-sanitised, packaged</span
-                >
-              </div>
-            }
+                    <span class="brw-status-row-check" aria-hidden="true">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M5 12l5 5L20 7" />
+                      </svg>
+                    </span>
+                    <span class="brw-status-row-label"
+                      >PII-sanitised, packaged</span
+                    >
+                  </div>
+                }
 
-            <!-- Row 3 (Formatting with AI…) — exact-match formatting + AI on -->
-            @if (showFormattingRow()) {
-              <div
-                class="brw-status-row"
-                data-brw-row="formatting"
-                [style.transition-delay.ms]="formattingDelayMs()"
-              >
-                <span class="brw-spinner" aria-hidden="true"></span>
-                <span class="brw-status-row-label">Formatting with AI…</span>
+                <!-- Row 3 (Formatting with AI…) — exact-match formatting + AI on -->
+                @if (showFormattingRow()) {
+                  <div
+                    class="brw-status-row"
+                    data-brw-row="formatting"
+                    [style.animation-delay.ms]="formattingDelayMs()"
+                  >
+                    <span class="brw-spinner" aria-hidden="true"></span>
+                    <span class="brw-status-row-label"
+                      >Formatting with AI…</span
+                    >
+                  </div>
+                }
               </div>
             }
 
@@ -556,6 +564,13 @@ function formatSize(bytes: number): string {
         --brw-shadow-base:
           0 20px 48px rgba(15, 23, 42, 0.18), 0 6px 12px rgba(15, 23, 42, 0.08);
         --brw-error-base: #b91c1c;
+        /* Success / check colour for the staged-status checklist. Matches
+           the emerald used in the marketing AnimatedDemo so the in-widget
+           checklist reads as the same affordance the docs preview.
+           Widget-internal: no public --brw-success alias by design —
+           host overrides flow through --brw-accent for chrome and don't
+           need a knob for the green tick. */
+        --brw-success-base: #10b981;
       }
       @media (prefers-color-scheme: dark) {
         :where(:root) {
@@ -574,6 +589,8 @@ function formatSize(bytes: number): string {
           --brw-accent-fg-base: #0f172a;
           --brw-shadow-base:
             0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 12px rgba(0, 0, 0, 0.35);
+          /* Brighter emerald (500→400) keeps the tick legible on dark panels. */
+          --brw-success-base: #34d399;
         }
       }
       .brw-root[data-brw-theme='light'] {
@@ -592,6 +609,7 @@ function formatSize(bytes: number): string {
         --brw-accent-fg-base: #ffffff;
         --brw-shadow-base:
           0 20px 48px rgba(15, 23, 42, 0.18), 0 6px 12px rgba(15, 23, 42, 0.08);
+        --brw-success-base: #10b981;
       }
       .brw-root[data-brw-theme='dark'] {
         --brw-panel-bg-base: #0b1220;
@@ -609,6 +627,7 @@ function formatSize(bytes: number): string {
         --brw-accent-fg-base: #0f172a;
         --brw-shadow-base:
           0 20px 48px rgba(0, 0, 0, 0.55), 0 6px 12px rgba(0, 0, 0, 0.35);
+        --brw-success-base: #34d399;
       }
       .brw-root {
         font-family:
@@ -1066,42 +1085,67 @@ function formatSize(bytes: number): string {
         font-size: 12px;
         align-self: stretch;
       }
+      /* Staged-status rows: progress indicators, not conversation bubbles.
+         They sit under a dashed top divider as a compact stacked checklist,
+         mirroring the marketing AnimatedDemo widget mock — and intentionally
+         stay outside the .brw-bubble class family so message-count queries
+         ignore them. .brw-status-rows is the grouping container that owns
+         the divider + stacking; .brw-status-row is one ticked line. The
+         animation-delay is set inline per row so the three rows fade in
+         sequentially under the shared @keyframes entrance even when the
+         underlying SDK phase events fire microseconds apart. The
+         reduced-motion media query collapses the entrance to an instant
+         fade, pairing with the inline 0ms delay the adapter passes when
+         the user has prefers-reduced-motion: reduce. */
+      .brw-status-rows {
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 2px;
+        padding-top: 8px;
+        border-top: 1px dashed var(--brw-divider, var(--brw-divider-base));
+      }
       .brw-status-row {
-        align-self: flex-start;
-        max-width: 85%;
-        padding: 10px 12px;
-        border-radius: 14px;
-        border-bottom-left-radius: 4px;
-        background: var(
-          --brw-bubble-assistant-bg,
-          var(--brw-bubble-assistant-bg-base)
-        );
-        color: var(--brw-fg, var(--brw-fg-base));
-        font-size: 13px;
-        line-height: 1.45;
         display: flex;
         align-items: center;
         gap: 8px;
+        font-size: 12px;
+        line-height: 1.4;
+        color: var(--brw-fg-muted, var(--brw-fg-muted-base));
         animation: brw-status-row-in 220ms ease-out both;
       }
       .brw-status-row-check {
         display: inline-flex;
-        width: 14px;
-        height: 14px;
+        width: 12px;
+        height: 12px;
         align-items: center;
         justify-content: center;
-        color: var(--brw-accent, var(--brw-accent-base));
+        color: var(--brw-success-base);
+        flex-shrink: 0;
       }
       .brw-status-row-check svg {
-        width: 14px;
-        height: 14px;
+        width: 12px;
+        height: 12px;
       }
       .brw-status-row-label {
         flex: 1;
       }
+      /* The retry row is a standalone alert that sits outside the
+         checklist container, so it carries its own chrome — padding,
+         radius, border — instead of inheriting the checklist's tick-line
+         minimalism. The background stays transparent so the red border
+         + red label read as an alert overlay rather than a filled bubble
+         surface. */
       .brw-status-row--error {
+        align-self: stretch;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: transparent;
         color: var(--brw-error-base);
         border: 1px solid var(--brw-error-base);
+        font-size: 13px;
+        line-height: 1.45;
       }
       .brw-status-row-retry {
         margin-left: auto;
