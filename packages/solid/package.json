@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-solid",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Brevwick Solid bindings — provider, FAB, useFeedback hook. Drop-in for any Solid or SolidStart app.",
   "license": "MIT",
   "type": "module",
