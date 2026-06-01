@@ -1008,8 +1008,9 @@ function UserBubble({
  * post-redaction JSON body that was POSTed to the ingest endpoint —
  * including the console / network / route rings and device + user context
  * the widget never shows — so a developer can inspect everything that left
- * the device. Pretty-prints with two-space indent for readability; the
- * content is identical to the wire bytes.
+ * the device. Pretty-printed with a two-space indent for readability; the
+ * parsed JSON matches what was sent over the wire (only the whitespace
+ * differs from the unindented request body).
  */
 function CopyRawButton({
   payload,

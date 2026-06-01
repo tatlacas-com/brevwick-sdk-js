@@ -401,8 +401,9 @@ export const FeedbackButton = defineComponent({
 
     /**
      * Copy the dev-only raw payload (the exact, post-redaction JSON body
-     * POSTed to the ingest endpoint) to the clipboard. Pretty-printed with
-     * two-space indent; the content is identical to the wire bytes. Degrades
+     * POSTed to the ingest endpoint) to the clipboard. Pretty-printed with a
+     * two-space indent; the parsed JSON matches what was sent over the wire
+     * (only the whitespace differs from the unindented request body). Degrades
      * to a no-op where the async clipboard API is missing.
      */
     function copyRaw(message: Message): void {

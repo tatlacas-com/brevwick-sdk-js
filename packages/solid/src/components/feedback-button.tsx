@@ -943,8 +943,9 @@ function UserBubble(props: {
  * Dev-only affordance rendered on a sent bubble when the SDK returned a
  * `debug.payload` (host set `config.debug`). Copies the exact, post-redaction
  * JSON body POSTed to the ingest endpoint — including the console / network /
- * route rings and device + user context the widget never shows. Pretty-prints
- * with two-space indent; the content is identical to the wire bytes.
+ * route rings and device + user context the widget never shows. Pretty-printed
+ * with a two-space indent; the parsed JSON matches what was sent over the wire
+ * (only the whitespace differs from the unindented request body).
  */
 function CopyRawButton(props: {
   payload: Record<string, unknown>;
