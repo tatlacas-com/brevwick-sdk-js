@@ -1125,3 +1125,76 @@ describe('<FeedbackButton>', () => {
   it.skip('region overlay drag-select capture', () => {});
   it.skip('screenshot preview dialog opens on chip click', () => {});
 });
+
+describe('<FeedbackButton> — debug raw payload (config.debug)', () => {
+  const COPY_LABEL = /copy the raw payload sent to the api/i;
+
+  const sendDraft = async (text: string): Promise<void> => {
+    mountFab();
+    await openPanel();
+    const textarea = screen.getByRole('textbox', {
+      name: /feedback message/i,
+    }) as HTMLTextAreaElement;
+    await act(async () => {
+      await fireEvent.input(textarea, { target: { value: text } });
+    });
+    await act(async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+  };
+
+  it('renders a copy-raw button on the sent bubble when the result carries debug.payload', async () => {
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_dbg',
+      debug: {
+        payload: { description: 'Broken', console_errors: [], network_calls: [] },
+      },
+    });
+    await sendDraft('Broken');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: COPY_LABEL }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('omits the copy-raw button when the result has no debug payload', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_nodbg' });
+    await sendDraft('Broken');
+    expect(screen.queryByRole('button', { name: COPY_LABEL })).toBeNull();
+  });
+
+  it('copies the pretty-printed payload to the clipboard and flips to "Copied!"', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const payload = {
+      description: 'Broken',
+      console_errors: [{ level: 'error', message: 'boom' }],
+    };
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_copy',
+      debug: { payload },
+    });
+    await sendDraft('Broken');
+
+    const copyBtn = await screen.findByRole('button', { name: COPY_LABEL });
+    await act(async () => {
+      await fireEvent.click(copyBtn);
+    });
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2)),
+    );
+    await waitFor(() =>
+      expect(screen.getByText('Copied!')).toBeInTheDocument(),
+    );
+  });
+});

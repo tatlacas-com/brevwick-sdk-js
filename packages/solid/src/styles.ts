@@ -269,6 +269,23 @@ export const BREVWICK_CSS = `
   color: var(--brw-fg-muted, var(--brw-fg-muted-base));
 }
 .brw-bubble--receipt svg { flex-shrink: 0; }
+/* Dev-only "copy raw payload" button (config.debug). Sits under the bubble
+   text, muted, so it never competes with real widget chrome. */
+.brw-copy-raw {
+  display: block;
+  margin-top: 6px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  background: transparent;
+  border: 1px solid var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
+  border-radius: 6px;
+  color: var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
+  opacity: 0.7;
+  cursor: pointer;
+}
+.brw-copy-raw:hover { opacity: 1; }
 .brw-chip {
   align-self: flex-end;
   display: inline-flex;

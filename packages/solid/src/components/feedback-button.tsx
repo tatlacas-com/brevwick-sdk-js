@@ -53,6 +53,13 @@ interface Message {
   attachments?: {
     files?: readonly MessageAttachment[];
   };
+  /**
+   * The exact, post-redaction payload the SDK POSTed for this message — set
+   * only when the host enabled `config.debug`. When present, the bubble
+   * renders a "copy raw payload" affordance so a developer can inspect
+   * everything that left the device (rings/context the widget never shows).
+   */
+  rawPayload?: Record<string, unknown>;
 }
 
 /**
@@ -289,6 +296,9 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
   // without forcing the user to re-type the draft we cleared synchronously
   // on Send.
   let lastSubmittedInput: FeedbackInput | null = null;
+  // Id of the user bubble for the most recent submit, so the retry path can
+  // re-attach a freshly composed `rawPayload` to the same bubble.
+  let lastUserMessageId: string | null = null;
 
   const projectConfig = useProjectConfig(open);
   // Render-policy matrix, SDD § 12. The toggle is visible exactly when the
@@ -374,6 +384,22 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     setFiles(files.filter((f) => f.id !== id));
   };
 
+  /**
+   * Stamp the dev-only raw payload onto a user bubble once `submit()`
+   * resolves. No-op unless the host enabled `config.debug` (the SDK only
+   * populates `result.debug` then), so this is inert in production.
+   */
+  const attachRawPayload = (messageId: string, result: SubmitResult): void => {
+    const payload = result.debug?.payload;
+    if (!payload) return;
+    setMessages(
+      produce((prev: Message[]) => {
+        const target = prev.find((m) => m.id === messageId);
+        if (target) target.rawPayload = payload;
+      }),
+    );
+  };
+
   const doSubmit = async (): Promise<void> => {
     if (status() === 'submitting') return;
     if (!draft().trim()) {
@@ -434,11 +460,13 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     setShowExtras(false);
     setFiles([]);
     lastSubmittedInput = input;
+    lastUserMessageId = userMessage.id;
 
     try {
       const result = await submit(input);
       if (!alive) return;
       props.onSubmit?.(result);
+      attachRawPayload(userMessage.id, result);
       if (result.ok) {
         setMessages(
           produce((prev: Message[]) => {
@@ -479,6 +507,7 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
       const result = await retry();
       if (!alive || !result) return;
       props.onSubmit?.(result);
+      if (lastUserMessageId) attachRawPayload(lastUserMessageId, result);
       if (result.ok) {
         setMessages(
           produce((prev: Message[]) => {
@@ -681,7 +710,11 @@ function Thread(props: ThreadProps): JSX.Element {
         {(message) => (
           <Show
             when={message.role === 'assistant'}
-            fallback={<UserBubble>{message.text}</UserBubble>}
+            fallback={
+              <UserBubble rawPayload={message.rawPayload}>
+                {message.text}
+              </UserBubble>
+            }
           >
             <AssistantBubble
               issueSent={message.issueSent}
@@ -892,8 +925,66 @@ function AssistantBubble(props: AssistantBubbleProps): JSX.Element {
   );
 }
 
-function UserBubble(props: { children: JSX.Element }): JSX.Element {
-  return <div class="brw-bubble brw-bubble--user">{props.children}</div>;
+function UserBubble(props: {
+  children: JSX.Element;
+  rawPayload?: Record<string, unknown>;
+}): JSX.Element {
+  return (
+    <div class="brw-bubble brw-bubble--user">
+      {props.children}
+      <Show when={props.rawPayload !== undefined}>
+        <CopyRawButton payload={props.rawPayload!} />
+      </Show>
+    </div>
+  );
+}
+
+/**
+ * Dev-only affordance rendered on a sent bubble when the SDK returned a
+ * `debug.payload` (host set `config.debug`). Copies the exact, post-redaction
+ * JSON body POSTed to the ingest endpoint — including the console / network /
+ * route rings and device + user context the widget never shows. Pretty-prints
+ * with two-space indent; the content is identical to the wire bytes.
+ */
+function CopyRawButton(props: {
+  payload: Record<string, unknown>;
+}): JSX.Element {
+  const [copied, setCopied] = createSignal(false);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+
+  const handleCopy = (): void => {
+    const json = JSON.stringify(props.payload, null, 2);
+    const clip =
+      typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    // Degrade to a no-op on insecure contexts / older browsers where the
+    // async clipboard API is missing, rather than throwing inside the dialog.
+    if (!clip) return;
+    void clip.writeText(json).then(
+      () => {
+        setCopied(true);
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(() => setCopied(false), 1500);
+      },
+      () => {
+        /* clipboard write rejected (permissions) — leave the label unchanged */
+      },
+    );
+  };
+
+  return (
+    <button
+      type="button"
+      class="brw-copy-raw"
+      onClick={handleCopy}
+      aria-label="Copy the raw payload sent to the API"
+      data-brw-copy-raw=""
+    >
+      {copied() ? 'Copied!' : 'Copy raw payload'}
+    </button>
+  );
 }
 
 interface AttachmentChipProps {

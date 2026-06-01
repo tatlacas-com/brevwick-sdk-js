@@ -844,3 +844,88 @@ describe('submit — userContext throw safety', () => {
     expect(matched).toBe(true);
   });
 });
+
+describe('submit — debug payload exposure', () => {
+  it('omits debug from the result when config.debug is unset', async () => {
+    installUploadHandlers();
+    captureIssueBody();
+    const instance = createBrevwick({ projectKey: KEY });
+    const result = await instance.submit({ description: 'd' });
+    expect(result).toEqual({ ok: true, issue_id: 'rep_123' });
+    expect('debug' in result).toBe(false);
+  });
+
+  it('attaches the exact wire payload as debug.payload when config.debug is true', async () => {
+    installUploadHandlers();
+    const body = captureIssueBody();
+    const instance = createBrevwick({
+      projectKey: KEY,
+      debug: true,
+      environment: 'stg',
+      release: '1.2.3',
+      user: { id: 'u_7' },
+    });
+    const result = await instance.submit({
+      title: 'broken',
+      description: 'the thing broke',
+      attachments: [makeBlob()],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.debug).toBeDefined();
+    // What the developer copies is byte-for-byte what left the device: the
+    // serialised debug.payload equals the captured request body.
+    const sent = JSON.parse(body.get()!) as Record<string, unknown>;
+    expect(result.debug!.payload).toEqual(sent);
+    // And it carries the parts the widget never renders.
+    expect(result.debug!.payload).toHaveProperty('console_errors');
+    expect(result.debug!.payload).toHaveProperty('network_calls');
+    expect(result.debug!.payload).toHaveProperty('route_trail');
+    expect(result.debug!.payload).toHaveProperty('device_context');
+  });
+
+  it('carries debug.payload on a post-compose ingest failure', async () => {
+    installUploadHandlers();
+    server.use(
+      http.post(ISSUES_URL, () =>
+        HttpResponse.json({ error: 'QUOTA_EXCEEDED' }, { status: 422 }),
+      ),
+    );
+    const instance = createBrevwick({ projectKey: KEY, debug: true });
+    const result = await instance.submit({ description: 'd' });
+    expect(result.ok).toBe(false);
+    expect(result.debug?.payload).toHaveProperty('description', 'd');
+  });
+
+  it('omits debug when the failure short-circuits before compose', async () => {
+    // Sixth attachment trips client-side validation before any payload is
+    // composed — there is nothing to expose.
+    const instance = createBrevwick({ projectKey: KEY, debug: true });
+    const result = await instance.submit({
+      description: 'd',
+      attachments: [
+        makeBlob(),
+        makeBlob(),
+        makeBlob(),
+        makeBlob(),
+        makeBlob(),
+        makeBlob(),
+      ],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.debug).toBeUndefined();
+  });
+
+  it('debug.payload reflects redaction — no raw PII leaks', async () => {
+    installUploadHandlers();
+    captureIssueBody();
+    const instance = createBrevwick({ projectKey: KEY, debug: true });
+    const result = await instance.submit({
+      description: 'reach me at jane.doe@example.com',
+    });
+    expect(result.ok).toBe(true);
+    const description = (result.debug!.payload as { description: string })
+      .description;
+    expect(description).not.toContain('jane.doe@example.com');
+    expect(description).toContain('[email]');
+  });
+});

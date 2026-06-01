@@ -131,6 +131,22 @@ createBrevwick(config: BrevwickConfig): Brevwick
 | `rings`             | `{ console?, network?, route? }`       | all `true`                 | Per-ring toggles. Each accepts the legacy `boolean` shorthand or the object form below for finer-grained control.                                                                       |
 | `redact`            | `{ disable?, custom? }`                | _unset_                    | Tune the on-device redactor — selectively disable built-in patterns and/or extend with project-specific regexes.                                                                        |
 | `fingerprintOptOut` | `boolean`                              | `false`                    | Send `X-Brevwick-Fingerprint-Optout: 1` to skip the server-side salted fingerprint.                                                                                                     |
+| `debug`             | `boolean`                              | `false`                    | Dev-only. Expose the exact, post-redaction payload on each `SubmitResult` as `debug.payload` and surface a per-message "Copy raw payload" button in the widget. See [Debug mode](#debug-mode-see-the-raw-payload).                                                |
+
+### Debug mode — see the raw payload
+
+When `debug` is `true`, every `submit()` resolves with a `debug.payload` field holding the **exact, already-redacted** object that was POSTed to the ingest endpoint — including everything the widget never renders: the console ring, network ring, route trail, device + user context, and attachment descriptors. The framework widgets render a per-message **"Copy raw payload"** button on each sent bubble that copies this JSON to the clipboard.
+
+It is meant to be wired to a host build flag so it is never on in production:
+
+```ts
+createBrevwick({
+  projectKey: 'pk_test_xxx',
+  debug: process.env.NEXT_PUBLIC_SEE_LOGS === 'true',
+});
+```
+
+`debug` never changes what is sent — the payload is byte-for-byte identical to a non-debug submit and stays fully redacted. The only cost is retaining that payload in memory on each submit, so leave it `false` for real users.
 
 ### `rings.console`
 

@@ -75,6 +75,13 @@
     text: string;
     sentAt?: number;
     issueSent?: boolean;
+    /**
+     * The exact, post-redaction payload the SDK POSTed for this message —
+     * set only when the host enabled `config.debug`. When present, the bubble
+     * renders a "copy raw payload" affordance so a developer can inspect
+     * everything that left the device (rings/context the widget never shows).
+     */
+    rawPayload?: Record<string, unknown>;
   };
 
   const GREETING: Message = {
@@ -131,6 +138,14 @@
   // payload without forcing the user to re-type the draft we cleared
   // synchronously on Send.
   let lastSubmittedInput: FeedbackInput | null = null;
+  // Id of the user bubble for the most recent submit, so the retry path can
+  // re-attach a freshly composed `rawPayload` to the same bubble.
+  let lastUserMessageId: string | null = null;
+  // Id of the bubble whose copy button is showing "Copied!" feedback, plus
+  // the timer that clears it. A single id (not per-button state) keeps the
+  // dev-only affordance off the markup hot path.
+  let copiedRawId: string | null = null;
+  let copiedRawTimeout: ReturnType<typeof setTimeout> | undefined;
 
   // Receipt timestamps live in a writable so the relative-time formatter
   // re-runs reactively without coupling to the message identity. Mirrors
@@ -179,6 +194,7 @@
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', handleWindowKeydown);
     }
+    if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
   });
 
   // Lazy project-config fetch on first panel open. Subsequent opens reuse
@@ -206,6 +222,45 @@
   function newMessageId(): string {
     messageId += 1;
     return `msg-${messageId}`;
+  }
+
+  /**
+   * Stamp the dev-only raw payload onto a user bubble once `submit()`
+   * resolves. No-op unless the host enabled `config.debug` (the SDK only
+   * populates `result.debug` then), so this is inert in production.
+   */
+  function attachRawPayload(messageId: string, result: SubmitResult): void {
+    const payload = result.debug?.payload;
+    if (!payload) return;
+    messages = messages.map((m) =>
+      m.id === messageId ? { ...m, rawPayload: payload } : m,
+    );
+  }
+
+  /**
+   * Copy the dev-only raw payload (the exact, post-redaction JSON body POSTed
+   * to the ingest endpoint) to the clipboard. Pretty-printed with two-space
+   * indent; the content is identical to the wire bytes. Degrades to a no-op
+   * where the async clipboard API is missing.
+   */
+  function copyRaw(message: Message): void {
+    if (!message.rawPayload) return;
+    const json = JSON.stringify(message.rawPayload, null, 2);
+    const clip =
+      typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (!clip) return;
+    void clip.writeText(json).then(
+      () => {
+        copiedRawId = message.id;
+        if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
+        copiedRawTimeout = setTimeout(() => {
+          copiedRawId = null;
+        }, 1500);
+      },
+      () => {
+        /* clipboard write rejected (permissions) — leave the label as is */
+      },
+    );
   }
 
   function resetAll(): void {
@@ -355,10 +410,12 @@
     actual = '';
     showExtras = false;
     lastSubmittedInput = input;
+    lastUserMessageId = userBubble.id;
 
     try {
       const result = await feedback.submit(input);
       onSubmit?.(result);
+      attachRawPayload(userBubble.id, result);
       if (result.ok) {
         const assistant: Message = {
           id: newMessageId(),
@@ -410,6 +467,7 @@
       const result = await feedback.retry();
       if (!result) return;
       onSubmit?.(result);
+      if (lastUserMessageId) attachRawPayload(lastUserMessageId, result);
       if (result.ok) {
         const assistant: Message = {
           id: newMessageId(),
@@ -582,6 +640,17 @@
             {:else}
               <div class="brw-svelte-bubble brw-svelte-bubble--user">
                 {message.text}
+                {#if message.rawPayload !== undefined}
+                  <button
+                    type="button"
+                    class="brw-svelte-copy-raw"
+                    aria-label="Copy the raw payload sent to the API"
+                    data-brw-copy-raw
+                    on:click={() => copyRaw(message)}
+                  >
+                    {copiedRawId === message.id ? 'Copied!' : 'Copy raw payload'}
+                  </button>
+                {/if}
               </div>
             {/if}
           {/each}
@@ -1102,6 +1171,25 @@
   }
   .brw-svelte-bubble--receipt svg {
     flex-shrink: 0;
+  }
+  /* Dev-only "copy raw payload" button (config.debug). Sits under the bubble
+     text, muted, so it never competes with real widget chrome. */
+  .brw-svelte-copy-raw {
+    display: block;
+    margin-top: 6px;
+    padding: 2px 6px;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.4;
+    background: transparent;
+    border: 1px solid var(--brw-bubble-user-fg);
+    border-radius: 6px;
+    color: var(--brw-bubble-user-fg);
+    opacity: 0.7;
+    cursor: pointer;
+  }
+  .brw-svelte-copy-raw:hover {
+    opacity: 1;
   }
 
   .brw-svelte-chip {

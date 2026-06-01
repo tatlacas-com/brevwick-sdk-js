@@ -59,6 +59,14 @@ interface Message {
   attachments?: {
     files?: readonly MessageAttachment[];
   };
+  /**
+   * The exact, post-redaction payload the SDK POSTed for this message — set
+   * only when the host enabled `config.debug` (the SDK returns it on
+   * `SubmitResult.debug.payload`). When present, the bubble renders a
+   * "copy raw payload" affordance so a developer can inspect everything that
+   * left the device, including the rings/context the widget never shows.
+   */
+  rawPayload?: Record<string, unknown>;
 }
 
 /**
@@ -276,6 +284,10 @@ export function FeedbackButton({
   // retry CTA on a failed submit can re-run with the exact same payload
   // without forcing the user to re-type the draft we cleared on Send.
   const lastSubmittedInputRef = useRef<FeedbackInput | null>(null);
+  // Id of the user bubble for the most recent submit, so the retry path can
+  // re-attach a freshly composed `rawPayload` to the same bubble (retry
+  // recomposes the payload from current ring snapshots).
+  const lastUserMessageIdRef = useRef<string | null>(null);
 
   useBrevwickStyles();
 
@@ -375,6 +387,22 @@ export function FeedbackButton({
     setFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
+  /**
+   * Stamp the dev-only raw payload onto a user bubble once `submit()`
+   * resolves. No-op unless the host enabled `config.debug` (the SDK only
+   * populates `result.debug` then), so this is inert in production.
+   */
+  const attachRawPayload = useCallback(
+    (messageId: string, result: SubmitResult) => {
+      const payload = result.debug?.payload;
+      if (!payload) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, rawPayload: payload } : m)),
+      );
+    },
+    [],
+  );
+
   const doSubmit = useCallback(async () => {
     if (status === 'submitting') return;
     if (!draft.trim()) {
@@ -430,11 +458,13 @@ export function FeedbackButton({
     setShowExtras(false);
     setFiles([]);
     lastSubmittedInputRef.current = input;
+    lastUserMessageIdRef.current = userMessage.id;
 
     try {
       const result = await submit(input);
       if (!mountedRef.current) return;
       onSubmit?.(result);
+      attachRawPayload(userMessage.id, result);
       if (result.ok) {
         const assistantMessage: Message = {
           id: `msg-${++messageIdRef.current}`,
@@ -465,6 +495,7 @@ export function FeedbackButton({
     }
   }, [
     actual,
+    attachRawPayload,
     draft,
     expected,
     files,
@@ -489,6 +520,8 @@ export function FeedbackButton({
       const result = await submit(last);
       if (!mountedRef.current) return;
       onSubmit?.(result);
+      const retriedId = lastUserMessageIdRef.current;
+      if (retriedId) attachRawPayload(retriedId, result);
       if (result.ok) {
         const assistantMessage: Message = {
           id: `msg-${++messageIdRef.current}`,
@@ -507,7 +540,7 @@ export function FeedbackButton({
       void err;
       setOpen(true);
     }
-  }, [onSubmit, status, submit]);
+  }, [attachRawPayload, onSubmit, status, submit]);
 
   if (hidden) return null;
 
@@ -737,7 +770,9 @@ function Thread({
             {message.text}
           </AssistantBubble>
         ) : (
-          <UserBubble key={message.id}>{message.text}</UserBubble>
+          <UserBubble key={message.id} rawPayload={message.rawPayload}>
+            {message.text}
+          </UserBubble>
         ),
       )}
       {files.map(({ id, file }) => (
@@ -950,8 +985,75 @@ function AssistantBubble({
   );
 }
 
-function UserBubble({ children }: { children: ReactNode }): ReactElement {
-  return <div className="brw-bubble brw-bubble--user">{children}</div>;
+function UserBubble({
+  children,
+  rawPayload,
+}: {
+  children: ReactNode;
+  rawPayload?: Record<string, unknown>;
+}): ReactElement {
+  return (
+    <div className="brw-bubble brw-bubble--user">
+      {children}
+      {rawPayload !== undefined && <CopyRawButton payload={rawPayload} />}
+    </div>
+  );
+}
+
+/**
+ * Dev-only affordance rendered on a sent bubble when the SDK returned a
+ * `debug.payload` (i.e. the host set `config.debug`). Copies the exact,
+ * post-redaction JSON body that was POSTed to the ingest endpoint —
+ * including the console / network / route rings and device + user context
+ * the widget never shows — so a developer can inspect everything that left
+ * the device. Pretty-prints with two-space indent for readability; the
+ * content is identical to the wire bytes.
+ */
+function CopyRawButton({
+  payload,
+}: {
+  payload: Record<string, unknown>;
+}): ReactElement {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    },
+    [],
+  );
+
+  const handleCopy = useCallback(() => {
+    const json = JSON.stringify(payload, null, 2);
+    const clip =
+      typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    // Degrade to a no-op on insecure contexts / older browsers where the
+    // async clipboard API is missing, rather than throwing inside the dialog.
+    if (!clip) return;
+    void clip.writeText(json).then(
+      () => {
+        setCopied(true);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => setCopied(false), 1500);
+      },
+      () => {
+        /* clipboard write rejected (permissions) — leave the label unchanged */
+      },
+    );
+  }, [payload]);
+
+  return (
+    <button
+      type="button"
+      className="brw-copy-raw"
+      onClick={handleCopy}
+      aria-label="Copy the raw payload sent to the API"
+      data-brw-copy-raw=""
+    >
+      {copied ? 'Copied!' : 'Copy raw payload'}
+    </button>
+  );
 }
 
 /**
