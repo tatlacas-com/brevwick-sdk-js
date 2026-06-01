@@ -137,14 +137,27 @@ createBrevwick(config: BrevwickConfig): Brevwick
 
 When `debug` is `true`, every `submit()` resolves with a `debug.payload` field holding the **exact, already-redacted** object that was POSTed to the ingest endpoint — including everything the widget never renders: the console ring, network ring, route trail, device + user context, and attachment descriptors. The framework widgets render a per-message **"Copy raw payload"** button on each sent bubble that copies this JSON to the clipboard.
 
-It is meant to be wired to a host build flag so it is never on in production:
+`debug` is just a boolean — the SDK never reads an environment variable itself, so it stays framework-agnostic. Resolve a flag however your host toolchain exposes client-side env and pass the result. It is meant to be wired to a host build flag so it is never on in production:
 
 ```ts
 createBrevwick({
   projectKey: 'pk_test_xxx',
-  debug: process.env.NEXT_PUBLIC_SEE_LOGS === 'true',
+  debug: yourFlag, // a boolean you compute from the host's env — see below
 });
 ```
+
+The variable name and how you read it depend on the framework — `NEXT_PUBLIC_*` is Next.js-specific and would not be visible to a Vite or Angular app:
+
+| Host toolchain                               | Resolve the flag with                                          |
+| -------------------------------------------- | -------------------------------------------------------------- |
+| Next.js                                      | `process.env.NEXT_PUBLIC_SEE_LOGS === 'true'`                  |
+| Vite (React / Solid / Vue / Svelte via Vite) | `import.meta.env.VITE_SEE_LOGS === 'true'`                     |
+| SvelteKit                                    | `import { PUBLIC_SEE_LOGS } from '$env/static/public'`         |
+| Astro                                        | `import.meta.env.PUBLIC_SEE_LOGS === 'true'`                   |
+| Angular CLI                                  | `environment.seeLogs` (from `src/environments/environment.ts`) |
+| Nuxt                                         | `useRuntimeConfig().public.seeLogs`                            |
+
+If you only need it on in development builds (not a runtime toggle), tie it to the build mode instead: `debug: import.meta.env.DEV` (Vite) or `debug: process.env.NODE_ENV !== 'production'` (Next.js / webpack).
 
 `debug` never changes what is sent — the payload is byte-for-byte identical to a non-debug submit and stays fully redacted. The only cost is retaining that payload in memory on each submit, so leave it `false` for real users.
 
