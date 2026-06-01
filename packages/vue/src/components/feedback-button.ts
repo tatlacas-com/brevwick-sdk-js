@@ -408,8 +408,7 @@ export const FeedbackButton = defineComponent({
     function copyRaw(message: Message): void {
       if (!message.rawPayload) return;
       const json = JSON.stringify(message.rawPayload, null, 2);
-      const clip =
-        typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+      const clip = navigator.clipboard;
       if (!clip) return;
       void clip.writeText(json).then(
         () => {

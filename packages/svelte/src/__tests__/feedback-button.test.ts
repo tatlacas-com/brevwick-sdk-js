@@ -1201,4 +1201,47 @@ describe('<FeedbackButton> — debug raw payload (config.debug)', () => {
       expect(screen.getByText('Copied!')).toBeInTheDocument(),
     );
   });
+
+  it('is a no-op when the clipboard API is unavailable', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: undefined,
+      configurable: true,
+    });
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_noclip',
+      debug: { payload: { description: 'Broken' } },
+    });
+    await sendDraft('Broken');
+
+    const copyBtn = await screen.findByRole('button', { name: COPY_LABEL });
+    await act(async () => {
+      await fireEvent.click(copyBtn);
+    });
+    // No throw, label unchanged.
+    expect(copyBtn.textContent?.trim()).toBe('Copy raw payload');
+  });
+
+  it('recovers when the clipboard write is rejected', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_rej',
+      debug: { payload: { description: 'Broken' } },
+    });
+    await sendDraft('Broken');
+
+    const copyBtn = await screen.findByRole('button', { name: COPY_LABEL });
+    await act(async () => {
+      await fireEvent.click(copyBtn);
+    });
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(copyBtn.textContent?.trim()).toBe('Copy raw payload');
+  });
 });

@@ -1028,8 +1028,7 @@ function CopyRawButton({
 
   const handleCopy = useCallback(() => {
     const json = JSON.stringify(payload, null, 2);
-    const clip =
-      typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    const clip = navigator.clipboard;
     // Degrade to a no-op on insecure contexts / older browsers where the
     // async clipboard API is missing, rather than throwing inside the dialog.
     if (!clip) return;

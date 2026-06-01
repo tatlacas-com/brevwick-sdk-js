@@ -247,7 +247,7 @@
     if (!message.rawPayload) return;
     const json = JSON.stringify(message.rawPayload, null, 2);
     const clip =
-      typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+      navigator.clipboard;
     if (!clip) return;
     void clip.writeText(json).then(
       () => {
