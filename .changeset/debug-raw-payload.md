@@ -1,10 +1,10 @@
 ---
-"@tatlacas/brevwick-sdk": minor
-"@tatlacas/brevwick-react": minor
-"@tatlacas/brevwick-solid": minor
-"@tatlacas/brevwick-vue": minor
-"@tatlacas/brevwick-svelte": minor
-"@tatlacas/brevwick-angular": minor
+'@tatlacas/brevwick-sdk': minor
+'@tatlacas/brevwick-react': minor
+'@tatlacas/brevwick-solid': minor
+'@tatlacas/brevwick-vue': minor
+'@tatlacas/brevwick-svelte': minor
+'@tatlacas/brevwick-angular': minor
 ---
 
 feat: dev-only `debug` mode that exposes the raw payload sent to the API

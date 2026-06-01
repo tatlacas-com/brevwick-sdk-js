@@ -3081,7 +3081,11 @@ describe('<FeedbackButton> — debug raw payload (config.debug)', () => {
       ok: true,
       issue_id: 'rep_dbg',
       debug: {
-        payload: { description: 'Broken', console_errors: [], network_calls: [] },
+        payload: {
+          description: 'Broken',
+          console_errors: [],
+          network_calls: [],
+        },
       },
     });
     mount();
@@ -3094,7 +3098,9 @@ describe('<FeedbackButton> — debug raw payload (config.debug)', () => {
     const userBubble = screen.getByText('Broken').closest('.brw-bubble--user');
     expect(userBubble).not.toBeNull();
     expect(
-      within(userBubble as HTMLElement).getByRole('button', { name: COPY_LABEL }),
+      within(userBubble as HTMLElement).getByRole('button', {
+        name: COPY_LABEL,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -3112,9 +3118,9 @@ describe('<FeedbackButton> — debug raw payload (config.debug)', () => {
   });
 
   it('copies the pretty-printed payload to the clipboard and flips to "Copied!"', async () => {
-    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(
-      undefined,
-    );
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
       configurable: true,

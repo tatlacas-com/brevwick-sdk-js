@@ -658,7 +658,9 @@ export const FeedbackButton = defineComponent({
                   'data-brw-copy-raw': '',
                   onClick: () => copyRaw(copiedMsg),
                 },
-                copiedRawId.value === message.id ? 'Copied!' : 'Copy raw payload',
+                copiedRawId.value === message.id
+                  ? 'Copied!'
+                  : 'Copy raw payload',
               ),
             );
           }

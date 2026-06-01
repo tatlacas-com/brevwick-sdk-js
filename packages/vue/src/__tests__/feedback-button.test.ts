@@ -764,7 +764,11 @@ describe('<FeedbackButton> — debug raw payload (config.debug)', () => {
       ok: true,
       issue_id: 'rep_dbg',
       debug: {
-        payload: { description: 'Broken', console_errors: [], network_calls: [] },
+        payload: {
+          description: 'Broken',
+          console_errors: [],
+          network_calls: [],
+        },
       },
     });
     const wrapper = mountFab();

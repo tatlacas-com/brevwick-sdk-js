@@ -397,7 +397,9 @@ export function FeedbackButton({
       const payload = result.debug?.payload;
       if (!payload) return;
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, rawPayload: payload } : m)),
+        prev.map((m) =>
+          m.id === messageId ? { ...m, rawPayload: payload } : m,
+        ),
       );
     },
     [],

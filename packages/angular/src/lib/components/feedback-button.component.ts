@@ -293,7 +293,11 @@ function formatSize(bytes: number): string {
                       data-brw-copy-raw
                       (click)="copyRaw(msg)"
                     >
-                      {{ copiedRawId() === msg.id ? 'Copied!' : 'Copy raw payload' }}
+                      {{
+                        copiedRawId() === msg.id
+                          ? 'Copied!'
+                          : 'Copy raw payload'
+                      }}
                     </button>
                   }
                 </div>
