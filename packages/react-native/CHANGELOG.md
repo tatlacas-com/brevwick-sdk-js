@@ -1,5 +1,22 @@
 # @tatlacas/brevwick-react-native
 
+## 2.0.0-beta.0
+
+### Patch Changes
+
+- [#152](https://github.com/tatlacas-com/brevwick-sdk-js/pull/152) [`ba4d53a`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ba4d53af10637d49c1047cbeb32d6af856a7824b) Thanks [@tatlacas](https://github.com/tatlacas)! - Re-align the seven linked packages onto a single version on the prerelease
+  channel. The stable `1.0.2` release (PR [#150](https://github.com/tatlacas-com/brevwick-sdk-js/issues/150)) bumped only the five web
+  adapters — `react`, `solid`, `vue`, `svelte`, `angular` — because the
+  consumed changeset listed only those packages, and `.changeset/config.json`
+  uses `linked` (which shares a version-floor across the group but does not
+  auto-bump siblings) rather than `fixed`. As a result `@tatlacas/brevwick-sdk`
+  and `@tatlacas/brevwick-react-native` were left at `1.0.1` on npm while the
+  others moved to `1.0.2`. Listing all seven here brings every package to the
+  next prerelease (`1.0.3-beta.0`) together, restoring parity across the
+  linked group before further work continues on the dev channel.
+- Updated dependencies [[`3327926`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/332792687ef9bf85822a0446a3cca4ba604b506a), [`ba4d53a`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ba4d53af10637d49c1047cbeb32d6af856a7824b)]:
+  - @tatlacas/brevwick-sdk@2.0.0-beta.0
+
 ## 1.0.1
 
 ### Patch Changes

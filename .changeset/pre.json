@@ -21,5 +21,8 @@
     "@tatlacas/brevwick-svelte": "1.0.2",
     "@tatlacas/brevwick-vue": "1.0.2"
   },
-  "changesets": []
+  "changesets": [
+    "debug-raw-payload",
+    "realign-linked-versions"
+  ]
 }
