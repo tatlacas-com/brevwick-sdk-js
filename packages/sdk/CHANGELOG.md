@@ -1,5 +1,30 @@
 # brevwick-sdk
 
+## 2.0.0-beta.0
+
+### Minor Changes
+
+- [#155](https://github.com/tatlacas-com/brevwick-sdk-js/pull/155) [`3327926`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/332792687ef9bf85822a0446a3cca4ba604b506a) Thanks [@tatlacas](https://github.com/tatlacas)! - feat: dev-only `debug` mode that exposes the raw payload sent to the API
+
+  Add a `debug?: boolean` config option (default `false`). When enabled, every `submit()` resolves with a `debug.payload` field carrying the exact, already-redacted body that was POSTed to `/v1/ingest/issues` — including everything the widget never renders (console ring, network ring, route trail, device + user context, attachment descriptors).
+
+  All five web widgets (React, Solid, Vue, Svelte, Angular) render a per-message **"Copy raw payload"** button on each sent bubble when the payload is present, copying the pretty-printed JSON to the clipboard. The button is absent unless `debug` is on.
+
+  Wire it to a host build flag so it never ships to real users, e.g. `debug: process.env.NEXT_PUBLIC_SEE_LOGS === 'true'`. `debug` never changes what is sent — the payload is identical to a normal submit and stays fully redacted; the only cost is retaining it in memory per submit.
+
+### Patch Changes
+
+- [#152](https://github.com/tatlacas-com/brevwick-sdk-js/pull/152) [`ba4d53a`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ba4d53af10637d49c1047cbeb32d6af856a7824b) Thanks [@tatlacas](https://github.com/tatlacas)! - Re-align the seven linked packages onto a single version on the prerelease
+  channel. The stable `1.0.2` release (PR [#150](https://github.com/tatlacas-com/brevwick-sdk-js/issues/150)) bumped only the five web
+  adapters — `react`, `solid`, `vue`, `svelte`, `angular` — because the
+  consumed changeset listed only those packages, and `.changeset/config.json`
+  uses `linked` (which shares a version-floor across the group but does not
+  auto-bump siblings) rather than `fixed`. As a result `@tatlacas/brevwick-sdk`
+  and `@tatlacas/brevwick-react-native` were left at `1.0.1` on npm while the
+  others moved to `1.0.2`. Listing all seven here brings every package to the
+  next prerelease (`1.0.3-beta.0`) together, restoring parity across the
+  linked group before further work continues on the dev channel.
+
 ## 1.0.1
 
 ### Patch Changes
