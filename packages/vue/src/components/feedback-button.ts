@@ -57,6 +57,13 @@ interface Message {
   attachments?: {
     files?: readonly MessageAttachment[];
   };
+  /**
+   * The exact, post-redaction payload the SDK POSTed for this message — set
+   * only when the host enabled `config.debug`. When present, the bubble
+   * renders a "copy raw payload" affordance so a developer can inspect
+   * everything that left the device (rings/context the widget never shows).
+   */
+  rawPayload?: Record<string, unknown>;
 }
 
 /**
@@ -206,6 +213,9 @@ export const FeedbackButton = defineComponent({
     // retry CTA can re-run with the exact same payload (including any
     // attached files) without forcing the user to re-type the draft.
     let lastSubmittedInput: FeedbackInput | null = null;
+    // Id of the user bubble for the most recent submit, so the retry path can
+    // re-attach a freshly composed `rawPayload` to the same bubble.
+    let lastUserMessageId: string | null = null;
 
     const composerRef = ref<HTMLTextAreaElement | null>(null);
     const keepBtnRef = ref<HTMLButtonElement | null>(null);
@@ -237,6 +247,7 @@ export const FeedbackButton = defineComponent({
 
     onBeforeUnmount(() => {
       mounted = false;
+      if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
     });
 
     const showAiToggle = computed(
@@ -369,6 +380,51 @@ export const FeedbackButton = defineComponent({
       void nextTick(autosizeComposer);
     });
 
+    /**
+     * Stamp the dev-only raw payload onto a user bubble once `submit()`
+     * resolves. No-op unless the host enabled `config.debug` (the SDK only
+     * populates `result.debug` then), so this is inert in production.
+     */
+    function attachRawPayload(messageId: string, result: SubmitResult): void {
+      const payload = result.debug?.payload;
+      if (!payload) return;
+      messages.value = messages.value.map((m) =>
+        m.id === messageId ? { ...m, rawPayload: payload } : m,
+      );
+    }
+
+    // Id of the bubble whose copy button is showing "Copied!" feedback.
+    // Single ref keyed by message id avoids per-button component state in the
+    // functional render below.
+    const copiedRawId = ref<string | null>(null);
+    let copiedRawTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    /**
+     * Copy the dev-only raw payload (the exact, post-redaction JSON body
+     * POSTed to the ingest endpoint) to the clipboard. Pretty-printed with a
+     * two-space indent; the parsed JSON matches what was sent over the wire
+     * (only the whitespace differs from the unindented request body). Degrades
+     * to a no-op where the async clipboard API is missing.
+     */
+    function copyRaw(message: Message): void {
+      if (!message.rawPayload) return;
+      const json = JSON.stringify(message.rawPayload, null, 2);
+      const clip = navigator.clipboard;
+      if (!clip) return;
+      void clip.writeText(json).then(
+        () => {
+          copiedRawId.value = message.id;
+          if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
+          copiedRawTimeout = setTimeout(() => {
+            copiedRawId.value = null;
+          }, 1500);
+        },
+        () => {
+          /* clipboard write rejected (permissions) — leave the label as is */
+        },
+      );
+    }
+
     async function doSubmit(): Promise<void> {
       if (status.value === 'submitting') return;
       if (!draft.value.trim()) {
@@ -418,11 +474,13 @@ export const FeedbackButton = defineComponent({
       showExtras.value = false;
       files.value = [];
       lastSubmittedInput = input;
+      lastUserMessageId = userMessage.id;
 
       try {
         const result = await submit(input);
         if (!mounted) return;
         props.onSubmit?.(result);
+        attachRawPayload(userMessage.id, result);
         if (result.ok) {
           messages.value = [
             ...messages.value,
@@ -464,6 +522,7 @@ export const FeedbackButton = defineComponent({
         const result = await submit(lastSubmittedInput);
         if (!mounted) return;
         props.onSubmit?.(result);
+        if (lastUserMessageId) attachRawPayload(lastUserMessageId, result);
         if (result.ok) {
           messages.value = [
             ...messages.value,
@@ -586,11 +645,30 @@ export const FeedbackButton = defineComponent({
         if (message.role === 'assistant') {
           children.push(renderAssistantBubble(message));
         } else {
+          const bubbleChildren: Array<VNode | string> = [message.text];
+          if (message.rawPayload !== undefined) {
+            const copiedMsg = message;
+            bubbleChildren.push(
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'brw-copy-raw',
+                  'aria-label': 'Copy the raw payload sent to the API',
+                  'data-brw-copy-raw': '',
+                  onClick: () => copyRaw(copiedMsg),
+                },
+                copiedRawId.value === message.id
+                  ? 'Copied!'
+                  : 'Copy raw payload',
+              ),
+            );
+          }
           children.push(
             h(
               'div',
               { key: message.id, class: 'brw-bubble brw-bubble--user' },
-              [message.text],
+              bubbleChildren,
             ),
           );
         }

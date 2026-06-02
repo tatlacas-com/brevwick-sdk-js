@@ -598,6 +598,17 @@ export async function runSubmit(
         aiEnabled: projectConfig?.ai_enabled === true,
       });
     }
+    // Dev-only: hand the exact post-redaction body back to the caller so an
+    // adapter can offer a "copy raw payload" affordance. `payload` is the same
+    // object `postIssue` serialised, so what the developer copies is byte-for-
+    // byte what left the device. Rebuild the tagged union explicitly rather
+    // than spreading so the `ok` discriminant is never widened. Gated on
+    // `config.debug` — a normal submit retains nothing extra.
+    if (config.debug) {
+      return result.ok
+        ? { ok: true, issue_id: result.issue_id, debug: { payload } }
+        : { ok: false, error: result.error, debug: { payload } };
+    }
     return result;
   } finally {
     clearTimeout(timer);

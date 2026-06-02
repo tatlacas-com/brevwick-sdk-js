@@ -933,3 +933,125 @@ describe.skip('<FeedbackButton> — screenshot capture', () => {
 
   it('screenshot preview dialog parity (Solid V1 has no preview modal)', () => {});
 });
+
+describe('<FeedbackButton> — debug raw payload (config.debug)', () => {
+  const COPY_LABEL = /copy the raw payload sent to the api/i;
+
+  it('renders a copy-raw button on the sent bubble when the result carries debug.payload', async () => {
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_dbg',
+      debug: {
+        payload: {
+          description: 'Broken',
+          console_errors: [],
+          network_calls: [],
+        },
+      },
+    });
+    mount();
+    openPanel();
+    typeDraft('Broken');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    const userBubble = (await screen.findByText('Broken')).closest(
+      '.brw-bubble--user',
+    );
+    expect(userBubble).not.toBeNull();
+    await waitFor(() =>
+      expect(
+        within(userBubble as HTMLElement).getByRole('button', {
+          name: COPY_LABEL,
+        }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('omits the copy-raw button when the result has no debug payload', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_nodbg' });
+    mount();
+    openPanel();
+    typeDraft('Broken');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    await screen.findByText('Broken');
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('button', { name: COPY_LABEL })).toBeNull();
+  });
+
+  it('copies the pretty-printed payload to the clipboard and flips to "Copied!"', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const payload = {
+      description: 'Broken',
+      console_errors: [{ level: 'error', message: 'boom' }],
+    };
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_copy',
+      debug: { payload },
+    });
+    mount();
+    openPanel();
+    typeDraft('Broken');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    const copyBtn = await screen.findByRole('button', { name: COPY_LABEL });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2)),
+    );
+    expect(await screen.findByText('Copied!')).toBeInTheDocument();
+  });
+
+  it('is a no-op when the clipboard API is unavailable', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: undefined,
+      configurable: true,
+    });
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_noclip',
+      debug: { payload: { description: 'Broken' } },
+    });
+    mount();
+    openPanel();
+    typeDraft('Broken');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    const copyBtn = await screen.findByRole('button', { name: COPY_LABEL });
+    fireEvent.click(copyBtn);
+    // No throw, label unchanged.
+    expect(copyBtn.textContent).toBe('Copy raw payload');
+  });
+
+  it('recovers when the clipboard write is rejected', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_rej',
+      debug: { payload: { description: 'Broken' } },
+    });
+    mount();
+    openPanel();
+    typeDraft('Broken');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    const copyBtn = await screen.findByRole('button', { name: COPY_LABEL });
+    fireEvent.click(copyBtn);
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(copyBtn.textContent).toBe('Copy raw payload');
+  });
+});

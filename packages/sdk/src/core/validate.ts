@@ -58,6 +58,8 @@ export interface ValidatedConfig extends Required<
 > {
   enabled: boolean;
   fingerprintOptOut: boolean;
+  /** Dev-only: retain + expose the composed payload on each SubmitResult. Default false. */
+  debug: boolean;
   rings: {
     console: ValidatedConsoleRing;
     network: ValidatedNetworkRing;
@@ -174,6 +176,7 @@ export function validateConfig(input: unknown): ValidatedConfig {
     'boolean',
     false,
   )!;
+  const debug = expect<boolean>(input, 'debug', 'boolean', false)!;
   const userContext = expect<BrevwickConfig['userContext']>(
     input,
     'userContext',
@@ -206,6 +209,7 @@ export function validateConfig(input: unknown): ValidatedConfig {
     endpoint,
     enabled,
     fingerprintOptOut,
+    debug,
     rings,
     redact,
     environment,

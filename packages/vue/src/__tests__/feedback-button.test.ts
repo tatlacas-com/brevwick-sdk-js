@@ -757,3 +757,117 @@ describe('<FeedbackButton> staged-status UX (#74)', () => {
     },
   );
 });
+
+describe('<FeedbackButton> — debug raw payload (config.debug)', () => {
+  it('renders a copy-raw button on the sent bubble when the result carries debug.payload', async () => {
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_dbg',
+      debug: {
+        payload: {
+          description: 'Broken',
+          console_errors: [],
+          network_calls: [],
+        },
+      },
+    });
+    const wrapper = mountFab();
+    await openPanel(wrapper);
+    await typeDraft(wrapper, 'Broken');
+    await clickSend(wrapper);
+
+    const copyBtn = wrapper.find('button[data-brw-copy-raw]');
+    expect(copyBtn.exists()).toBe(true);
+    expect(copyBtn.text()).toBe('Copy raw payload');
+  });
+
+  it('omits the copy-raw button when the result has no debug payload', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_nodbg' });
+    const wrapper = mountFab();
+    await openPanel(wrapper);
+    await typeDraft(wrapper, 'Broken');
+    await clickSend(wrapper);
+
+    expect(wrapper.text()).toContain('Broken');
+    expect(wrapper.find('button[data-brw-copy-raw]').exists()).toBe(false);
+  });
+
+  it('copies the pretty-printed payload to the clipboard and flips to "Copied!"', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const payload = {
+      description: 'Broken',
+      console_errors: [{ level: 'error', message: 'boom' }],
+    };
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_copy',
+      debug: { payload },
+    });
+    const wrapper = mountFab();
+    await openPanel(wrapper);
+    await typeDraft(wrapper, 'Broken');
+    await clickSend(wrapper);
+
+    await wrapper.find('button[data-brw-copy-raw]').trigger('click');
+    await flushPromises();
+
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
+    expect(wrapper.find('button[data-brw-copy-raw]').text()).toBe('Copied!');
+  });
+
+  it('is a no-op when the clipboard API is unavailable', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: undefined,
+      configurable: true,
+    });
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_noclip',
+      debug: { payload: { description: 'Broken' } },
+    });
+    const wrapper = mountFab();
+    await openPanel(wrapper);
+    await typeDraft(wrapper, 'Broken');
+    await clickSend(wrapper);
+
+    const btn = wrapper.find('button[data-brw-copy-raw]');
+    await btn.trigger('click');
+    await flushPromises();
+    // No throw, label unchanged.
+    expect(wrapper.find('button[data-brw-copy-raw]').text()).toBe(
+      'Copy raw payload',
+    );
+  });
+
+  it('recovers when the clipboard write is rejected', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_rej',
+      debug: { payload: { description: 'Broken' } },
+    });
+    const wrapper = mountFab();
+    await openPanel(wrapper);
+    await typeDraft(wrapper, 'Broken');
+    await clickSend(wrapper);
+
+    await wrapper.find('button[data-brw-copy-raw]').trigger('click');
+    await flushPromises();
+    expect(writeText).toHaveBeenCalled();
+    expect(wrapper.find('button[data-brw-copy-raw]').text()).toBe(
+      'Copy raw payload',
+    );
+  });
+});

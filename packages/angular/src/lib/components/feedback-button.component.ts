@@ -77,6 +77,13 @@ interface Message {
   readonly text: string;
   readonly issueSent?: boolean;
   readonly sentAt?: number;
+  /**
+   * The exact, post-redaction payload the SDK POSTed for this message — set
+   * only when the host enabled `config.debug`. When present, the bubble
+   * renders a "copy raw payload" affordance so a developer can inspect
+   * everything that left the device (rings/context the widget never shows).
+   */
+  readonly rawPayload?: Record<string, unknown>;
 }
 
 interface FileAttachment {
@@ -276,7 +283,24 @@ function formatSize(bytes: number): string {
                   }
                 </div>
               } @else {
-                <div class="brw-bubble brw-bubble--user">{{ msg.text }}</div>
+                <div class="brw-bubble brw-bubble--user">
+                  {{ msg.text }}
+                  @if (msg.rawPayload !== undefined) {
+                    <button
+                      type="button"
+                      class="brw-copy-raw"
+                      aria-label="Copy the raw payload sent to the API"
+                      data-brw-copy-raw
+                      (click)="copyRaw(msg)"
+                    >
+                      {{
+                        copiedRawId() === msg.id
+                          ? 'Copied!'
+                          : 'Copy raw payload'
+                      }}
+                    </button>
+                  }
+                </div>
               }
             }
 
@@ -826,6 +850,26 @@ function formatSize(bytes: number): string {
       .brw-bubble--receipt svg {
         flex-shrink: 0;
       }
+      /* Dev-only "copy raw payload" button (config.debug). Sits under the
+         bubble text, muted, so it never competes with real widget chrome. */
+      .brw-copy-raw {
+        display: block;
+        margin-top: 6px;
+        padding: 2px 6px;
+        font: inherit;
+        font-size: 11px;
+        line-height: 1.4;
+        background: transparent;
+        border: 1px solid
+          var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
+        border-radius: 6px;
+        color: var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
+        opacity: 0.7;
+        cursor: pointer;
+      }
+      .brw-copy-raw:hover {
+        opacity: 1;
+      }
       .brw-chip {
         align-self: flex-end;
         display: inline-flex;
@@ -1284,6 +1328,14 @@ export class BwFeedbackButtonComponent {
    */
   protected readonly lastSubmittedInput = signal<FeedbackInput | null>(null);
   /**
+   * Id of the user bubble for the most recent submit, so the retry path can
+   * re-attach a freshly composed `rawPayload` to the same bubble.
+   */
+  private lastUserMessageId: string | null = null;
+  /** Id of the bubble whose copy button is showing "Copied!" feedback. */
+  protected readonly copiedRawId = signal<string | null>(null);
+  private copiedRawTimeout: ReturnType<typeof setTimeout> | undefined;
+  /**
    * Project-config state, lazy-fetched on the first panel open. Mirrors the
    * React adapter's `useProjectConfig` hook semantics: never fetches at mount.
    */
@@ -1504,6 +1556,7 @@ export class BwFeedbackButtonComponent {
 
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
+      if (this.copiedRawTimeout) clearTimeout(this.copiedRawTimeout);
     });
   }
 
@@ -1687,10 +1740,11 @@ export class BwFeedbackButtonComponent {
     // the composer BEFORE awaiting submit(). The synchronous bubble + clear
     // makes the wait feel fast — staged-status rows carry the rest of the
     // animation while the network round-trip is in flight (issue #74).
+    const userMessageId = `msg-${++this.messageIdSeq}`;
     this.messages.update((prev) => [
       ...prev,
       {
-        id: `msg-${++this.messageIdSeq}`,
+        id: userMessageId,
         role: 'user',
         text: submittedDraft,
       },
@@ -1701,11 +1755,13 @@ export class BwFeedbackButtonComponent {
     this.showExtras.set(false);
     this.files.set([]);
     this.lastSubmittedInput.set(input);
+    this.lastUserMessageId = userMessageId;
 
     try {
       const result = await this.brevwick.submit(input);
       if (this.destroyed) return;
       this.submit.emit(result);
+      this.attachRawPayload(userMessageId, result);
       if (result.ok) {
         this.messages.update((prev) => [
           ...prev,
@@ -1742,6 +1798,9 @@ export class BwFeedbackButtonComponent {
       if (this.destroyed) return;
       if (result) {
         this.submit.emit(result);
+        if (this.lastUserMessageId) {
+          this.attachRawPayload(this.lastUserMessageId, result);
+        }
         if (result.ok) {
           this.messages.update((prev) => [
             ...prev,
@@ -1761,5 +1820,44 @@ export class BwFeedbackButtonComponent {
       void err;
       this.open.set(true);
     }
+  }
+
+  /**
+   * Stamp the dev-only raw payload onto a user bubble once `submit()`
+   * resolves. No-op unless the host enabled `config.debug` (the SDK only
+   * populates `result.debug` then), so this is inert in production.
+   */
+  private attachRawPayload(messageId: string, result: SubmitResult): void {
+    const payload = result.debug?.payload;
+    if (!payload) return;
+    this.messages.update((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, rawPayload: payload } : m)),
+    );
+  }
+
+  /**
+   * Copy the dev-only raw payload (the exact, post-redaction JSON body POSTed
+   * to the ingest endpoint) to the clipboard. Pretty-printed with a two-space
+   * indent; the parsed JSON matches what was sent over the wire (only the
+   * whitespace differs from the unindented request body). Degrades to a no-op
+   * where the async clipboard API is missing.
+   */
+  protected copyRaw(message: Message): void {
+    if (!message.rawPayload) return;
+    const json = JSON.stringify(message.rawPayload, null, 2);
+    const clip = navigator.clipboard;
+    if (!clip) return;
+    void clip.writeText(json).then(
+      () => {
+        this.copiedRawId.set(message.id);
+        if (this.copiedRawTimeout) clearTimeout(this.copiedRawTimeout);
+        this.copiedRawTimeout = setTimeout(() => {
+          this.copiedRawId.set(null);
+        }, 1500);
+      },
+      () => {
+        /* clipboard write rejected (permissions) — leave the label as is */
+      },
+    );
   }
 }

@@ -1164,3 +1164,167 @@ describe('BwFeedbackButtonComponent', () => {
     expect(fixture.nativeElement.querySelector('.brw-panel')).toBeNull();
   });
 });
+
+describe('BwFeedbackButtonComponent — debug raw payload (config.debug)', () => {
+  const COPY_SELECTOR = 'button[data-brw-copy-raw]';
+
+  it('renders a copy-raw button on the sent bubble when the result carries debug.payload', async () => {
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_dbg',
+      debug: {
+        payload: {
+          description: 'Broken',
+          console_errors: [],
+          network_calls: [],
+        },
+      },
+    });
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_dbg' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    internals(cmp).open.set(true);
+    internals(cmp).draft.set('Broken');
+    await internals(cmp).doSubmit();
+    fixture.detectChanges();
+
+    const copyBtn = fixture.nativeElement.querySelector(
+      COPY_SELECTOR,
+    ) as HTMLButtonElement | null;
+    expect(copyBtn).not.toBeNull();
+    expect(copyBtn!.textContent?.trim()).toBe('Copy raw payload');
+  });
+
+  it('omits the copy-raw button when the result has no debug payload', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_nodbg' });
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_nodbg' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    internals(cmp).open.set(true);
+    internals(cmp).draft.set('Broken');
+    await internals(cmp).doSubmit();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector(COPY_SELECTOR)).toBeNull();
+  });
+
+  it('copies the pretty-printed payload to the clipboard and flips to "Copied!"', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const payload = {
+      description: 'Broken',
+      console_errors: [{ level: 'error', message: 'boom' }],
+    };
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_copy',
+      debug: { payload },
+    });
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_copy' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    internals(cmp).open.set(true);
+    internals(cmp).draft.set('Broken');
+    await internals(cmp).doSubmit();
+    fixture.detectChanges();
+
+    const copyBtn = fixture.nativeElement.querySelector(
+      COPY_SELECTOR,
+    ) as HTMLButtonElement;
+    copyBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
+    expect(
+      (
+        fixture.nativeElement.querySelector(COPY_SELECTOR) as HTMLButtonElement
+      ).textContent?.trim(),
+    ).toBe('Copied!');
+  });
+
+  it('is a no-op when the clipboard API is unavailable', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: undefined,
+      configurable: true,
+    });
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_noclip',
+      debug: { payload: { description: 'Broken' } },
+    });
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_noclip' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    internals(cmp).open.set(true);
+    internals(cmp).draft.set('Broken');
+    await internals(cmp).doSubmit();
+    fixture.detectChanges();
+
+    const copyBtn = fixture.nativeElement.querySelector(
+      COPY_SELECTOR,
+    ) as HTMLButtonElement;
+    copyBtn.click();
+    fixture.detectChanges();
+    // No throw, label unchanged.
+    expect(copyBtn.textContent?.trim()).toBe('Copy raw payload');
+  });
+
+  it('recovers when the clipboard write is rejected', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    submit.mockResolvedValueOnce({
+      ok: true,
+      issue_id: 'rep_rej',
+      debug: { payload: { description: 'Broken' } },
+    });
+    TestBed.configureTestingModule({
+      imports: [BwFeedbackButtonComponent],
+      providers: [provideBrevwick({ projectKey: 'pk_test_rej' })],
+    });
+    const fixture = TestBed.createComponent(BwFeedbackButtonComponent);
+    fixture.detectChanges();
+    const cmp = fixture.componentInstance;
+    internals(cmp).open.set(true);
+    internals(cmp).draft.set('Broken');
+    await internals(cmp).doSubmit();
+    fixture.detectChanges();
+
+    const copyBtn = fixture.nativeElement.querySelector(
+      COPY_SELECTOR,
+    ) as HTMLButtonElement;
+    copyBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
+    expect(writeText).toHaveBeenCalled();
+    expect(copyBtn.textContent?.trim()).toBe('Copy raw payload');
+  });
+});
