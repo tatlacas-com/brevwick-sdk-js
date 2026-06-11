@@ -103,13 +103,10 @@ export default [
   // panel: greeting + user/assistant bubbles, autogrow composer,
   // expected/actual disclosure, file attachment chips, AI toggle, staged-
   // status rows driven by the SDK's phase bus, retry CTA, and the panel
-  // footer. Screenshot UI is intentionally absent in v1 (see PR #111);
-  // callers that need a screenshot capture path invoke
-  // `useFeedback().captureScreenshot()` directly. Current sizes ESM 8.79
-  // / CJS 9.11 kB; 12 kB leaves headroom for incremental UX work without
-  // dragging the package over the React adapter (25 kB) or unbalancing
-  // the budget vs Vue (5 kB; Vue ships a thinner surface, no AI toggle /
-  // disclosure / staged-status rows).
+  // footer. The screenshot capture button (restored after the v1
+  // future-flag removal in PR #111) also lands here. Current sizes ESM
+  // ~10.6 / CJS ~10.9 kB; 12 kB leaves headroom for incremental UX work
+  // without dragging the package over the React adapter (25 kB).
   fileEntry(
     '@tatlacas/brevwick-solid (ESM)',
     'packages/solid/dist/index.js',
@@ -127,21 +124,22 @@ export default [
   // ships the conversation thread, panel header / minimize / discard
   // confirm, autogrow composer with paperclip + AI toggle, staged-status
   // rows wired to the SDK's phase bus, retry row, lazy project-config
-  // fetch, and the canonical `BREVWICK_CSS` byte-for-byte. Region capture
-  // and the screenshot preview dialog stay out of v1 (no trigger button)
-  // to keep the bundle below the React adapter's 25 kB ceiling — current
-  // size sits ~8.4 kB gzip with headroom for incremental tuning before
-  // the next bump is needed. Mirrors the React widget's "ship the surface,
-  // measure the cost" approach in `CLAUDE.md`.
+  // fetch, and the canonical `BREVWICK_CSS` byte-for-byte. Bumped again
+  // from 10 kB → 13 kB when the screenshot capture button, region-select
+  // overlay, and preview dialog were restored (the v1 future-flag
+  // removal) — current size sits ~11.7/12 kB gzip (ESM/CJS), still well
+  // below the React adapter's 25 kB ceiling. Mirrors the in-suite guard
+  // in `packages/vue/src/__tests__/chunk-split.test.ts` and the React
+  // widget's "ship the surface, measure the cost" approach in `CLAUDE.md`.
   fileEntry(
     '@tatlacas/brevwick-vue (ESM)',
     'packages/vue/dist/index.js',
-    '10 kB',
+    '13 kB',
   ),
   fileEntry(
     '@tatlacas/brevwick-vue (CJS)',
     'packages/vue/dist/index.cjs',
-    '10 kB',
+    '13 kB',
   ),
 
   // ── Svelte adapter eager entry (≤ 5 kB gzip) ─────────────────────────────
@@ -164,12 +162,15 @@ export default [
   // with the React adapter (chat thread + assistant/user bubbles +
   // expected/actual disclosure + staged-status rows + retry row + AI
   // toggle render-policy + discard-confirm + minimize button + receipt
-  // with relative time). The post-parity SFC weighs ~12.1 kB gzip; the
-  // 14 kB ceiling leaves ~2 kB of headroom for incremental UX work.
+  // with relative time), then 14 kB → 22 kB when the screenshot capture
+  // button, region-select overlay, and preview dialog were restored
+  // (the v1 future-flag removal). The post-restoration SFC weighs ~20 kB
+  // gzip; the 22 kB ceiling leaves ~2 kB of headroom for incremental UX
+  // work.
   fileEntry(
     '@tatlacas/brevwick-svelte FeedbackButton SFC',
     'packages/svelte/dist/components/FeedbackButton.svelte',
-    '14 kB',
+    '22 kB',
   ),
 
   // ── Angular bundle (≤ 18 kB gzip) ────────────────────────────────────────
@@ -181,15 +182,17 @@ export default [
   // Bumped from 8 kB → 18 kB when the widget reached UX parity with the
   // React adapter (issue #115): the FAB-only build was 5.21 kB; the full
   // chat-style panel + composer + AI toggle + phase-driven status rows +
-  // inlined BREVWICK_CSS lands at ~15.5 kB. The ceiling is intentionally
+  // inlined BREVWICK_CSS lands at ~15.5 kB. Bumped again from 18 kB →
+  // 31 kB when the screenshot capture button, region-select overlay, and
+  // preview dialog were restored (the v1 future-flag removal) —
+  // post-restoration weight is ~28.7 kB. The ceiling is intentionally
   // roomier than React/Vue/Svelte/Solid because Angular's @Injectable /
   // standalone-component / Signals scaffolding costs 4-5 kB of irreducible
-  // runtime overhead before our own code lands; 18 kB stays well under
-  // React's 25 kB envelope (no Radix dialog dependency saves ~7 kB).
+  // runtime overhead before our own code lands.
   fileEntry(
     '@tatlacas/brevwick-angular (FESM2022)',
     'packages/angular/dist/fesm2022/tatlacas-brevwick-angular.mjs',
-    '18 kB',
+    '31 kB',
   ),
 
   // ── React Native bundle (≤ 25 kB gzip) ───────────────────────────────────

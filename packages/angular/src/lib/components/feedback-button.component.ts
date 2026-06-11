@@ -42,8 +42,9 @@ export type BwFeedbackButtonTheme = 'light' | 'dark' | 'system';
 /**
  * Combined screenshot + file cap. Mirrored from the SDK's `MAX_ATTACHMENT_COUNT`
  * in `packages/sdk/src/submit.ts`. Enforced in the UI by disabling the
- * file-attach button once the combined total reaches this ceiling — that way
- * the user cannot queue an attachment the SDK would reject downstream.
+ * screenshot and file-attach buttons once the combined total reaches this
+ * ceiling — that way the user cannot queue an attachment the SDK would
+ * reject downstream.
  */
 const MAX_ATTACHMENTS = 5;
 
@@ -89,6 +90,98 @@ interface Message {
 interface FileAttachment {
   readonly id: number;
   readonly file: File;
+}
+
+interface ScreenshotAttachment {
+  /**
+   * Monotonic id assigned at capture time. Mirrors {@link FileAttachment.id}:
+   * tracking by `url` or array index would reconcile a removal-of-middle-item
+   * against the wrong slot.
+   */
+  readonly id: number;
+  readonly blob: Blob;
+  readonly url: string;
+}
+
+/** Viewport-space rectangle selected by the user on the region overlay. */
+interface Region {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** Live drag rectangle while the user is selecting a region. */
+interface DragState {
+  readonly startX: number;
+  readonly startY: number;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** Minimum accepted side length (px) — below this the selection is treated
+ *  as an accidental click and the confirm is rejected with a shake. */
+const REGION_MIN_SIDE_PX = 2;
+
+/**
+ * Crop a full-page screenshot Blob to the user-selected viewport rectangle.
+ *
+ * The source Blob from `captureScreenshot()` is rendered in device pixels by
+ * `modern-screenshot`, but the region came from pointer-events in CSS pixels,
+ * so we multiply the source rectangle by `devicePixelRatio` on the way in and
+ * draw out at the selection's CSS-pixel size. Uses `OffscreenCanvas` when the
+ * host provides it (cheaper, avoids a DOM node); otherwise falls back to a
+ * detached `<canvas>` + `toBlob`. Output MIME is PNG — the caller derives
+ * the attachment filename from `blob.type`. Mirrors the React adapter's
+ * `cropToRegion` line-for-line.
+ */
+async function cropToRegion(blob: Blob, region: Region): Promise<Blob> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await loadImageForCrop(url);
+    const dpr =
+      typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const sx = region.x * dpr;
+    const sy = region.y * dpr;
+    const sw = region.w * dpr;
+    const sh = region.h * dpr;
+
+    const OffscreenCanvasCtor =
+      typeof OffscreenCanvas !== 'undefined' ? OffscreenCanvas : undefined;
+    if (OffscreenCanvasCtor) {
+      const canvas = new OffscreenCanvasCtor(region.w, region.h);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 2D context unavailable');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, region.w, region.h);
+      return await canvas.convertToBlob({ type: 'image/png' });
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = region.w;
+    canvas.height = region.h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D context unavailable');
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, region.w, region.h);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (out) =>
+          out ? resolve(out) : reject(new Error('Canvas produced no blob')),
+        'image/png',
+      );
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function loadImageForCrop(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Screenshot failed to load for crop'));
+    img.src = src;
+  });
 }
 
 type ProjectConfigStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -142,11 +235,13 @@ function formatSize(bytes: number): string {
 /**
  * Standalone feedback widget — a FAB plus a chat-style submission panel.
  *
- * Mirrors the React adapter's `FeedbackButton` (UI / UX / wire format)
- * minus the screenshot capture surface (region overlay, preview dialog).
- * Apps that need screenshots call {@link BrevwickService.captureScreenshot}
- * from their own component and pass the resulting `Blob` to
- * {@link BrevwickService.submit} via the `attachments` field.
+ * Mirrors the React adapter's `FeedbackButton` (UI / UX / wire format),
+ * including the screenshot capture surface: a composer button opens a
+ * full-viewport region-select overlay (drag a rectangle, or "Capture full
+ * page"), the captured image lands as a tap-to-preview thumbnail chip, and
+ * submit ships it as `screenshot.<ext>` / `screenshot-N.<ext>` attachments.
+ * The FAB, panel, overlay, and preview dialog all carry `data-brevwick-skip`
+ * so the SDK's capture path excludes the widget chrome from the image.
  *
  * SSR-safe: rendered nodes still appear server-side; the open / close toggle
  * short-circuits on non-browser platforms via `isPlatformBrowser`. Other
@@ -200,10 +295,14 @@ function formatSize(bytes: number): string {
       </button>
 
       @if (open()) {
+        <!-- brw-panel-hidden while the region overlay is up (issue #49):
+             the panel stays mounted (composer state preserved) but stops
+             occluding the page content the user is trying to screenshot. -->
         <div
           class="brw-root brw-panel"
           [class.brw-panel-bl]="position === 'bottom-left'"
           [class.brw-panel-br]="position !== 'bottom-left'"
+          [class.brw-panel-hidden]="regionOpen()"
           role="dialog"
           aria-label="Send feedback"
           [attr.data-brevwick-skip]="''"
@@ -304,7 +403,31 @@ function formatSize(bytes: number): string {
               }
             }
 
-            <!-- File attachment chips (file-only; screenshot UI is out of scope) -->
+            <!-- Screenshot thumbnail chips: tap-to-preview (issue #57) + remove × -->
+            @for (s of screenshots(); track s.id; let idx = $index) {
+              <div class="brw-chip">
+                <button
+                  type="button"
+                  class="brw-chip-preview-btn"
+                  [attr.aria-label]="'Preview ' + screenshotName(idx)"
+                  (click)="openPreview(s.id)"
+                >
+                  <img [src]="s.url" alt="" />
+                </button>
+                <span class="brw-chip-name">{{ screenshotName(idx) }}</span>
+                <span class="brw-chip-size">{{ size(s.blob.size) }}</span>
+                <button
+                  type="button"
+                  class="brw-chip-remove"
+                  [attr.aria-label]="'Remove ' + screenshotName(idx)"
+                  (click)="removeScreenshot(s.id)"
+                >
+                  ×
+                </button>
+              </div>
+            }
+
+            <!-- File attachment chips -->
             @for (att of files(); track att.id) {
               <div class="brw-chip">
                 <span class="brw-chip-name">{{ att.file.name }}</span>
@@ -317,6 +440,18 @@ function formatSize(bytes: number): string {
                 >
                   ×
                 </button>
+              </div>
+            }
+
+            <!-- In-thread loading indicator (issue #55). The region overlay
+                 closes before captureScreenshot() resolves, so the panel is
+                 already visible when this bubble shows up — it bridges the
+                 otherwise-silent gap between the overlay closing and the
+                 thumbnail appearing. -->
+            @if (capturing()) {
+              <div class="brw-bubble brw-bubble--assistant">
+                <span class="brw-spinner" aria-hidden="true"></span> Capturing
+                screenshot…
               </div>
             }
 
@@ -480,6 +615,33 @@ function formatSize(bytes: number): string {
           <!-- Composer -->
           <div class="brw-composer">
             <div class="brw-composer-shell">
+              <button
+                type="button"
+                class="brw-icon-btn"
+                [attr.aria-label]="screenshotLabel()"
+                [disabled]="attachDisabled()"
+                (click)="onScreenshotClick()"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="5" width="18" height="12" rx="2" />
+                  <rect
+                    x="7"
+                    y="8"
+                    width="10"
+                    height="6"
+                    rx="1"
+                    stroke-dasharray="2 2"
+                  />
+                </svg>
+              </button>
               <label class="brw-icon-btn">
                 <svg
                   viewBox="0 0 24 24"
@@ -565,6 +727,123 @@ function formatSize(bytes: number): string {
               Brevwick v{{ version }}
             </a>
           </div>
+        </div>
+      }
+
+      <!-- Region-capture overlay. Every node carries data-brevwick-skip so a
+           rogue capture that fires while the overlay is still in the tree
+           excludes the overlay chrome from the image (the capture path
+           removes the overlay first — this is defence-in-depth). -->
+      @if (regionOpen()) {
+        <div
+          class="brw-region-backdrop"
+          [attr.data-brevwick-skip]="''"
+          aria-hidden="true"
+        ></div>
+        <div
+          #regionLayerEl
+          class="brw-root brw-region-layer"
+          [class.brw-region-shake]="regionShake()"
+          [attr.data-brevwick-skip]="''"
+          [attr.data-brw-theme]="theme"
+          data-testid="brw-region-overlay"
+          role="dialog"
+          aria-label="Select screenshot region"
+          tabindex="-1"
+          (pointerdown)="onRegionPointerDown($event)"
+          (pointermove)="onRegionPointerMove($event)"
+          (pointerup)="onRegionPointerUp($event)"
+          (pointercancel)="onRegionPointerUp($event)"
+          (keydown)="onRegionKeydown($event)"
+        >
+          <!-- Visually-hidden heading mirrors the React overlay's sr-only
+               Dialog.Title so the screen-reader announcement matches. -->
+          <h2 class="brw-sr-only">Select screenshot region</h2>
+          @if (regionDrag(); as d) {
+            @if (d.w > 0 && d.h > 0) {
+              <div
+                class="brw-region-selection"
+                data-testid="brw-region-selection"
+                [style.left.px]="d.x"
+                [style.top.px]="d.y"
+                [style.width.px]="d.w"
+                [style.height.px]="d.h"
+              ></div>
+            }
+          }
+          <div class="brw-region-controls" [attr.data-brevwick-skip]="''">
+            <button
+              type="button"
+              class="brw-btn brw-region-btn"
+              (click)="closeRegion()"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="brw-btn brw-region-btn"
+              (click)="confirmFull()"
+            >
+              Capture full page
+            </button>
+            <button
+              type="button"
+              class="brw-btn brw-btn-primary brw-region-btn"
+              (click)="confirmRegion()"
+            >
+              Capture
+            </button>
+          </div>
+        </div>
+      }
+
+      <!-- Screenshot preview dialog (issue #57): viewport-fit view of a
+           captured screenshot so the submitter can confirm they grabbed the
+           right region before sending. data-brevwick-skip on every node so a
+           re-capture initiated while the dialog is up doesn't snapshot the
+           dialog chrome itself. -->
+      @if (previewTarget(); as shot) {
+        <div
+          class="brw-preview-backdrop"
+          [attr.data-brevwick-skip]="''"
+          aria-hidden="true"
+          (click)="closePreview()"
+        ></div>
+        <div
+          #previewLayerEl
+          class="brw-root brw-preview-layer"
+          [attr.data-brevwick-skip]="''"
+          [attr.data-brw-theme]="theme"
+          data-testid="brw-preview-dialog"
+          role="dialog"
+          aria-label="Screenshot preview"
+          tabindex="-1"
+          (keydown)="onPreviewKeydown($event)"
+        >
+          <h2 class="brw-sr-only">Screenshot preview</h2>
+          <img
+            class="brw-preview-image"
+            [src]="shot.url"
+            alt="Captured screenshot"
+          />
+          <button
+            type="button"
+            class="brw-icon-btn brw-preview-close"
+            aria-label="Close preview"
+            (click)="closePreview()"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
         </div>
       }
     }
@@ -717,6 +996,14 @@ function formatSize(bytes: number): string {
       }
       .brw-panel-bl {
         left: 24px;
+      }
+      /* Toggled while the region-capture overlay is up (issue #49) so the
+         panel stops occluding page content the user is trying to screenshot.
+         The panel stays in the layout to preserve composer state and focus;
+         only painting and hit-testing are suppressed. */
+      .brw-panel-hidden {
+        visibility: hidden;
+        pointer-events: none;
       }
       @keyframes brw-slide-up {
         from {
@@ -882,6 +1169,32 @@ function formatSize(bytes: number): string {
         border-radius: 12px;
         font-size: 12px;
         max-width: 85%;
+      }
+      .brw-chip img {
+        width: 28px;
+        height: 28px;
+        object-fit: cover;
+        border-radius: 4px;
+        flex-shrink: 0;
+        display: block;
+      }
+      /* Tap-to-preview button wrapping the chip thumbnail (issue #57). The
+         button is just a transparent affordance; its child img carries the
+         visual. inline-flex keeps the image vertically centred against the
+         chip text, and the focus ring lands on the button so keyboard users
+         see the activation target without an outline on the image itself. */
+      .brw-chip-preview-btn {
+        padding: 0;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        display: inline-flex;
+        border-radius: 4px;
+        flex-shrink: 0;
+      }
+      .brw-chip-preview-btn:focus-visible {
+        outline: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+        outline-offset: 2px;
       }
       .brw-chip-name {
         white-space: nowrap;
@@ -1265,6 +1578,115 @@ function formatSize(bytes: number): string {
           animation-duration: 1.6s;
         }
       }
+      .brw-sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      .brw-region-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        z-index: 2147483003;
+      }
+      .brw-region-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483004;
+        cursor: crosshair;
+        user-select: none;
+        -webkit-user-select: none;
+        outline: none;
+      }
+      .brw-region-selection {
+        position: fixed;
+        border: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+        pointer-events: none;
+      }
+      .brw-region-controls {
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        padding: 6px;
+        background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+        border: 1px solid var(--brw-border, var(--brw-border-base));
+        border-radius: 10px;
+        box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+        z-index: 2147483005;
+      }
+      .brw-region-btn {
+        font: inherit;
+      }
+      .brw-region-shake {
+        animation: brw-region-shake 300ms ease-out;
+      }
+      @keyframes brw-region-shake {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        25% {
+          transform: translateX(-4px);
+        }
+        75% {
+          transform: translateX(4px);
+        }
+      }
+      /* Screenshot preview dialog (issue #57). Sits above the panel and the
+         region overlay z-stack so the dialog is always on top when triggered
+         from a chip in the panel. The image is contain-bounded to 90vw / 80vh
+         so a tall full-page capture stays readable and a small region capture
+         isn't upscaled past its native pixels. */
+      .brw-preview-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.65);
+        z-index: 2147483006;
+      }
+      .brw-preview-layer {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        max-width: 90vw;
+        max-height: 90vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2147483007;
+        outline: none;
+      }
+      .brw-preview-image {
+        max-width: 90vw;
+        max-height: 80vh;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+        background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+      }
+      .brw-preview-close {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+        border: 1px solid var(--brw-border, var(--brw-border-base));
+        box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .brw-region-shake {
+          animation: none;
+        }
+      }
     `,
   ],
 })
@@ -1321,6 +1743,42 @@ export class BwFeedbackButtonComponent {
     { id: 'greeting', role: 'assistant', text: GREETING_TEXT },
   ]);
   protected readonly files = signal<readonly FileAttachment[]>([]);
+  protected readonly screenshots = signal<readonly ScreenshotAttachment[]>([]);
+  /**
+   * True while a screenshot is being rasterised / cropped (issue #55). Shows
+   * the in-thread "Capturing screenshot…" bubble and disables Send + the
+   * screenshot / file-attach buttons so the user cannot stack a second
+   * capture on top of one already in flight.
+   */
+  protected readonly capturing = signal(false);
+  /** True while the region-select overlay is up. */
+  protected readonly regionOpen = signal(false);
+  /**
+   * Stable screenshot id of the thumbnail the user tapped to preview; `null`
+   * keeps the preview dialog closed. Using the id (not the array index)
+   * means the dialog stays bound to the same attachment if the user removes
+   * a sibling screenshot mid-preview — the `previewTarget` lookup returns
+   * `null` only when the previewed screenshot itself was removed, which is
+   * the case `removeScreenshot()` handles by clearing `previewId`.
+   */
+  protected readonly previewId = signal<number | null>(null);
+  /** Live drag rectangle on the region overlay; null until pointerdown. */
+  protected readonly regionDrag = signal<DragState | null>(null);
+  /** Transient flag driving the degenerate-selection shake animation. */
+  protected readonly regionShake = signal(false);
+  /**
+   * Whether a drag is currently being tracked. Plain field (not a signal):
+   * read/written only inside pointer handlers, never rendered.
+   */
+  private regionDragging = false;
+  /**
+   * Tracks the in-flight "shake settle" setTimeout. Kept so (a) closing the
+   * overlay can cancel it — otherwise a shake queued immediately before Esc
+   * would fire a setState into a torn-down subtree — and (b) rapid-fire
+   * Capture clicks on a degenerate selection replace the timer instead of
+   * stacking.
+   */
+  private shakeTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Last `FeedbackInput` passed to `BrevwickService.submit`. Stored locally
    * (not just on the service) so a retry can replay the exact same payload
@@ -1360,11 +1818,11 @@ export class BwFeedbackButtonComponent {
   );
 
   protected readonly attachmentsAtCap: Signal<boolean> = computed(
-    () => this.files().length >= MAX_ATTACHMENTS,
+    () => this.screenshots().length + this.files().length >= MAX_ATTACHMENTS,
   );
 
   protected readonly attachDisabled: Signal<boolean> = computed(
-    () => this.isSubmitting() || this.attachmentsAtCap(),
+    () => this.isSubmitting() || this.capturing() || this.attachmentsAtCap(),
   );
 
   protected readonly hasContent: Signal<boolean> = computed(
@@ -1372,12 +1830,32 @@ export class BwFeedbackButtonComponent {
       this.draft().trim().length > 0 ||
       this.expected().length > 0 ||
       this.actual().length > 0 ||
+      this.screenshots().length > 0 ||
       this.files().length > 0,
   );
 
+  // `capturing` also gates Send: submitting between clicking Capture and the
+  // thumbnail rendering would ship the issue without the screenshot the user
+  // intended to include. doSubmit carries the same guard for the
+  // Enter-to-send path, which bypasses the disabled button.
   protected readonly canSend: Signal<boolean> = computed(
-    () => !this.isSubmitting() && this.draft().trim().length > 0,
+    () =>
+      !this.isSubmitting() &&
+      !this.capturing() &&
+      this.draft().trim().length > 0,
   );
+
+  /**
+   * The screenshot the preview dialog shows; `null` keeps it closed. Derived
+   * by id so removing a *sibling* screenshot mid-preview leaves the dialog
+   * bound to the right attachment.
+   */
+  protected readonly previewTarget: Signal<ScreenshotAttachment | null> =
+    computed(() => {
+      const id = this.previewId();
+      if (id === null) return null;
+      return this.screenshots().find((s) => s.id === id) ?? null;
+    });
 
   /**
    * Render-policy matrix mirrored from the React adapter's SDD § 12 rule:
@@ -1427,9 +1905,23 @@ export class BwFeedbackButtonComponent {
       : 'Attach file',
   );
 
+  /**
+   * Mutating aria-label on the screenshot button so AT users hear *why* the
+   * control is unavailable instead of a generic "dimmed" announcement.
+   * Mirrors the React composer's `screenshotLabel`.
+   */
+  protected readonly screenshotLabel: Signal<string> = computed(() =>
+    this.attachmentsAtCap()
+      ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
+      : this.capturing()
+        ? 'Capturing screenshot…'
+        : 'Capture screenshot of this page',
+  );
+
   // ── ID counters (refs in React; plain mutable fields here) ───────────────
 
   private fileIdSeq = 0;
+  private screenshotIdSeq = 0;
   private messageIdSeq = 0;
 
   // Track the @ViewChild composer textarea for the autogrow effect.
@@ -1437,6 +1929,8 @@ export class BwFeedbackButtonComponent {
     viewChild<ElementRef<HTMLTextAreaElement>>('composerEl');
   private readonly keepBtn =
     viewChild<ElementRef<HTMLButtonElement>>('keepBtn');
+  private readonly regionLayerEl =
+    viewChild<ElementRef<HTMLDivElement>>('regionLayerEl');
 
   // Helpers exposed to the template — narrow wrappers around the module-level
   // formatters so the binding expressions stay short.
@@ -1445,6 +1939,16 @@ export class BwFeedbackButtonComponent {
   }
   protected size(bytes: number): string {
     return formatSize(bytes);
+  }
+  /**
+   * Display name for a screenshot chip. A single screenshot reads
+   * "screenshot"; multiples disambiguate as "screenshot N" in capture order —
+   * matching the filenames the submit path ships.
+   */
+  protected screenshotName(idx: number): string {
+    return this.screenshots().length === 1
+      ? 'screenshot'
+      : `screenshot ${idx + 1}`;
   }
 
   constructor() {
@@ -1554,9 +2058,22 @@ export class BwFeedbackButtonComponent {
       btn?.focus();
     });
 
+    // Focus the region overlay root when it opens so the Enter shortcut
+    // (confirm region) and Escape (dismiss) work without an extra Tab. The
+    // React adapter gets this for free from Radix's focus trap; here we own
+    // it directly via the tabindex="-1" layer.
+    effect(() => {
+      if (!this.regionOpen()) return;
+      this.regionLayerEl()?.nativeElement.focus();
+    });
+
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
       if (this.copiedRawTimeout) clearTimeout(this.copiedRawTimeout);
+      if (this.shakeTimer) clearTimeout(this.shakeTimer);
+      // Release the screenshot object URLs so a torn-down widget doesn't
+      // leak blobs for the lifetime of the page.
+      for (const s of this.screenshots()) URL.revokeObjectURL(s.url);
     });
   }
 
@@ -1614,7 +2131,9 @@ export class BwFeedbackButtonComponent {
     this.expected.set('');
     this.actual.set('');
     this.showExtras.set(false);
+    this.clearScreenshots();
     this.files.set([]);
+    this.previewId.set(null);
     this.confirmClose.set(false);
     this.errorMessage.set(null);
     this.messages.set([
@@ -1680,10 +2199,12 @@ export class BwFeedbackButtonComponent {
   private handleFiles(list: FileList | null): void {
     if (!list || list.length === 0) return;
     this.files.update((prev) => {
-      // Cap the total at MAX_ATTACHMENTS. Drop the overflow tail rather
-      // than silently dropping arbitrary entries — keeps prefix-of-input
-      // semantics so the user can predict which files made it through.
-      const remaining = MAX_ATTACHMENTS - prev.length;
+      // Cap the combined screenshot+file total at MAX_ATTACHMENTS. Drop the
+      // overflow tail rather than silently dropping arbitrary entries —
+      // keeps prefix-of-input semantics so the user can predict which files
+      // made it through.
+      const remaining =
+        MAX_ATTACHMENTS - (prev.length + this.screenshots().length);
       if (remaining <= 0) return prev;
       const next: FileAttachment[] = [];
       for (let i = 0; i < Math.min(list.length, remaining); i++) {
@@ -1698,13 +2219,208 @@ export class BwFeedbackButtonComponent {
     this.files.update((prev) => prev.filter((f) => f.id !== id));
   }
 
+  // ── Screenshot capture (region overlay → crop → thumbnail chip) ──────────
+
+  /**
+   * Composer screenshot button. Only opens the region overlay — the overlay
+   * fans out to either a full-page or a cropped capture.
+   */
+  protected onScreenshotClick(): void {
+    this.errorMessage.set(null);
+    this.regionOpen.set(true);
+  }
+
+  /** Close the overlay and reset its transient drag / shake state so a
+   *  re-open starts from a clean slate rather than the last selection. */
+  protected closeRegion(): void {
+    this.regionOpen.set(false);
+    this.regionDrag.set(null);
+    this.regionShake.set(false);
+    this.regionDragging = false;
+    this.clearShakeTimer();
+  }
+
+  private clearShakeTimer(): void {
+    if (this.shakeTimer !== null) {
+      clearTimeout(this.shakeTimer);
+      this.shakeTimer = null;
+    }
+  }
+
+  protected onRegionPointerDown(event: PointerEvent): void {
+    // pointerdown on the Cancel / Capture / Capture-full-page controls
+    // bubbles up through this handler. Without this guard the bubbled event
+    // would reinitialise the drag state to a zero-size rect right before the
+    // button's own click fires, sending a valid selection into the
+    // degenerate-shake path. `currentTarget` is always the overlay layer;
+    // only initiate a drag when the press landed directly on it.
+    if (event.target !== event.currentTarget) return;
+    // Ignore non-primary buttons (right-click / middle-click). pointerType
+    // 'touch' and 'pen' always issue button === 0.
+    if (event.button !== 0) return;
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    this.regionDragging = true;
+    this.regionDrag.set({
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      w: 0,
+      h: 0,
+    });
+  }
+
+  protected onRegionPointerMove(event: PointerEvent): void {
+    if (!this.regionDragging) return;
+    this.regionDrag.update((prev) => {
+      if (!prev) return prev;
+      const x = Math.min(prev.startX, event.clientX);
+      const y = Math.min(prev.startY, event.clientY);
+      const w = Math.abs(event.clientX - prev.startX);
+      const h = Math.abs(event.clientY - prev.startY);
+      return { startX: prev.startX, startY: prev.startY, x, y, w, h };
+    });
+  }
+
+  protected onRegionPointerUp(event: PointerEvent): void {
+    if (!this.regionDragging) return;
+    (event.currentTarget as HTMLElement).releasePointerCapture?.(
+      event.pointerId,
+    );
+    this.regionDragging = false;
+  }
+
+  /** Confirm the dragged region. Degenerate (accidental-click) selections
+   *  shake the overlay instead of capturing. */
+  protected confirmRegion(): void {
+    const drag = this.regionDrag();
+    if (!drag || drag.w <= REGION_MIN_SIDE_PX || drag.h <= REGION_MIN_SIDE_PX) {
+      this.regionShake.set(true);
+      // Replace any in-flight settle timer so rapid-fire clicks don't stack.
+      this.clearShakeTimer();
+      this.shakeTimer = setTimeout(() => {
+        this.shakeTimer = null;
+        if (!this.destroyed) this.regionShake.set(false);
+      }, 320);
+      return;
+    }
+    const region: Region = { x: drag.x, y: drag.y, w: drag.w, h: drag.h };
+    this.closeRegion();
+    void this.performCapture(region);
+  }
+
+  protected confirmFull(): void {
+    this.closeRegion();
+    void this.performCapture(null);
+  }
+
+  /**
+   * Enter on the overlay root confirms the region — but only when the root
+   * itself has focus. Tab-focusing a button inside the overlay and pressing
+   * Enter bubbles up here; without the `target === currentTarget` guard we
+   * would hijack the button's own Enter activation (Cancel, Capture full
+   * page) and run the region-confirm path instead — a real a11y defect.
+   * Escape dismisses the overlay (the React adapter gets this from Radix).
+   */
+  protected onRegionKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      this.closeRegion();
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    this.confirmRegion();
+  }
+
+  /**
+   * Run the capture pipeline. The overlay is already closed by the caller —
+   * the synchronous removal plus `data-brevwick-skip` on every overlay node
+   * keeps overlay chrome out of the image. `capturing` drives the in-thread
+   * "Capturing screenshot…" bubble (issue #55) that bridges the gap between
+   * the overlay closing and the thumbnail appearing.
+   */
+  private async performCapture(region: Region | null): Promise<void> {
+    this.errorMessage.set(null);
+    this.capturing.set(true);
+    try {
+      const blob = await this.brevwick.captureScreenshot();
+      if (this.destroyed) return;
+      // Non-browser platforms resolve null from the service. Unreachable from
+      // a real click (the button only exists in the DOM), kept as a guard.
+      if (!blob) return;
+      const finalBlob = region ? await cropToRegion(blob, region) : blob;
+      if (this.destroyed) return;
+      // Defence-in-depth: the screenshot button is disabled at the cap, but
+      // a long-running capture started before files were attached can still
+      // land after the combined total is at the ceiling. Signals always read
+      // current, so this post-await re-check sees anything attached while
+      // the capture was in flight. Drop the new capture rather than silently
+      // exceed the SDK's combined attachment ceiling. (The object URL is
+      // only created for kept captures so a rejected one doesn't leak.)
+      if (this.screenshots().length + this.files().length >= MAX_ATTACHMENTS) {
+        this.errorMessage.set(`Maximum ${MAX_ATTACHMENTS} attachments reached`);
+        return;
+      }
+      this.screenshots.update((prev) => [
+        ...prev,
+        {
+          id: ++this.screenshotIdSeq,
+          blob: finalBlob,
+          url: URL.createObjectURL(finalBlob),
+        },
+      ]);
+    } catch (err) {
+      if (this.destroyed) return;
+      // Non-blocking failure: inline alert, no chip, Send stays available —
+      // a capture failure must never block submission.
+      const message =
+        err instanceof Error ? err.message : 'Screenshot capture failed';
+      this.errorMessage.set(message);
+    } finally {
+      if (!this.destroyed) this.capturing.set(false);
+    }
+  }
+
+  protected removeScreenshot(id: number): void {
+    this.screenshots.update((prev) => {
+      const target = prev.find((s) => s.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter((s) => s.id !== id);
+    });
+    this.previewId.update((current) => (current === id ? null : current));
+  }
+
+  /** Revoke every live screenshot object URL and clear the list. */
+  private clearScreenshots(): void {
+    for (const s of this.screenshots()) URL.revokeObjectURL(s.url);
+    this.screenshots.set([]);
+  }
+
+  protected openPreview(id: number): void {
+    this.previewId.set(id);
+  }
+
+  protected closePreview(): void {
+    this.previewId.set(null);
+  }
+
+  /** Escape dismisses the preview without touching the attachment. Stopped
+   *  from propagating so it cannot reach any host-level Esc handling. */
+  protected onPreviewKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return;
+    event.stopPropagation();
+    this.closePreview();
+  }
+
   // ── Submit / retry ───────────────────────────────────────────────────────
 
   /**
-   * Build the `FeedbackInput` from the current draft + extras + files +
-   * AI-toggle render-policy. Title is the first non-empty line, sliced to
-   * 120 chars; description is the **raw** draft (the trim-fix landed in
-   * PR #111 — must not regress).
+   * Build the `FeedbackInput` from the current draft + extras + screenshots
+   * + files + AI-toggle render-policy. Title is the first non-empty line,
+   * sliced to 120 chars; description is the **raw** draft (the trim-fix
+   * landed in PR #111 — must not regress).
    */
   private buildInput(): FeedbackInput {
     const draftValue = this.draft();
@@ -1712,9 +2428,23 @@ export class BwFeedbackButtonComponent {
     const title = trimmed.split('\n', 1)[0]!.slice(0, 120);
     const expectedTrim = this.expected().trim();
     const actualTrim = this.actual().trim();
-    const attachments: Array<Blob | FeedbackAttachment> = this.files().map(
-      ({ file }) => ({ blob: file, filename: file.name }),
-    );
+    const attachments: Array<Blob | FeedbackAttachment> = [];
+    // Single-screenshot filename stays `screenshot.<ext>` (matches pre-#56
+    // wire format and keeps server-side identifiers stable). Multi-screenshot
+    // submissions disambiguate with `-1`, `-2`, … using the array order they
+    // were captured in. Extension derives from the blob MIME (default webp).
+    const shots = this.screenshots();
+    shots.forEach((s, idx) => {
+      const ext = s.blob.type.split('/')[1]?.split('+')[0] || 'webp';
+      const filename =
+        shots.length === 1
+          ? `screenshot.${ext}`
+          : `screenshot-${idx + 1}.${ext}`;
+      attachments.push({ blob: s.blob, filename });
+    });
+    for (const { file } of this.files()) {
+      attachments.push({ blob: file, filename: file.name });
+    }
     return {
       title,
       description: draftValue,
@@ -1727,6 +2457,13 @@ export class BwFeedbackButtonComponent {
 
   protected async doSubmit(): Promise<void> {
     if (this.isSubmitting()) return;
+    // Block submission while a capture is in flight. Without this, the user
+    // could press Enter in the composer between clicking Capture and the
+    // thumbnail rendering, sending the issue without the screenshot they
+    // intended to include. The Send button itself is disabled in this state
+    // (canSend), but the Enter-to-send shortcut bypasses the button so the
+    // guard belongs here on the submit path too.
+    if (this.capturing()) return;
     if (!this.draft().trim()) {
       this.errorMessage.set('Please describe what happened.');
       return;
@@ -1753,7 +2490,12 @@ export class BwFeedbackButtonComponent {
     this.expected.set('');
     this.actual.set('');
     this.showExtras.set(false);
+    // The submitted screenshot blobs already rode along inside `input`
+    // (lastSubmittedInput keeps them alive for the retry path); the live
+    // composer object URLs are revoked here so they don't leak.
+    this.clearScreenshots();
     this.files.set([]);
+    this.previewId.set(null);
     this.lastSubmittedInput.set(input);
     this.lastUserMessageId = userMessageId;
 

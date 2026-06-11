@@ -60,7 +60,7 @@ The plugin calls `sdk.install()` after mount (attaches global ring listeners —
 
 ## `FeedbackButton`
 
-A floating action button + dialog. The dialog has a textarea, a screenshot capture button, and a send button.
+A floating action button + dialog. The dialog has a textarea, a screenshot capture button with a region-select overlay (drag a rectangle, or "Capture full page"), file attachments, and a send button. Captured screenshots render as thumbnail chips with a tap-to-preview dialog.
 
 ```vue
 <FeedbackButton position="bottom-right" label="Report a bug" />
@@ -112,7 +112,7 @@ The widget captures the page via `@tatlacas/brevwick-sdk`'s `captureScreenshot()
 <div data-brevwick-skip>{{ customerEmail }}</div>
 ```
 
-The FAB, panel, and backdrop all carry `data-brevwick-skip` themselves, so they never appear in the screenshots they capture.
+The FAB, panel, region overlay, preview dialog, and backdrop all carry `data-brevwick-skip` themselves, so they never appear in the screenshots they capture.
 
 ## `useFeedback`
 
@@ -206,7 +206,7 @@ import type {
 
 ## Bundle
 
-- Eager bundle ≤ 5 kB gzip (enforced via `.size-limit.js` and `chunk-split.test.ts`).
+- Eager bundle ≤ 13 kB gzip (enforced via `.size-limit.js` and `chunk-split.test.ts`).
 - The screenshot encoder (`modern-screenshot`) is dynamic-imported by the core SDK on first capture — not on plugin install and not on FAB mount.
 - `sideEffects: false` so bundlers tree-shake unused exports.
 

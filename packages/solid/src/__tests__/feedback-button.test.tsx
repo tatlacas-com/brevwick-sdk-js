@@ -142,6 +142,21 @@ describe('<FeedbackButton>', () => {
     ).toBeInTheDocument();
   });
 
+  it('greeting invites a screenshot now that the capture button is back', () => {
+    // Pins the full greeting copy: the screenshot-restore decision requires
+    // "…A screenshot helps if you have one." whenever the capture button is
+    // present. The prefix-only assertions elsewhere would not catch a
+    // regression back to the short button-less greeting. Mirrors the React
+    // adapter's test so the two adapters stay in lockstep.
+    mount();
+    openPanel();
+    expect(
+      screen.getByText(
+        "Hi! Tell us what's happening. A screenshot helps if you have one.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('renders a Brevwick credit footer linking to brevwick.dev on open', () => {
     mount();
     openPanel();
@@ -854,7 +869,7 @@ describe('<FeedbackButton> — theme prop', () => {
   });
 });
 
-describe.skip('<FeedbackButton> — screenshot capture', () => {
+describe('<FeedbackButton> — screenshot capture', () => {
   it('captures a screenshot via the SDK and rides it on the next submit', async () => {
     captureScreenshot.mockResolvedValueOnce(
       new Blob(['png'], { type: 'image/png' }),
@@ -929,9 +944,124 @@ describe.skip('<FeedbackButton> — screenshot capture', () => {
     }
   });
 
-  it('region overlay parity (Solid V1 ships full-page only)', () => {});
+  it('region overlay parity (Solid V1 ships full-page only)', async () => {
+    // The React adapter routes the capture button through a region-select
+    // overlay; Solid V1 deliberately does not (SDD § 12) — clicking the
+    // button captures the full page immediately, with no overlay node in
+    // the DOM at any point.
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['png'], { type: 'image/png' }),
+    );
+    mount();
+    openPanel();
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+    expect(
+      document.querySelector('[data-testid="brw-region-overlay"]'),
+    ).toBeNull();
+    await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
+    expect(
+      document.querySelector('[data-testid="brw-region-overlay"]'),
+    ).toBeNull();
+  });
 
-  it('screenshot preview dialog parity (Solid V1 has no preview modal)', () => {});
+  it('screenshot preview dialog parity (Solid V1 has no preview modal)', async () => {
+    // The chip shows an inline thumbnail of the captured screenshot, but
+    // Solid V1 has no tap-to-preview modal — the thumbnail is a plain
+    // <img>, not a button, and no preview dialog node ever mounts.
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['png'], { type: 'image/png' }),
+    );
+    mount();
+    openPanel();
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^remove screenshot$/i }),
+      ).toBeInTheDocument(),
+    );
+    const chip = screen
+      .getByRole('button', { name: /^remove screenshot$/i })
+      .closest('.brw-chip') as HTMLElement;
+    const thumb = chip.querySelector('img');
+    expect(thumb).not.toBeNull();
+    expect(thumb!.closest('button')).toBeNull();
+    expect(screen.queryByRole('button', { name: /preview/i })).toBeNull();
+    expect(
+      document.querySelector('[data-testid="brw-preview-dialog"]'),
+    ).toBeNull();
+  });
+
+  it('shows an in-thread "Capturing screenshot…" bubble and blocks send while in flight', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    typeDraft('mid-capture send attempt');
+
+    const captureBtn = screen.getByRole('button', {
+      name: /capture screenshot/i,
+    });
+    fireEvent.click(captureBtn);
+
+    // Loading state: in-thread bubble + mutated label + disabled controls.
+    expect(screen.getByText(/capturing screenshot…/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /capturing screenshot/i }),
+    ).toBeDisabled();
+    const sendBtn = screen.getByRole('button', { name: /^send$/i });
+    expect(sendBtn).toBeDisabled();
+    // Enter-to-send bypasses the disabled button — the submit-path guard
+    // must drop it too.
+    fireEvent.keyDown(getComposer(), { key: 'Enter' });
+    expect(submit).not.toHaveBeenCalled();
+
+    release(new Blob(['png'], { type: 'image/png' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^remove screenshot$/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/capturing screenshot…/i)).toBeNull();
+    expect(sendBtn).not.toBeDisabled();
+  });
+
+  it('disambiguates filenames when multiple screenshots ride one submit', async () => {
+    captureScreenshot
+      .mockResolvedValueOnce(new Blob(['1'], { type: 'image/png' }))
+      .mockResolvedValueOnce(new Blob(['2'], { type: 'image/webp' }));
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_multi' });
+
+    mount();
+    openPanel();
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+    await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+    await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(2));
+
+    typeDraft('two shots');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]!;
+    expect(input.attachments).toHaveLength(2);
+    expect(input.attachments![0]).toMatchObject({
+      filename: 'screenshot-1.png',
+    });
+    expect(input.attachments![1]).toMatchObject({
+      filename: 'screenshot-2.webp',
+    });
+  });
 });
 
 describe('<FeedbackButton> — debug raw payload (config.debug)', () => {

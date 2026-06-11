@@ -166,6 +166,20 @@ describe('<FeedbackButton>', () => {
     ).toBeInTheDocument();
   });
 
+  it('greeting invites a screenshot now that the capture button is back', () => {
+    // Pins the full greeting copy: the screenshot-restore decision requires
+    // "…A screenshot helps if you have one." whenever the capture button is
+    // present. The prefix-only assertions elsewhere would not catch a
+    // regression back to the short button-less greeting.
+    mount();
+    openPanel();
+    expect(
+      screen.getByText(
+        "Hi! Tell us what's happening. A screenshot helps if you have one.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('renders a Brevwick credit footer linking to brevwick.dev on open', () => {
     mount();
     openPanel();
@@ -373,7 +387,7 @@ describe('<FeedbackButton>', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
-  it.skip('attaches a screenshot via captureScreenshot and renders a chip', async () => {
+  it('attaches a screenshot via captureScreenshot and renders a chip', async () => {
     const blob = new Blob(['x'], { type: 'image/png' });
     captureScreenshot.mockResolvedValueOnce(blob);
     mount();
@@ -386,7 +400,7 @@ describe('<FeedbackButton>', () => {
     ).toBeInTheDocument();
   });
 
-  it.skip('derives the screenshot attachment extension from its MIME type', async () => {
+  it('derives the screenshot attachment extension from its MIME type', async () => {
     const blob = new Blob(['x'], { type: 'image/webp' });
     captureScreenshot.mockResolvedValueOnce(blob);
     submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ext' });
@@ -404,7 +418,7 @@ describe('<FeedbackButton>', () => {
     expect(input.attachments[0]!.filename).toBe('screenshot.webp');
   });
 
-  it.skip('surfaces an error in the panel when captureScreenshot rejects', async () => {
+  it('surfaces an error in the panel when captureScreenshot rejects', async () => {
     captureScreenshot.mockRejectedValueOnce(new Error('canvas tainted'));
     mount();
     openPanel();
@@ -419,7 +433,7 @@ describe('<FeedbackButton>', () => {
     ).toBeNull();
   });
 
-  it.skip('minimize preserves draft and attachments across reopen', async () => {
+  it('minimize preserves draft and attachments across reopen', async () => {
     const blob = new Blob(['x'], { type: 'image/png' });
     captureScreenshot.mockResolvedValueOnce(blob);
     mount();
@@ -534,7 +548,7 @@ describe('<FeedbackButton>', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it.skip('revokes the screenshot object URL on unmount', async () => {
+  it('revokes the screenshot object URL on unmount', async () => {
     const blob = new Blob(['x'], { type: 'image/png' });
     captureScreenshot.mockResolvedValueOnce(blob);
     const createObjectURL = vi
@@ -581,7 +595,7 @@ describe('<FeedbackButton>', () => {
     ).toBeInTheDocument();
   });
 
-  it.skip('disables composer send + icons while submitting (guards double-send)', async () => {
+  it('disables composer send + icons while submitting (guards double-send)', async () => {
     // Pending submission keeps status === 'submitting' indefinitely for the assertion.
     let release: (r: SubmitResult) => void = () => undefined;
     submit.mockReturnValueOnce(
@@ -629,7 +643,7 @@ describe('<FeedbackButton>', () => {
     expect(BREVWICK_STYLE_ID).toBe('brevwick-react-styles');
   });
 
-  it.skip('Esc minimizes (preserves draft + attachments), does not destroy state', async () => {
+  it('Esc minimizes (preserves draft + attachments), does not destroy state', async () => {
     const blob = new Blob(['x'], { type: 'image/png' });
     captureScreenshot.mockResolvedValueOnce(blob);
     mount();
@@ -1074,7 +1088,7 @@ describe('<FeedbackButton>', () => {
  * above pin the "one capture" wire format; this block locks in the array
  * shape, the cap, the capturing bubble, and the preview dialog wiring.
  */
-describe.skip('<FeedbackButton> — multi-screenshot + preview', () => {
+describe('<FeedbackButton> — multi-screenshot + preview', () => {
   it('keeps both captures (no replace) and disambiguates filenames on submit', async () => {
     const first = new Blob(['1'], { type: 'image/png' });
     const second = new Blob(['2'], { type: 'image/webp' });
@@ -1609,7 +1623,7 @@ describe('<FeedbackButton> — theming + composer shell', () => {
     );
   });
 
-  it.skip('composer children are wrapped in a single .brw-composer-shell div', () => {
+  it('composer children are wrapped in a single .brw-composer-shell div', () => {
     mount();
     openPanel();
     const textarea = screen.getByRole('textbox', {
@@ -1760,7 +1774,7 @@ describe('<FeedbackButton> — theme prop', () => {
     );
   });
 
-  it.skip('propagates theme to the region-capture overlay Dialog.Content', async () => {
+  it('propagates theme to the region-capture overlay Dialog.Content', async () => {
     mount({ theme: 'dark' });
     openPanel();
     await act(async () => {
@@ -1819,7 +1833,7 @@ describe('<FeedbackButton> — theme prop', () => {
   });
 });
 
-describe.skip('<FeedbackButton> — region capture overlay', () => {
+describe('<FeedbackButton> — region capture overlay', () => {
   /**
    * Install a test double for the canvas crop pipeline so the overlay's
    * confirm-region path can resolve under happy-dom (which provides no
@@ -2106,6 +2120,98 @@ describe.skip('<FeedbackButton> — region capture overlay', () => {
     } finally {
       stub.restore();
     }
+  });
+
+  it('a crop that never settles cannot wedge the composer — capturing clears after the crop deadline', async () => {
+    // Adversarial wedge: the SDK bounds captureScreenshot() with its own
+    // 10 s deadline, but the crop stage (image decode + canvas encode)
+    // runs outside that envelope in the adapter. Stub Image.src so the
+    // decode fires neither load nor error — pre-fix, `capturing` stayed
+    // true forever, permanently disabling Send AND the Enter-to-send
+    // path (feedback submission fully blocked).
+    vi.useFakeTimers();
+    const originalImageSrc = Object.getOwnPropertyDescriptor(
+      HTMLImageElement.prototype,
+      'src',
+    );
+    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+      configurable: true,
+      get() {
+        return '';
+      },
+      set() {
+        /* decode wedged: never fires load or error */
+      },
+    });
+    try {
+      captureScreenshot.mockResolvedValueOnce(
+        new Blob(['full'], { type: 'image/webp' }),
+      );
+      mount();
+      openOverlay();
+      drag(getOverlay(), { x: 10, y: 20 }, { x: 210, y: 120 });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+      });
+
+      // Capture resolved, crop is wedged — the in-thread indicator is up
+      // and the composer controls are locked.
+      expect(screen.getByText(/capturing screenshot/i)).toBeInTheDocument();
+      typeDraft('wedge repro');
+      expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled();
+
+      // Deadline elapses: the wedge must resolve through the error path.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(screen.queryByText(/capturing screenshot/i)).toBeNull();
+      expect(screen.getByText(/crop exceeded/i)).toBeInTheDocument();
+      // Submission is unblocked again.
+      expect(
+        screen.getByRole('button', { name: /^send$/i }),
+      ).not.toBeDisabled();
+    } finally {
+      if (originalImageSrc) {
+        Object.defineProperty(
+          HTMLImageElement.prototype,
+          'src',
+          originalImageSrc,
+        );
+      }
+    }
+  });
+
+  it('keeps every widget element covered by data-brevwick-skip at the instant capture starts (overlay still mid-close)', async () => {
+    // The overlay close (`setRegionOpen(false)`) and `captureScreenshot()`
+    // start in the same tick, so when the SDK's scrub pass runs the
+    // overlay is typically STILL mounted (React hasn't re-rendered yet) —
+    // and with open/close animations it can stay mounted longer. The only
+    // thing keeping overlay chrome out of the image is that every widget
+    // node is covered by a `[data-brevwick-skip]` self-or-ancestor at
+    // that instant. Walk the live DOM from inside the capture call to pin
+    // that invariant.
+    let uncovered: string[] | null = null;
+    captureScreenshot.mockImplementationOnce(async () => {
+      uncovered = Array.from(
+        document.querySelectorAll<HTMLElement>('[class*="brw-"]'),
+      )
+        .filter((el) => el.closest('[data-brevwick-skip]') === null)
+        .map((el) => el.className);
+      return new Blob(['x'], { type: 'image/png' });
+    });
+    mount();
+    openOverlay();
+    drag(getOverlay(), { x: 10, y: 20 }, { x: 210, y: 120 });
+    // Confirm-full-page path: closes the overlay and starts the capture in
+    // the same handler tick.
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture full page/i }),
+      );
+    });
+    // The capture mock ran (uncovered is set) and found no widget element
+    // outside a data-brevwick-skip subtree.
+    expect(uncovered).toEqual([]);
   });
 
   it('pointerdown bubbled from control buttons does not reset the drag selection', async () => {

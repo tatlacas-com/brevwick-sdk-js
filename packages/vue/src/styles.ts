@@ -665,4 +665,89 @@ export const BREVWICK_CSS = `
   background: rgba(0, 0, 0, 0.35);
   z-index: 2147483001;
 }
+.brw-region-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 2147483003;
+}
+.brw-region-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483004;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+.brw-region-selection {
+  position: fixed;
+  border: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.brw-region-controls {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+  border: 1px solid var(--brw-border, var(--brw-border-base));
+  border-radius: 10px;
+  box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+  z-index: 2147483005;
+}
+.brw-region-btn { font: inherit; }
+.brw-region-shake { animation: brw-region-shake 300ms ease-out; }
+@keyframes brw-region-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+/* Screenshot preview dialog (issue #57). Sits above the panel and the
+   region overlay z-stack so the dialog is always on top when triggered
+   from a chip in the panel. The image is contain-bounded to 90vw / 80vh
+   so a tall full-page capture stays readable and a small region capture
+   isn't upscaled past its native pixels. */
+.brw-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 2147483006;
+}
+.brw-preview-layer {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483007;
+  outline: none;
+}
+.brw-preview-image {
+  max-width: 90vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+  background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+}
+.brw-preview-close {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+  border: 1px solid var(--brw-border, var(--brw-border-base));
+  box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+}
+@media (prefers-reduced-motion: reduce) {
+  .brw-region-shake { animation: none; }
+}
 `;

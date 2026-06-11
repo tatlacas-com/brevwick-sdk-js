@@ -107,7 +107,15 @@ Single instance per Angular app. SSR-safe via `inject(PLATFORM_ID)` + `isPlatfor
 
 ### `<bw-feedback-button>` (`BwFeedbackButtonComponent`)
 
-Standalone component — import it directly into any `@Component({ standalone: true, imports: [BwFeedbackButtonComponent] })`. Renders a FAB plus a minimal text-only panel (textarea + send button); the component does not capture screenshots — apps that need that fidelity wrap `BrevwickService.captureScreenshot()` themselves and pass the resulting `Blob` through `submit()`'s `attachments` field. Submission goes through `BrevwickService` automatically.
+Standalone component — import it directly into any `@Component({ standalone: true, imports: [BwFeedbackButtonComponent] })`. Renders a FAB plus a chat-style feedback panel. Opens to a composer with:
+
+- **Textarea** with Enter-to-send (Shift+Enter for newline).
+- **Screenshot** capture with region-select overlay (drag a rectangle, or "Capture full page"), tap-to-preview thumbnails, and a combined 5-attachment cap.
+- **File attachments** via paperclip icon.
+- **Optional "Expected vs Actual"** disclosure.
+- **Optional AI-format toggle** (only visible when the project allows per-submitter choice).
+
+Submission goes through `BrevwickService` automatically.
 
 ```ts
 <bw-feedback-button
@@ -125,7 +133,16 @@ Standalone component — import it directly into any `@Component({ standalone: t
 | `label`        | `string`                          | `'Feedback'`     | FAB label.                                            |
 | `(submit)`     | `EventEmitter<SubmitResult>`      | —                | Fired after every submit (success or failure).        |
 
-> The Angular component is a deliberately lean baseline. The full chat-style panel — multi-screenshot, region-select capture, AI toggle, etc. — currently lives in `@tatlacas/brevwick-react`. Apps that need that fidelity in Angular today should wrap `BrevwickService` with their own component using whichever Angular UI library they already use.
+### Hiding sensitive content from screenshots
+
+The widget captures the page via `@tatlacas/brevwick-sdk`'s `captureScreenshot()`. Any element tagged `data-brevwick-skip` is hidden before capture and restored after:
+
+```html
+<input data-brevwick-skip type="password" />
+<div data-brevwick-skip>{{ customerEmail }}</div>
+```
+
+The FAB, panel, region overlay, and preview dialog all carry `data-brevwick-skip` themselves, so they never appear in the screenshots they capture.
 
 ## SSR / Angular Universal
 
@@ -149,12 +166,12 @@ bootstrap = () =>
 
 ## Bundle size
 
-| Surface                | Budget          | Notes                                                                                                                                                                                |
-| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Eager (`fesm2022.mjs`) | **≤ 8 kB gzip** | Angular's `@Injectable`, standalone-component, and Signals scaffolding accounts for ~4-5 kB; our code lands on top.                                                                  |
-| On widget open         | ≤ 25 kB gzip    | If you wire `BrevwickService.captureScreenshot()` into your own component, `modern-screenshot` is dynamic-imported on first call via the SDK — same lazy chunk every adapter shares. |
+| Surface                | Budget          | Notes                                                                                                               |
+| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Eager (`fesm2022.mjs`) | **≤ 8 kB gzip** | Angular's `@Injectable`, standalone-component, and Signals scaffolding accounts for ~4-5 kB; our code lands on top. |
+| On widget open         | ≤ 25 kB gzip    | `modern-screenshot` is dynamic-imported on the first capture via the SDK — same lazy chunk every adapter shares.    |
 
-The Angular envelope is intentionally larger than the React/Vue/Svelte/Solid adapters because the underlying framework has irreducible runtime overhead per `@Injectable` + standalone component. The eager budget is enforced by [`size-limit`](../../.size-limit.js); `<bw-feedback-button>` itself does not invoke `captureScreenshot` — the lean baseline submits text only.
+The Angular envelope is intentionally larger than the React/Vue/Svelte/Solid adapters because the underlying framework has irreducible runtime overhead per `@Injectable` + standalone component. The eager budget is enforced by [`size-limit`](../../.size-limit.js). `<bw-feedback-button>` only reaches `captureScreenshot` when the user clicks the screenshot button, so `modern-screenshot` stays on the lazy widget-open chunk.
 
 ## Build & versioning
 

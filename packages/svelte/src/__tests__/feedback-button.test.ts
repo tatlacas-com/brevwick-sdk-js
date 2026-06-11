@@ -114,6 +114,29 @@ const openPanel = async (): Promise<HTMLElement> => {
   return fab;
 };
 
+/**
+ * Drive the screenshot button through the region-capture overlay the
+ * pre-existing tests expect "click screenshot → blob in composer" from.
+ * Post-restore (React parity), the button opens an overlay and the user
+ * picks between a region crop and a full-page capture — here we take the
+ * latter path, which is the closest analogue to the original one-click
+ * behaviour. Mirrors the React suite's `captureFullPage` helper.
+ */
+const captureFullPage = async (): Promise<void> => {
+  await act(async () => {
+    await fireEvent.click(
+      screen.getByRole('button', {
+        name: /capture screenshot of this page/i,
+      }),
+    );
+  });
+  await act(async () => {
+    await fireEvent.click(
+      screen.getByRole('button', { name: /capture full page/i }),
+    );
+  });
+};
+
 describe('<FeedbackButton>', () => {
   it('renders the FAB after mount and stays closed by default', async () => {
     mountFab();
@@ -185,25 +208,33 @@ describe('<FeedbackButton>', () => {
     });
   });
 
-  it.skip('captures a screenshot via the SDK on screenshot button click', async () => {
+  it('greeting invites a screenshot now that the capture button is back', async () => {
+    // Pins the full greeting copy: the screenshot-restore decision requires
+    // "…A screenshot helps if you have one." whenever the capture button is
+    // present. Mirrors the React adapter's regression pin.
+    mountFab();
+    await openPanel();
+    expect(
+      screen.getByText(
+        "Hi! Tell us what's happening. A screenshot helps if you have one.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('captures a screenshot via the SDK on screenshot button click', async () => {
     captureScreenshot.mockResolvedValueOnce(
       new Blob(['x'], { type: 'image/png' }),
     );
     mountFab();
     await openPanel();
-    const screenshotBtn = screen.getByRole('button', {
-      name: /capture screenshot of this page/i,
-    });
-    await act(async () => {
-      await fireEvent.click(screenshotBtn);
-    });
+    await captureFullPage();
     await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(screen.getByText(/^screenshot$/i)).toBeInTheDocument(),
     );
   });
 
-  it.skip('submits draft + screenshot through the SDK and clears the composer on success', async () => {
+  it('submits draft + screenshot through the SDK and clears the composer on success', async () => {
     captureScreenshot.mockResolvedValueOnce(
       new Blob(['png-bytes'], { type: 'image/png' }),
     );
@@ -220,13 +251,7 @@ describe('<FeedbackButton>', () => {
       await fireEvent.input(textarea, { target: { value: 'broken' } });
     });
 
-    await act(async () => {
-      await fireEvent.click(
-        screen.getByRole('button', {
-          name: /capture screenshot of this page/i,
-        }),
-      );
-    });
+    await captureFullPage();
     await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
 
     await act(async () => {
@@ -301,34 +326,25 @@ describe('<FeedbackButton>', () => {
     );
   });
 
-  it.skip('renders an error when the screenshot capture fails', async () => {
+  it('renders an error when the screenshot capture fails', async () => {
     captureScreenshot.mockRejectedValueOnce(new Error('capture exploded'));
     mountFab();
     await openPanel();
-    await act(async () => {
-      await fireEvent.click(
-        screen.getByRole('button', {
-          name: /capture screenshot of this page/i,
-        }),
-      );
-    });
+    await captureFullPage();
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(/capture exploded/i),
     );
+    // Failure path queues no chip — submission is never blocked.
+    expect(screen.queryByText(/^screenshot$/i)).not.toBeInTheDocument();
   });
 
-  it.skip('disables the screenshot + file buttons once 5 attachments are queued', async () => {
+  it('disables the screenshot + file buttons once 5 attachments are queued', async () => {
     captureScreenshot.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
     mountFab();
     await openPanel();
 
     for (let i = 0; i < 5; i++) {
-      const btn = screen.getByRole('button', {
-        name: /capture screenshot of this page|maximum 5 attachments reached/i,
-      });
-      await act(async () => {
-        await fireEvent.click(btn);
-      });
+      await captureFullPage();
       await waitFor(() =>
         expect(captureScreenshot).toHaveBeenCalledTimes(i + 1),
       );
@@ -338,6 +354,12 @@ describe('<FeedbackButton>', () => {
       name: /maximum 5 attachments reached/i,
     });
     expect(cappedBtn).toBeDisabled();
+    // The file input shares the combined cap and its aria-label mutates the
+    // same way the screenshot button's does.
+    const fileInput = screen
+      .getByRole('dialog')
+      .querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).toBeDisabled();
   });
 
   it('attaches files via the file input and removes them on chip click', async () => {
@@ -405,7 +427,7 @@ describe('<FeedbackButton>', () => {
     });
   });
 
-  it.skip('removes a captured screenshot via its remove button and revokes the URL', async () => {
+  it('removes a captured screenshot via its remove button and revokes the URL', async () => {
     captureScreenshot.mockResolvedValueOnce(
       new Blob(['x'], { type: 'image/png' }),
     );
@@ -413,20 +435,16 @@ describe('<FeedbackButton>', () => {
 
     mountFab();
     await openPanel();
-    await act(async () => {
-      await fireEvent.click(
-        screen.getByRole('button', {
-          name: /capture screenshot of this page/i,
-        }),
-      );
-    });
+    await captureFullPage();
 
     await waitFor(() =>
       expect(screen.getByText(/^screenshot$/i)).toBeInTheDocument(),
     );
 
+    // A single screenshot is labelled "screenshot" (no ordinal) — parity
+    // with the React adapter's chip naming.
     const removeBtn = screen.getByRole('button', {
-      name: /remove screenshot 1/i,
+      name: /^remove screenshot$/i,
     });
     await act(async () => {
       await fireEvent.click(removeBtn);
@@ -497,7 +515,7 @@ describe('<FeedbackButton>', () => {
     );
   });
 
-  it.skip('caps screenshots at 5 even if a stale capture lands after the cap', async () => {
+  it('caps screenshots at 5 even if a stale capture lands after the cap', async () => {
     // Race-cap defence-in-depth: once 5 attachments are queued, a long-running
     // capture that resolves AFTER the cap was reached must not push a 6th.
     captureScreenshot.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
@@ -518,9 +536,11 @@ describe('<FeedbackButton>', () => {
     });
 
     // Trigger a screenshot that resolves *after* we hit the cap. Because the
-    // capture button is now disabled (attachmentsAtCap), `handleScreenshot`
+    // capture button is now disabled (attachmentsAtCap), `openRegionOverlay`
     // is gated by the early `if (capturing || attachmentsAtCap) return`
-    // guard — defence-in-depth verified by the surface contract.
+    // guard — defence-in-depth verified by the surface contract. (The
+    // post-await re-check inside performCapture is pinned separately in the
+    // multi-screenshot describe below.)
     const screenshotBtn = screen.getByRole('button', {
       name: /maximum 5 attachments reached/i,
     });
@@ -538,9 +558,8 @@ describe('<FeedbackButton>', () => {
     });
 
     // Attach a file so we can assert the chip survives the minimize / reopen
-    // cycle. (The screenshot button is disabled on V1 — same property holds
-    // for any chip in the composer; using a file keeps the test off the
-    // capture path that no longer exists.)
+    // cycle. The same property holds for any chip in the composer — the
+    // screenshot path is exercised by its own describe blocks below.
     const fileInput = screen
       .getByRole('dialog')
       .querySelector<HTMLInputElement>('input[type="file"]');
@@ -1118,12 +1137,688 @@ describe('<FeedbackButton>', () => {
       resolveSubmit({ ok: true, issue_id: 'i_inflight' });
     });
   });
+});
 
-  // Screenshot region overlay + preview dialog are out of scope for the
-  // Svelte v1 widget — kept as `.skip` markers so future ports keep the
-  // intent but the suite stays green today.
-  it.skip('region overlay drag-select capture', () => {});
-  it.skip('screenshot preview dialog opens on chip click', () => {});
+/**
+ * Multi-screenshot, in-flight loading indicator, and tap-to-preview
+ * thumbnails — mirrors the React adapter's "multi-screenshot + preview"
+ * describe (#55 / #56 / #57). The single-screenshot tests above pin the
+ * "one capture" wire format; this block locks in the array shape, the cap,
+ * the capturing bubble, and the preview dialog wiring.
+ */
+describe('<FeedbackButton> — multi-screenshot + preview', () => {
+  const typeDraft = async (text: string): Promise<void> => {
+    await act(async () => {
+      await fireEvent.input(
+        screen.getByRole('textbox', { name: /feedback message/i }),
+        { target: { value: text } },
+      );
+    });
+  };
+
+  it('keeps both captures (no replace) and disambiguates filenames on submit', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['1'], { type: 'image/png' }),
+    );
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['2'], { type: 'image/webp' }),
+    );
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'i_multi' });
+    mountFab();
+    await openPanel();
+
+    await captureFullPage();
+    await captureFullPage();
+
+    expect(
+      screen.getByRole('button', { name: /remove screenshot 1/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /remove screenshot 2/i }),
+    ).toBeInTheDocument();
+
+    await typeDraft('two screenshots');
+    await act(async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0] as {
+      attachments: Array<{ blob: Blob; filename: string }>;
+    };
+    expect(input.attachments).toHaveLength(2);
+    expect(input.attachments[0]!.filename).toBe('screenshot-1.png');
+    expect(input.attachments[1]!.filename).toBe('screenshot-2.webp');
+  });
+
+  it('shows a "Capturing screenshot…" indicator between region close and the chip render', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mountFab();
+    await openPanel();
+    await captureFullPage();
+
+    // Capture is still pending — bubble + spinner should be visible.
+    expect(screen.getByText(/capturing screenshot/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /remove screenshot/i }),
+    ).toBeNull();
+
+    await act(async () => {
+      release(new Blob(['x'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^remove screenshot$/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/capturing screenshot/i)).toBeNull();
+  });
+
+  it('disables the screenshot button while a capture is in flight', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mountFab();
+    await openPanel();
+    await captureFullPage();
+
+    expect(
+      screen.getByRole('button', { name: /capturing screenshot/i }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      release(new Blob(['x'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      ).not.toBeDisabled(),
+    );
+  });
+
+  it('blocks Enter-to-send while a capture is in flight (no submit without the pending screenshot)', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mountFab();
+    await openPanel();
+    await typeDraft('partial draft');
+    await captureFullPage();
+
+    // Send button is disabled because Capture is in flight; Enter-to-send
+    // is independently guarded inside handleSubmit so the keyboard path
+    // can't race past the disabled-button protection.
+    expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled();
+    await act(async () => {
+      await fireEvent.keyDown(
+        screen.getByRole('textbox', { name: /feedback message/i }),
+        { key: 'Enter' },
+      );
+    });
+    expect(submit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      release(new Blob(['x'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    // After capture resolves, Send re-enables — the guard only fires while
+    // `capturing` is true.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^send$/i }),
+      ).not.toBeDisabled(),
+    );
+  });
+
+  it('surfaces an error when a capture lands after the cap was reached', async () => {
+    // Hit the defence-in-depth branch in performCapture: a capture in
+    // flight while files fill the remaining slots must be dropped (no 6th
+    // attachment) and surface the cap message as a role=alert.
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['1'], { type: 'image/png' }),
+    );
+    let releaseSecond: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        releaseSecond = resolve;
+      }),
+    );
+    mountFab();
+    await openPanel();
+    await captureFullPage();
+
+    // Kick off capture #2 (still pending).
+    await captureFullPage();
+
+    // Fill the remaining 4 slots with files while capture #2 is in flight.
+    const fileInput = screen
+      .getByRole('dialog')
+      .querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    const four = Array.from(
+      { length: 4 },
+      (_, i) => new File(['f'], `f${i}.png`, { type: 'image/png' }),
+    );
+    await act(async () => {
+      await fireEvent.change(fileInput!, { target: { files: four } });
+    });
+
+    // Resolve capture #2 — performCapture's cap guard rejects the new
+    // capture and surfaces the error message.
+    await act(async () => {
+      releaseSecond(new Blob(['2'], { type: 'image/png' }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /maximum 5 attachments reached/i,
+      ),
+    );
+    // Still 5 attachments: 1 screenshot + 4 files — no 6th chip.
+    expect(screen.getAllByRole('button', { name: /^remove/i })).toHaveLength(5);
+  });
+
+  it('tapping a screenshot thumbnail opens a preview dialog with the captured image', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['x'], { type: 'image/png' }),
+    );
+    const createSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:mock-preview');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    mountFab();
+    await openPanel();
+    await captureFullPage();
+
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: /preview screenshot/i }),
+      );
+    });
+    const preview = screen.getByTestId('brw-preview-dialog');
+    expect(preview).toBeInTheDocument();
+    const img = preview.querySelector('img[alt="Captured screenshot"]');
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute('src', 'blob:mock-preview');
+
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: /close preview/i }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId('brw-preview-dialog')).toBeNull(),
+    );
+    createSpy.mockRestore();
+  });
+
+  it('Esc dismisses the preview dialog without removing the screenshot', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['x'], { type: 'image/png' }),
+    );
+    mountFab();
+    await openPanel();
+    await captureFullPage();
+
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: /preview screenshot/i }),
+      );
+    });
+    expect(screen.getByTestId('brw-preview-dialog')).toBeInTheDocument();
+    await act(async () => {
+      await fireEvent.keyDown(window, { key: 'Escape' });
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId('brw-preview-dialog')).toBeNull(),
+    );
+    // Chip survives the Esc — Esc on the preview must not fall through to
+    // the panel's own minimize handler. The chip's preview button is the
+    // canonical "screenshot is still attached" probe.
+    expect(
+      screen.getByRole('button', { name: /preview screenshot/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('dialog', { name: /send feedback/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('clicking the chip × does not open the preview dialog', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['x'], { type: 'image/png' }),
+    );
+    mountFab();
+    await openPanel();
+    await captureFullPage();
+
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: /^remove screenshot$/i }),
+      );
+    });
+    expect(screen.queryByTestId('brw-preview-dialog')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /preview screenshot/i }),
+    ).toBeNull();
+  });
+
+  it('removing a screenshot while its preview is open closes the dialog', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['1'], { type: 'image/png' }),
+    );
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['2'], { type: 'image/png' }),
+    );
+    mountFab();
+    await openPanel();
+    await captureFullPage();
+    await captureFullPage();
+
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: /preview screenshot 2/i }),
+      );
+    });
+    expect(screen.getByTestId('brw-preview-dialog')).toBeInTheDocument();
+
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: /^remove screenshot 2$/i }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId('brw-preview-dialog')).toBeNull(),
+    );
+  });
+});
+
+/**
+ * Region-capture overlay — mirrors the React adapter's "region capture
+ * overlay" describe (#31 / #49): drag-select geometry, DPR-aware crop,
+ * full-page passthrough, degenerate-selection shake, and the
+ * panel-hidden-while-overlay-up contract.
+ */
+describe('<FeedbackButton> — region capture overlay', () => {
+  /**
+   * Test double for the canvas crop pipeline so the overlay's
+   * confirm-region path can resolve under happy-dom (which provides no
+   * functional 2D context, `toBlob`, or image loader). Captures the
+   * `drawImage` source/dest args so a test can assert the crop math
+   * matches the dragged rectangle × devicePixelRatio. Mirrors the React
+   * suite's `installCropStub`.
+   */
+  function installCropStub(): {
+    drawImageArgs: unknown[][];
+    restore: () => void;
+  } {
+    const drawImageArgs: unknown[][] = [];
+    const originalImageSrc = Object.getOwnPropertyDescriptor(
+      HTMLImageElement.prototype,
+      'src',
+    );
+    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+      configurable: true,
+      get() {
+        return (this as { _brwSrc?: string })._brwSrc ?? '';
+      },
+      set(value: string) {
+        (this as { _brwSrc?: string })._brwSrc = value;
+        queueMicrotask(() => {
+          const self = this as HTMLImageElement & {
+            onload?: ((ev: Event) => void) | null;
+          };
+          self.onload?.(new Event('load'));
+        });
+      },
+    });
+
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    (HTMLCanvasElement.prototype as { getContext: unknown }).getContext =
+      function getContextStub(kind: string) {
+        if (kind !== '2d') return null;
+        return {
+          drawImage: (...args: unknown[]) => {
+            drawImageArgs.push(args);
+          },
+        };
+      };
+
+    const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function toBlobStub(
+      this: HTMLCanvasElement,
+      cb: BlobCallback,
+      type?: string,
+    ) {
+      const blob = new Blob([`cropped:${this.width}x${this.height}`], {
+        type: type ?? 'image/png',
+      });
+      queueMicrotask(() => cb(blob));
+    };
+
+    // Force the non-OffscreenCanvas branch — happy-dom's OffscreenCanvas,
+    // where present, lacks convertToBlob and would break the crop.
+    const originalOffscreen = (globalThis as { OffscreenCanvas?: unknown })
+      .OffscreenCanvas;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (globalThis as any).OffscreenCanvas;
+
+    return {
+      drawImageArgs,
+      restore: () => {
+        if (originalImageSrc) {
+          Object.defineProperty(
+            HTMLImageElement.prototype,
+            'src',
+            originalImageSrc,
+          );
+        }
+        HTMLCanvasElement.prototype.getContext = originalGetContext;
+        HTMLCanvasElement.prototype.toBlob = originalToBlob;
+        if (originalOffscreen !== undefined) {
+          (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+            originalOffscreen;
+        }
+      },
+    };
+  }
+
+  const openOverlay = async (): Promise<void> => {
+    await openPanel();
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      );
+    });
+  };
+
+  const getOverlay = (): HTMLElement =>
+    screen.getByTestId('brw-region-overlay');
+
+  const queryOverlay = (): HTMLElement | null =>
+    screen.queryByTestId('brw-region-overlay');
+
+  const drag = async (
+    overlay: HTMLElement,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ): Promise<void> => {
+    await act(async () => {
+      await fireEvent.pointerDown(overlay, {
+        clientX: from.x,
+        clientY: from.y,
+        pointerId: 1,
+        button: 0,
+      });
+      await fireEvent.pointerMove(overlay, {
+        clientX: to.x,
+        clientY: to.y,
+        pointerId: 1,
+      });
+      await fireEvent.pointerUp(overlay, {
+        clientX: to.x,
+        clientY: to.y,
+        pointerId: 1,
+      });
+    });
+  };
+
+  it('click on the screenshot button opens the overlay with the skip attribute', async () => {
+    mountFab();
+    await openOverlay();
+    const overlay = getOverlay();
+    // `data-testid` (not `data-brevwick-*`) — test-only hook. The SDK's
+    // capture scrub reads `data-brevwick-skip`, which must be present.
+    expect(overlay).toHaveAttribute('data-brevwick-skip');
+    expect(overlay).toHaveAttribute('aria-label', 'Select screenshot region');
+  });
+
+  it('Escape dismisses the overlay and leaves the main panel open', async () => {
+    mountFab();
+    await openOverlay();
+    expect(getOverlay()).toBeInTheDocument();
+    await act(async () => {
+      await fireEvent.keyDown(window, { key: 'Escape' });
+    });
+    expect(queryOverlay()).toBeNull();
+    // Main panel remains; the Escape must not have minimized it.
+    expect(
+      screen.getByRole('textbox', { name: /feedback message/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('hides the feedback panel while the region overlay is open and restores it on cancel', async () => {
+    mountFab();
+    await openPanel();
+    const panel = screen.getByRole('dialog', { name: /send feedback/i });
+    expect(panel.className).not.toMatch(/brw-svelte-panel-hidden/);
+
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      );
+    });
+    expect(panel.className).toMatch(/brw-svelte-panel-hidden/);
+
+    await act(async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    });
+    expect(queryOverlay()).toBeNull();
+    expect(panel.className).not.toMatch(/brw-svelte-panel-hidden/);
+  });
+
+  it('preserves the composer draft across an open/cancel of the region overlay', async () => {
+    mountFab();
+    await openPanel();
+    await act(async () => {
+      await fireEvent.input(
+        screen.getByRole('textbox', { name: /feedback message/i }),
+        { target: { value: 'regression repro for issue 49' } },
+      );
+    });
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: /capture screenshot of this page/i,
+        }),
+      );
+    });
+    await act(async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    });
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: /feedback message/i,
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe('regression repro for issue 49');
+  });
+
+  it('pointer drag produces a visible selection rectangle sized to the drag', async () => {
+    mountFab();
+    await openOverlay();
+    await drag(getOverlay(), { x: 30, y: 40 }, { x: 230, y: 140 });
+    const rect = screen.getByTestId('brw-region-selection');
+    expect(rect.style.left).toBe('30px');
+    expect(rect.style.top).toBe('40px');
+    expect(rect.style.width).toBe('200px');
+    expect(rect.style.height).toBe('100px');
+  });
+
+  it('drag produces the same rectangle regardless of direction (upward drag)', async () => {
+    mountFab();
+    await openOverlay();
+    // Dragging bottom-right → top-left should still anchor the rect's
+    // x/y at the minimum corner.
+    await drag(getOverlay(), { x: 200, y: 180 }, { x: 50, y: 60 });
+    const rect = screen.getByTestId('brw-region-selection');
+    expect(rect.style.left).toBe('50px');
+    expect(rect.style.top).toBe('60px');
+    expect(rect.style.width).toBe('150px');
+    expect(rect.style.height).toBe('120px');
+  });
+
+  it('confirm region crops the captured blob to the selection dimensions', async () => {
+    const stub = installCropStub();
+    try {
+      captureScreenshot.mockResolvedValueOnce(
+        new Blob(['full'], { type: 'image/webp' }),
+      );
+      // Pin dpr so the crop math is deterministic under the test.
+      vi.stubGlobal('devicePixelRatio', 2);
+      mountFab();
+      await openOverlay();
+      await drag(getOverlay(), { x: 10, y: 20 }, { x: 210, y: 120 });
+      await act(async () => {
+        await fireEvent.click(
+          screen.getByRole('button', { name: /^capture$/i }),
+        );
+      });
+      // Wait for the crop microtasks to flush and the chip to render.
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /remove screenshot/i }),
+        ).toBeInTheDocument(),
+      );
+      expect(captureScreenshot).toHaveBeenCalledTimes(1);
+      // Crop: drawImage(img, sx=dpr*x, sy=dpr*y, sw=dpr*w, sh=dpr*h, 0, 0, w, h)
+      expect(stub.drawImageArgs).toHaveLength(1);
+      const [, sx, sy, sw, sh, dx, dy, dw, dh] = stub.drawImageArgs[0]!;
+      expect(sx).toBe(20); // 10 * dpr
+      expect(sy).toBe(40); // 20 * dpr
+      expect(sw).toBe(400); // 200 * dpr
+      expect(sh).toBe(200); // 100 * dpr
+      expect(dx).toBe(0);
+      expect(dy).toBe(0);
+      expect(dw).toBe(200);
+      expect(dh).toBe(100);
+    } finally {
+      stub.restore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('"Capture full page" passes the uncropped blob through to the composer', async () => {
+    const fullBlob = new Blob(['uncropped'], { type: 'image/webp' });
+    captureScreenshot.mockResolvedValueOnce(fullBlob);
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'i_full' });
+    mountFab();
+    await openOverlay();
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: /capture full page/i }),
+      );
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^remove screenshot$/i }),
+      ).toBeInTheDocument(),
+    );
+    await act(async () => {
+      await fireEvent.input(
+        screen.getByRole('textbox', { name: /feedback message/i }),
+        { target: { value: 'full cap' } },
+      );
+    });
+    await act(async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    });
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0] as {
+      attachments: Array<{ blob: Blob; filename: string }>;
+    };
+    // Extension derives from the MIME of the full-page blob — proves no
+    // canvas crop happened in the full-page path.
+    expect(input.attachments[0]!.filename).toBe('screenshot.webp');
+    expect(input.attachments[0]!.blob).toBe(fullBlob);
+  });
+
+  it('degenerate selection on Capture shakes and does not invoke captureScreenshot', async () => {
+    mountFab();
+    await openOverlay();
+    // A 1×1 drag — below the REGION_MIN_SIDE_PX threshold.
+    await drag(getOverlay(), { x: 50, y: 50 }, { x: 51, y: 51 });
+    await act(async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+    });
+    expect(captureScreenshot).not.toHaveBeenCalled();
+    expect(queryOverlay()).toBeInTheDocument();
+    expect(getOverlay().className).toMatch(/brw-svelte-region-shake/);
+  });
+
+  it('degenerate selection on Enter → overlay stays open, no capture', async () => {
+    mountFab();
+    await openOverlay();
+    const overlay = getOverlay();
+    await drag(overlay, { x: 100, y: 100 }, { x: 101, y: 101 });
+    await act(async () => {
+      await fireEvent.keyDown(overlay, { key: 'Enter' });
+    });
+    expect(captureScreenshot).not.toHaveBeenCalled();
+    expect(queryOverlay()).toBeInTheDocument();
+  });
+
+  it('overlay is unmounted before captureScreenshot resolves (capture sees no overlay chrome)', async () => {
+    let resolveCapture: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        resolveCapture = resolve;
+      }),
+    );
+    mountFab();
+    await openOverlay();
+    expect(queryOverlay()).toBeInTheDocument();
+
+    await act(async () => {
+      await fireEvent.click(
+        screen.getByRole('button', { name: /capture full page/i }),
+      );
+    });
+
+    // The capture promise is still pending — by now the overlay must
+    // already be torn down so its translucent layer cannot bleed into
+    // the captured page.
+    expect(queryOverlay()).toBeNull();
+
+    await act(async () => {
+      resolveCapture(new Blob(['done'], { type: 'image/webp' }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /remove screenshot/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('Cancel button closes the overlay without capture', async () => {
+    mountFab();
+    await openOverlay();
+    await act(async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    });
+    expect(queryOverlay()).toBeNull();
+    expect(captureScreenshot).not.toHaveBeenCalled();
+  });
 });
 
 describe('<FeedbackButton> — debug raw payload (config.debug)', () => {

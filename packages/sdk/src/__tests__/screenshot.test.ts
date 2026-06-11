@@ -188,8 +188,10 @@ describe('captureScreenshot', () => {
     // Fire both captures; the second must not await the first.
     const a = captureScreenshot();
     const b = captureScreenshot();
-    // Synchronous scrubs have run — both captures hold a ref.
-    expect(skip.style.visibility).toBe('hidden');
+    // (Scrubs are applied once the engine module resolves — deliberately
+    // NOT synchronously, so a cold-cache chunk download never leaves the
+    // page mutated for its whole duration. Both refs are held by the time
+    // the first capture resolves.)
     await a;
     // The second capture is still waiting on the gate — the node must stay
     // hidden because the second scrub has not released its ref yet.
@@ -390,55 +392,55 @@ describe('captureScreenshot', () => {
   });
 });
 
-describe('captureScreenshot — inner-scroll compensation', () => {
-  // Happy-dom does not lay out content, so `scrollWidth`/`scrollHeight`/
-  // `clientWidth`/`clientHeight` are all 0 by default and `scrollTop`
-  // assignments only stick when the container is actually scrollable.
-  // We override those properties with `Object.defineProperty` so the
-  // SDK's `isScrollableContainer` heuristic sees a "real" scrollable
-  // box. The shape mirrors the live-page console snapshot from the
-  // original reproduction (a Tailwind `<main class="overflow-y-auto">`
-  // with `clientHeight: 693`, `scrollHeight: 2144`, `scrollTop: 193.5`).
-  function makeScrollable(opts: {
-    overflow?: string;
-    scrollTop?: number;
-    scrollLeft?: number;
-    clientWidth?: number;
-    clientHeight?: number;
-    scrollWidth?: number;
-    scrollHeight?: number;
-  }): HTMLElement {
-    const el = document.createElement('div');
-    el.style.overflow = opts.overflow ?? 'auto';
-    Object.defineProperty(el, 'scrollTop', {
-      configurable: true,
-      writable: true,
-      value: opts.scrollTop ?? 0,
-    });
-    Object.defineProperty(el, 'scrollLeft', {
-      configurable: true,
-      writable: true,
-      value: opts.scrollLeft ?? 0,
-    });
-    Object.defineProperty(el, 'clientWidth', {
-      configurable: true,
-      value: opts.clientWidth ?? 100,
-    });
-    Object.defineProperty(el, 'clientHeight', {
-      configurable: true,
-      value: opts.clientHeight ?? 100,
-    });
-    Object.defineProperty(el, 'scrollWidth', {
-      configurable: true,
-      value: opts.scrollWidth ?? 100,
-    });
-    Object.defineProperty(el, 'scrollHeight', {
-      configurable: true,
-      value: opts.scrollHeight ?? 100,
-    });
-    return el;
-  }
+// Happy-dom does not lay out content, so `scrollWidth`/`scrollHeight`/
+// `clientWidth`/`clientHeight` are all 0 by default and `scrollTop`
+// assignments only stick when the container is actually scrollable.
+// We override those properties with `Object.defineProperty` so the
+// SDK's `isScrollableContainer` heuristic sees a "real" scrollable
+// box. The shape mirrors the live-page console snapshot from the
+// original reproduction (a Tailwind `<main class="overflow-y-auto">`
+// with `clientHeight: 693`, `scrollHeight: 2144`, `scrollTop: 193.5`).
+function makeScrollable(opts: {
+  overflow?: string;
+  scrollTop?: number;
+  scrollLeft?: number;
+  clientWidth?: number;
+  clientHeight?: number;
+  scrollWidth?: number;
+  scrollHeight?: number;
+}): HTMLElement {
+  const el = document.createElement('div');
+  el.style.overflow = opts.overflow ?? 'auto';
+  Object.defineProperty(el, 'scrollTop', {
+    configurable: true,
+    writable: true,
+    value: opts.scrollTop ?? 0,
+  });
+  Object.defineProperty(el, 'scrollLeft', {
+    configurable: true,
+    writable: true,
+    value: opts.scrollLeft ?? 0,
+  });
+  Object.defineProperty(el, 'clientWidth', {
+    configurable: true,
+    value: opts.clientWidth ?? 100,
+  });
+  Object.defineProperty(el, 'clientHeight', {
+    configurable: true,
+    value: opts.clientHeight ?? 100,
+  });
+  Object.defineProperty(el, 'scrollWidth', {
+    configurable: true,
+    value: opts.scrollWidth ?? 100,
+  });
+  Object.defineProperty(el, 'scrollHeight', {
+    configurable: true,
+    value: opts.scrollHeight ?? 100,
+  });
+  return el;
+}
 
+describe('captureScreenshot — inner-scroll compensation', () => {
   it('translates direct children of inner overflow:auto containers by -scrollLeft/-scrollTop during capture', async () => {
     // Mirrors the original repro: a Tailwind <main overflow-y-auto>
     // scrolled mid-way down. Without this pass, modern-screenshot would
@@ -715,8 +717,8 @@ describe('captureScreenshot — inner-scroll compensation', () => {
     const { captureScreenshot } = await import('../screenshot');
     const a = captureScreenshot();
     const b = captureScreenshot();
-    // Synchronous compensation pass ran for both — transform composed.
-    expect(child.style.transform).toBe('translate(0px, -200px) rotate(10deg)');
+    // (Compensation is applied once the engine module resolves — see the
+    // skip-scrub concurrency test for why it is not synchronous.)
     await a;
     // Second capture still holds its ref → the transform stays composed.
     expect(child.style.transform).toBe('translate(0px, -200px) rotate(10deg)');
@@ -899,17 +901,22 @@ describe('captureScreenshot — inner-scroll compensation', () => {
     outer.remove();
   });
 
-  it('does NOT translate the capture root itself when the root is a scrollable container', async () => {
-    // Documented limitation: the root is the camera frame and the
-    // walk uses `querySelectorAll('*')` which returns descendants
-    // only. Passing a scrollable element as `opts.element` leaves
-    // its own scroll uncompensated; the root must not be mutated by
-    // the compensation pass under any circumstances.
+  it('compensates the capture root’s OWN scroll by translating its direct children (root itself untouched)', async () => {
+    // `root.querySelectorAll('*')` returns descendants only, so before
+    // the explicit root check the root's own scroll was never
+    // compensated — a scrollable `opts.element` rasterized the TOP of
+    // its scroll extent (same blank-capture symptom family the inner
+    // pass fixes). The root must still never be translated itself: it
+    // is the camera frame, and shifting it would shift the entire
+    // capture. Its direct children carry the compensation instead.
     const root = makeScrollable({
       overflow: 'auto',
       scrollTop: 120,
+      scrollLeft: 30,
       clientHeight: 200,
       scrollHeight: 1000,
+      clientWidth: 200,
+      scrollWidth: 800,
     });
     const child = document.createElement('div');
     root.appendChild(child);
@@ -917,10 +924,12 @@ describe('captureScreenshot — inner-scroll compensation', () => {
 
     let rootDuring = '';
     let childDuring = '';
+    let childOriginDuring = '';
     vi.doMock('modern-screenshot', () => ({
       domToBlob: vi.fn().mockImplementation(async () => {
         rootDuring = root.style.transform;
         childDuring = child.style.transform;
+        childOriginDuring = child.style.transformOrigin;
         return new Blob([new Uint8Array([1])], { type: 'image/webp' });
       }),
     }));
@@ -930,15 +939,117 @@ describe('captureScreenshot — inner-scroll compensation', () => {
 
     // Root is never translated — it's the camera frame.
     expect(rootDuring).toBe('');
-    // The child is also not translated, because the root is not in
-    // the descendant walk: `root.querySelectorAll('*')` returns
-    // nodes nested inside `root`, but the scrollable container we
-    // are checking against is the root itself. The child stays at
-    // the top of the scroll extent — this is the documented
-    // foot-gun. Pin the behaviour here.
-    expect(childDuring).toBe('');
+    // Its direct child is compensated for BOTH axes of the root's
+    // own scroll, exactly like a descendant container's child.
+    expect(childDuring).toBe('translate(-30px, -120px)');
+    expect(childOriginDuring).toBe('0 0');
+    // Post-capture: everything restored.
     expect(root.style.transform).toBe('');
+    expect(child.style.transform).toBe('');
+    expect(child.style.transformOrigin).toBe('');
 
+    root.remove();
+  });
+
+  it('skips sticky direct children of a scrollable capture root, like any other container', async () => {
+    const root = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 90,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const stickyHeader = document.createElement('header');
+    stickyHeader.style.position = 'sticky';
+    stickyHeader.style.top = '0px';
+    const content = document.createElement('section');
+    root.append(stickyHeader, content);
+    document.body.appendChild(root);
+
+    let stickyDuring = '';
+    let contentDuring = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        stickyDuring = stickyHeader.style.transform;
+        contentDuring = content.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot({ element: root });
+
+    expect(stickyDuring).toBe('');
+    expect(contentDuring).toBe('translate(0px, -90px)');
+
+    root.remove();
+  });
+
+  it('compensates a scrollable root AND a nested scrollable descendant independently', async () => {
+    // Root's direct child (the inner container) gets the ROOT's
+    // translate; the inner container's own child gets the INNER's
+    // translate. No double application on either.
+    const root = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 40,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const inner = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 70,
+      clientHeight: 100,
+      scrollHeight: 800,
+    });
+    const content = document.createElement('div');
+    inner.appendChild(content);
+    root.appendChild(inner);
+    document.body.appendChild(root);
+
+    let innerDuring = '';
+    let contentDuring = '';
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(async () => {
+        innerDuring = inner.style.transform;
+        contentDuring = content.style.transform;
+        return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+      }),
+    }));
+
+    const { captureScreenshot } = await import('../screenshot');
+    await captureScreenshot({ element: root });
+
+    expect(innerDuring).toBe('translate(0px, -40px)');
+    expect(contentDuring).toBe('translate(0px, -70px)');
+    expect(inner.style.transform).toBe('');
+    expect(content.style.transform).toBe('');
+
+    root.remove();
+  });
+
+  it('restores root-scroll compensation on the root’s children even when capture rejects', async () => {
+    const root = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 60,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    child.style.transform = 'scale(1.5)';
+    root.appendChild(child);
+    document.body.appendChild(root);
+
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockRejectedValue(new Error('boom')),
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const { captureScreenshot } = await import('../screenshot');
+    const blob = await captureScreenshot({ element: root });
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('image/webp');
+    expect(child.style.transform).toBe('scale(1.5)');
+
+    warn.mockRestore();
     root.remove();
   });
 
@@ -983,5 +1094,377 @@ describe('captureScreenshot — inner-scroll compensation', () => {
     expect(skipChild.style.transform).toBe('rotate(5deg)');
 
     main.remove();
+  });
+});
+
+describe('captureScreenshot — capture deadline', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('resolves with the placeholder + warn when rasterization hangs past the 10 s deadline', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.doMock('modern-screenshot', () => ({
+      // Never settles — simulates a wedged rasterizer/worker.
+      domToBlob: vi.fn().mockImplementation(() => new Promise<never>(() => {})),
+    }));
+    const { captureScreenshot } = await import('../screenshot');
+
+    const pending = captureScreenshot();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const blob = await pending;
+
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('image/webp');
+    expect(blob.size).toBeGreaterThan(0);
+    expect(warn).toHaveBeenCalled();
+    const msg = String(warn.mock.calls[0]?.[0] ?? '');
+    expect(msg).toMatch(/brevwick: screenshot capture failed/);
+    expect(msg).toMatch(/deadline/);
+    warn.mockRestore();
+  });
+
+  it('does not resolve to the placeholder before the deadline elapses', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(() => new Promise<never>(() => {})),
+    }));
+    const { captureScreenshot } = await import('../screenshot');
+
+    let settled = false;
+    const pending = captureScreenshot().then((b) => {
+      settled = true;
+      return b;
+    });
+    // One millisecond short of the deadline: still pending.
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(settled).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('pushes the deadline warn into the owning instance console ring', async () => {
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(() => new Promise<never>(() => {})),
+    }));
+    // Prime the module registry with real timers: `instance.captureScreenshot()`
+    // dynamic-imports '../screenshot', and an uncached module load needs the
+    // real event loop — under fake timers the fake-clock advance would finish
+    // before the load resolves and the deadline timer would never be scheduled.
+    await import('../screenshot');
+    vi.useFakeTimers();
+    const instance = createBrevwick({ projectKey: KEY });
+    const pending = instance.captureScreenshot();
+    // Flush the (now cached) dynamic-import microtasks so the deadline timer
+    // is scheduled before the clock advances.
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const blob = await pending;
+    expect(blob.type).toBe('image/webp');
+
+    const entries = getInternal(instance).buffers.console.snapshot();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.level).toBe('warn');
+    expect(entries[0]?.message).toMatch(/deadline/);
+  });
+
+  it('restores skip-scrub and scroll compensation when the deadline fires', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const skip = document.createElement('div');
+    skip.setAttribute('data-brevwick-skip', '');
+    skip.style.visibility = 'visible';
+    document.body.appendChild(skip);
+
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 80,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    child.style.transform = 'rotate(3deg)';
+    main.appendChild(child);
+    document.body.appendChild(main);
+
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(() => new Promise<never>(() => {})),
+    }));
+    const { captureScreenshot } = await import('../screenshot');
+
+    const pending = captureScreenshot();
+    // Let the async pre-rasterization steps (mocked module load) run so
+    // both DOM mutation passes have been applied before we assert them.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(skip.style.visibility).toBe('hidden');
+    expect(child.style.transform).toBe('translate(0px, -80px) rotate(3deg)');
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await pending;
+
+    // `finally` ran on the timeout path: both passes restored.
+    expect(skip.style.visibility).toBe('visible');
+    expect(child.style.transform).toBe('rotate(3deg)');
+
+    warn.mockRestore();
+    skip.remove();
+    main.remove();
+  });
+
+  it('clears the deadline timer when capture succeeds in time (no warn fires later)', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi
+        .fn()
+        .mockResolvedValue(
+          new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' }),
+        ),
+    }));
+    const { captureScreenshot } = await import('../screenshot');
+
+    const blob = await captureScreenshot();
+    expect(blob.size).toBe(3);
+
+    // Advance well past the deadline: the cleared timer must not fire
+    // and nothing may warn.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('leaves no DOM mutations behind when the engine chunk resolves AFTER the deadline already fired', async () => {
+    // Adversarial timing: the deadline fires while the modern-screenshot
+    // chunk is still downloading, the capture resolves with the
+    // placeholder and runs its `finally` (nothing to restore yet) — and
+    // THEN the chunk load resolves. The late continuation must not scrub
+    // the widget / translate scroll containers now: nobody is left to
+    // restore those mutations, so they would leak forever (hidden FAB,
+    // visually shifted page).
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const skip = document.createElement('div');
+    skip.setAttribute('data-brevwick-skip', '');
+    document.body.appendChild(skip);
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 100,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    main.appendChild(child);
+    document.body.appendChild(main);
+
+    let releaseImport!: () => void;
+    const importGate = new Promise<void>((r) => {
+      releaseImport = r;
+    });
+    const domToBlob = vi
+      .fn()
+      .mockResolvedValue(
+        new Blob([new Uint8Array([1])], { type: 'image/webp' }),
+      );
+    vi.doMock('modern-screenshot', async () => {
+      await importGate;
+      return { domToBlob };
+    });
+
+    const { captureScreenshot } = await import('../screenshot');
+    const pending = captureScreenshot();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const blob = await pending;
+    expect(blob.type).toBe('image/webp');
+
+    // The chunk wakes up late. The continuation must bail before mutating.
+    releaseImport();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(domToBlob).not.toHaveBeenCalled();
+    expect(skip.style.visibility).toBe('');
+    expect(child.style.transform).toBe('');
+
+    warn.mockRestore();
+    skip.remove();
+    main.remove();
+  });
+
+  it('consumes a late rejection from the hung rasterizer after the deadline (no unhandled rejection)', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let rejectLate!: (err: Error) => void;
+    vi.doMock('modern-screenshot', () => ({
+      domToBlob: vi.fn().mockImplementation(
+        () =>
+          new Promise<never>((_resolve, reject) => {
+            rejectLate = reject;
+          }),
+      ),
+    }));
+    const { captureScreenshot } = await import('../screenshot');
+
+    const pending = captureScreenshot();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const blob = await pending;
+    expect(blob.type).toBe('image/webp');
+
+    // The rasterizer wakes up and rejects AFTER the deadline already
+    // resolved the capture. `withCaptureDeadline` attached handlers to
+    // the work promise up-front, so this settles into an already-settled
+    // promise — vitest fails the run on unhandled rejections, which is
+    // the actual assertion here.
+    rejectLate(new Error('woke up after deadline'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    warn.mockRestore();
+  });
+});
+
+describe('captureScreenshot — engine chunk-load resilience', () => {
+  it('does not mutate the DOM while the modern-screenshot chunk is still downloading', async () => {
+    // On a cold cache the engine chunk download can take seconds. Scrubbing
+    // the widget + translating scrolled containers BEFORE the module
+    // resolves made the live page visibly jump and the FAB vanish for the
+    // whole download, and widened the window in which a skip-marked node
+    // mounted after the scrub would be missed. The mutations must land in
+    // the same microtask turn as the `domToBlob` call.
+    const skip = document.createElement('div');
+    skip.setAttribute('data-brevwick-skip', '');
+    document.body.appendChild(skip);
+    const main = makeScrollable({
+      overflow: 'auto',
+      scrollTop: 100,
+      clientHeight: 200,
+      scrollHeight: 1000,
+    });
+    const child = document.createElement('div');
+    main.appendChild(child);
+    document.body.appendChild(main);
+
+    let releaseImport!: () => void;
+    const importGate = new Promise<void>((r) => {
+      releaseImport = r;
+    });
+    let visDuring = '';
+    let transformDuring = '';
+    vi.doMock('modern-screenshot', async () => {
+      await importGate;
+      return {
+        domToBlob: vi.fn().mockImplementation(async () => {
+          visDuring = skip.style.visibility;
+          transformDuring = child.style.transform;
+          return new Blob([new Uint8Array([1])], { type: 'image/webp' });
+        }),
+      };
+    });
+
+    const { captureScreenshot } = await import('../screenshot');
+    const pending = captureScreenshot();
+    // Flush several microtask turns; the import gate is still closed, so
+    // this simulates the multi-second chunk download window.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(skip.style.visibility).toBe('');
+    expect(child.style.transform).toBe('');
+
+    releaseImport();
+    const blob = await pending;
+    expect(blob.type).toBe('image/webp');
+    // Mutations WERE applied for the rasterization itself…
+    expect(visDuring).toBe('hidden');
+    expect(transformDuring).toBe('translate(0px, -100px)');
+    // …and restored afterwards.
+    expect(skip.style.visibility).toBe('');
+    expect(child.style.transform).toBe('');
+
+    skip.remove();
+    main.remove();
+  });
+
+  it('recovers on the next capture after a transient modern-screenshot import failure', async () => {
+    // A flaky network / mid-deploy 404 rejects the first dynamic import.
+    // The cached *rejected* promise must not be reused forever: once the
+    // environment heals, the next capture must attempt a fresh import
+    // instead of returning placeholders for the rest of the session.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let attempts = 0;
+    vi.doMock('modern-screenshot', () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('Failed to fetch chunk');
+      return {
+        domToBlob: vi
+          .fn()
+          .mockResolvedValue(
+            new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' }),
+          ),
+      };
+    });
+
+    const { captureScreenshot } = await import('../screenshot');
+    const first = await captureScreenshot();
+    // First capture degrades to the placeholder.
+    expect(first.type).toBe('image/webp');
+    expect(warn).toHaveBeenCalled();
+
+    // Allow the (host-cached) failed module evaluation to be retried —
+    // browsers re-attempt a failed chunk fetch on the next import().
+    vi.resetModules();
+
+    const second = await captureScreenshot();
+    // Second capture must be the REAL rasterized blob (3 bytes), not the
+    // placeholder again.
+    expect(second.size).toBe(3);
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    warn.mockRestore();
+  });
+
+  it('instance.captureScreenshot resolves with the placeholder when the screenshot chunk itself fails to load', async () => {
+    // `Brevwick.captureScreenshot()` lazy-imports '../screenshot'. A
+    // chunk-load failure of the SDK's own screenshot chunk (deploy
+    // mismatch / offline) used to REJECT — violating the documented
+    // never-throws contract and bubbling into adapter capture flows and
+    // host submit pipelines that `await` the blob inline.
+    vi.doMock('../screenshot', () => {
+      throw new Error('Failed to fetch dynamically imported module');
+    });
+    try {
+      const instance = createBrevwick({ projectKey: KEY });
+      const blob = await instance.captureScreenshot();
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe('image/webp');
+      expect(blob.size).toBeGreaterThan(0);
+      const entries = getInternal(instance).buffers.console.snapshot();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.level).toBe('warn');
+      expect(entries[0]?.message).toMatch(
+        /brevwick: screenshot capture failed/,
+      );
+    } finally {
+      vi.doUnmock('../screenshot');
+    }
+  });
+
+  it('public captureScreenshot from the package root resolves with the placeholder when the chunk fails to load', async () => {
+    vi.doMock('../screenshot', () => {
+      throw new Error('Failed to fetch dynamically imported module');
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const { captureScreenshot } = await import('../index');
+      const blob = await captureScreenshot();
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe('image/webp');
+      expect(blob.size).toBeGreaterThan(0);
+      expect(warn).toHaveBeenCalled();
+      const msg = String(warn.mock.calls[0]?.[0] ?? '');
+      expect(msg).toMatch(/brevwick: screenshot capture failed/);
+    } finally {
+      vi.doUnmock('../screenshot');
+      warn.mockRestore();
+    }
   });
 });

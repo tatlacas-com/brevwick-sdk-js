@@ -32,8 +32,11 @@ import { useContext } from 'solid-js';
 
 /**
  * Stable snapshot of one attachment that rode along with a submit. We store
- * only the underlying `Blob` so a future render that wants to preview the
- * attachment can call `URL.createObjectURL(blob)` itself.
+ * only the underlying `Blob` (not a live object URL) — the success path
+ * revokes the composer's screenshot URLs the moment the snapshot is
+ * appended, so keeping a URL here would leave a dangling reference. A
+ * future render that wants to preview the attachment can call
+ * `URL.createObjectURL(blob)` itself.
  */
 interface MessageAttachment {
   blob: Blob;
@@ -43,6 +46,9 @@ interface MessageAttachment {
 /**
  * One bubble in the conversation thread. The greeting and submitted-issue
  * receipt are `assistant` messages; submitted drafts become `user` messages.
+ * `attachments` snapshots the screenshots + files that rode along with the
+ * submit so a follow-up render can show what was sent (currently the bubble
+ * itself just shows text, but the field is there for forward-compat).
  */
 interface Message {
   id: string;
@@ -51,6 +57,7 @@ interface Message {
   sentAt?: number;
   issueSent?: boolean;
   attachments?: {
+    screenshots?: readonly MessageAttachment[];
     files?: readonly MessageAttachment[];
   };
   /**
@@ -63,17 +70,18 @@ interface Message {
 }
 
 /**
- * File-attachment cap, mirrored from the SDK's `MAX_ATTACHMENT_COUNT` in
- * `packages/sdk/src/submit.ts`. Enforced in the UI by disabling the file-
- * attach button once the queued total reaches this ceiling so the user
- * can't queue an attachment the SDK would reject downstream.
+ * Combined screenshot + file cap, mirrored from the SDK's
+ * `MAX_ATTACHMENT_COUNT` in `packages/sdk/src/submit.ts`. Enforced in the
+ * UI by disabling the screenshot and file-attach buttons once the combined
+ * total reaches this ceiling so the user can't queue an attachment the SDK
+ * would reject downstream.
  */
 const MAX_ATTACHMENTS = 5;
 
 const GREETING_MESSAGE: Message = {
   id: 'greeting',
   role: 'assistant',
-  text: "Hi! Tell us what's happening.",
+  text: "Hi! Tell us what's happening. A screenshot helps if you have one.",
 };
 
 const ASSISTANT_RECEIPT_TEXT = 'Thanks — your issue is on its way.';
@@ -153,6 +161,17 @@ interface FileAttachment {
   readonly file: File;
 }
 
+interface ScreenshotAttachment {
+  /**
+   * Monotonic id assigned at capture time. Same rationale as
+   * {@link FileAttachment.id}: keys based on `url` or array index would
+   * reconcile a removal-of-middle-item against the wrong slot.
+   */
+  readonly id: number;
+  readonly blob: Blob;
+  readonly url: string;
+}
+
 type ProjectConfigStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 interface ProjectConfigState {
@@ -189,11 +208,14 @@ function formatRelativeTime(ms: number | undefined): string {
  *
  * Solid V1 ships UX parity with the React adapter's modern chat-thread
  * panel: greeting + user/assistant bubbles, an autogrow composer, the
- * expected/actual disclosure, file attachment chips, the AI toggle,
- * staged-status rows driven by the SDK's phase bus, the retry row, and
- * the Brevwick credit footer. Screenshot UI is intentionally absent in
- * v1 (see PR #111); callers that need a screenshot capture path can
- * invoke `useFeedback().captureScreenshot()` directly.
+ * expected/actual disclosure, screenshot capture + file attachment chips,
+ * the AI toggle, staged-status rows driven by the SDK's phase bus, the
+ * retry row, and the Brevwick credit footer. Screenshot capture is
+ * full-page only — the region-select overlay and the tap-to-preview modal
+ * remain React-adapter surfaces and are out of scope for Solid V1 (SDD
+ * § 12); the chip renders an inline thumbnail instead. The FAB and panel
+ * carry `data-brevwick-skip` so the widget never appears in the
+ * screenshots it captures.
  *
  * SSR-safe: the entire component is gated behind `Show when={isClient}`, so
  * a SolidStart server render emits nothing and the hydration pass mounts
@@ -265,6 +287,7 @@ function useProjectConfig(
 const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
   const {
     submit,
+    captureScreenshot,
     status,
     phase,
     error: submitErrorTagged,
@@ -287,9 +310,19 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     { ...GREETING_MESSAGE },
   ]);
   const [files, setFiles] = createStore<FileAttachment[]>([]);
+  const [screenshots, setScreenshots] = createSignal<
+    readonly ScreenshotAttachment[]
+  >([]);
+  // In-thread loading flag (issue #55): true while `captureScreenshot()` is
+  // rasterising the page. Surfaces a "Capturing screenshot…" bubble in the
+  // thread and disables the composer's send + attach controls so the user
+  // cannot submit without the screenshot they intended to include, nor
+  // stack a second capture on top of one already in flight.
+  const [capturing, setCapturing] = createSignal(false);
 
   let alive = true;
   let fileIdSeq = 0;
+  let screenshotIdSeq = 0;
   let messageIdSeq = 0;
   // Snapshot of the last `FeedbackInput` passed to `submit()` so the
   // retry CTA on a failed submit can re-run with the exact same payload
@@ -315,19 +348,36 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     );
   };
 
-  const attachmentCount = (): number => files.length;
+  const attachmentCount = (): number => screenshots().length + files.length;
   const attachmentsAtCap = (): boolean => attachmentCount() >= MAX_ATTACHMENTS;
   const hasContent = (): boolean =>
     draft().trim().length > 0 ||
     expected().length > 0 ||
     actual().length > 0 ||
+    screenshots().length > 0 ||
     files.length > 0;
+
+  /**
+   * Revoke every currently-queued screenshot object URL and clear the list.
+   * Object URLs persist for the document's lifetime unless explicitly
+   * revoked — without this the discard-close, reset, and unmount paths
+   * would leak one allocation per captured screenshot. `revokeObjectURL`
+   * on an already-revoked URL is a no-op, so calling this from multiple
+   * teardown paths is safe.
+   */
+  const revokeAllScreenshots = (): void => {
+    setScreenshots((prev) => {
+      for (const s of prev) URL.revokeObjectURL(s.url);
+      return [];
+    });
+  };
 
   const resetAll = (): void => {
     setDraft('');
     setExpected('');
     setActual('');
     setShowExtras(false);
+    revokeAllScreenshots();
     setFiles([]);
     setConfirmClose(false);
     setSubmitError(null);
@@ -341,6 +391,7 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
   // re-render that swaps the FAB out, HMR teardown).
   onCleanup(() => {
     alive = false;
+    for (const s of screenshots()) URL.revokeObjectURL(s.url);
   });
 
   const handleFullClose = (): void => {
@@ -385,6 +436,61 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
   };
 
   /**
+   * Full-page capture via the SDK (Solid V1 ships no region-select overlay
+   * — that surface stays React-only per SDD § 12, so the composer button
+   * captures the whole page directly). The widget's FAB + panel carry
+   * `data-brevwick-skip`, which the SDK's capture path honours, so the
+   * widget never appears in its own screenshots.
+   *
+   * Capture failures surface as a non-blocking inline `role="alert"` — no
+   * chip is queued and the composer stays fully usable, so a tainted
+   * canvas can never block submission.
+   */
+  const performCapture = async (): Promise<void> => {
+    setSubmitError(null);
+    setCapturing(true);
+    try {
+      const blob = await captureScreenshot();
+      if (!alive) return;
+      // Defence-in-depth re-check after the await: the screenshot button
+      // is disabled at the cap, but a long-running capture started before
+      // files were attached can still land after the combined total hit
+      // the ceiling. Solid signals always read current values, so the
+      // fresh `attachmentCount()` here sees anything attached while the
+      // capture was in flight. Drop the stale capture (no object URL is
+      // created, so nothing leaks) rather than silently exceed the SDK's
+      // combined attachment ceiling.
+      if (attachmentCount() >= MAX_ATTACHMENTS) {
+        setSubmitError(`Maximum ${MAX_ATTACHMENTS} attachments reached`);
+        return;
+      }
+      setScreenshots((prev) => [
+        ...prev,
+        {
+          id: ++screenshotIdSeq,
+          blob,
+          url: URL.createObjectURL(blob),
+        },
+      ]);
+    } catch (err) {
+      if (!alive) return;
+      const message =
+        err instanceof Error ? err.message : 'Screenshot capture failed';
+      setSubmitError(message);
+    } finally {
+      if (alive) setCapturing(false);
+    }
+  };
+
+  const removeScreenshot = (id: number): void => {
+    setScreenshots((prev) => {
+      const target = prev.find((s) => s.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter((s) => s.id !== id);
+    });
+  };
+
+  /**
    * Stamp the dev-only raw payload onto a user bubble once `submit()`
    * resolves. No-op unless the host enabled `config.debug` (the SDK only
    * populates `result.debug` then), so this is inert in production.
@@ -402,6 +508,13 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
 
   const doSubmit = async (): Promise<void> => {
     if (status() === 'submitting') return;
+    // Block submission while a capture is in flight. Without this, the user
+    // could press Enter in the composer between clicking Capture and the
+    // thumbnail rendering, sending the issue without the screenshot they
+    // intended to include. The Send button itself is disabled in this
+    // state, but the Enter-to-send shortcut bypasses the button so the
+    // guard belongs here on the submit path too.
+    if (capturing()) return;
     if (!draft().trim()) {
       setSubmitError('Please describe what happened.');
       return;
@@ -409,6 +522,21 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     setSubmitError(null);
 
     const attachments: Array<Blob | FeedbackAttachment> = [];
+    // Snapshot the queued screenshots once at submit-time so a chip removal
+    // mid-await can't desync the attachment payload from the post-success
+    // revoke. Single-screenshot filename stays `screenshot.<ext>` (matches
+    // the pre-#111 wire format and keeps server-side identifiers stable);
+    // multi-screenshot submissions disambiguate with `-1`, `-2`, … using
+    // the array order they were captured in.
+    const shotsSnap = screenshots();
+    shotsSnap.forEach((s, idx) => {
+      const ext = s.blob.type.split('/')[1]?.split('+')[0] || 'webp';
+      const filename =
+        shotsSnap.length === 1
+          ? `screenshot.${ext}`
+          : `screenshot-${idx + 1}.${ext}`;
+      attachments.push({ blob: s.blob, filename });
+    });
     const filesSnap = [...files];
     for (const { file } of filesSnap)
       attachments.push({ blob: file, filename: file.name });
@@ -439,6 +567,10 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     // what makes the wait feel fast — a synchronous bubble + cleared
     // input lets the staged-status rows below carry the rest of the
     // animation while the network round-trip is in flight (issue #74).
+    const screenshotsSnapshot: readonly MessageAttachment[] | undefined =
+      shotsSnap.length > 0
+        ? shotsSnap.map((s) => ({ blob: s.blob }))
+        : undefined;
     const filesSnapshot: readonly MessageAttachment[] | undefined =
       filesSnap.length > 0
         ? filesSnap.map(({ file }) => ({ blob: file, filename: file.name }))
@@ -447,7 +579,15 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
       id: `msg-${++messageIdSeq}`,
       role: 'user',
       text: draftRaw,
-      attachments: filesSnapshot ? { files: filesSnapshot } : undefined,
+      attachments:
+        screenshotsSnapshot || filesSnapshot
+          ? {
+              ...(screenshotsSnapshot
+                ? { screenshots: screenshotsSnapshot }
+                : {}),
+              ...(filesSnapshot ? { files: filesSnapshot } : {}),
+            }
+          : undefined,
     };
     setMessages(
       produce((prev: Message[]) => {
@@ -458,6 +598,11 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
     setExpected('');
     setActual('');
     setShowExtras(false);
+    // The user bubble keeps the screenshot blobs already snapshotted in
+    // `userMessage.attachments`, so the composer's live object URLs can be
+    // revoked the moment the bubble is appended without leaving dangling
+    // references.
+    revokeAllScreenshots();
     setFiles([]);
     lastSubmittedInput = input;
     lastUserMessageId = userMessage.id;
@@ -568,7 +713,9 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
           />
           <Thread
             messages={messages}
+            screenshots={screenshots}
             files={files}
+            capturing={capturing}
             showExtras={showExtras}
             expected={expected}
             actual={actual}
@@ -584,6 +731,7 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
             onToggleExtras={() => setShowExtras((v) => !v)}
             onExpectedChange={setExpected}
             onActualChange={setActual}
+            onRemoveScreenshot={removeScreenshot}
             onRemoveFile={removeFile}
             onConfirmDiscard={handleFullClose}
             onCancelClose={() => setConfirmClose(false)}
@@ -591,12 +739,16 @@ const FeedbackButtonInner: Component<FeedbackButtonProps> = (props) => {
           <Composer
             draft={draft}
             submitting={() => status() === 'submitting'}
+            capturing={capturing}
             attachmentsAtCap={attachmentsAtCap}
             showAiToggle={showAiToggle}
             useAi={useAi}
             onDraftChange={setDraft}
             onSubmit={() => {
               void doSubmit();
+            }}
+            onAttachScreenshot={() => {
+              void performCapture();
             }}
             onAttachFiles={handleAttachFiles}
             onUseAiChange={setUseAi}
@@ -668,7 +820,9 @@ function PanelFooter(): JSX.Element {
 
 interface ThreadProps {
   messages: readonly Message[];
+  screenshots: Accessor<readonly ScreenshotAttachment[]>;
   files: readonly FileAttachment[];
+  capturing: Accessor<boolean>;
   showExtras: Accessor<boolean>;
   expected: Accessor<string>;
   actual: Accessor<string>;
@@ -682,6 +836,7 @@ interface ThreadProps {
   onToggleExtras: () => void;
   onExpectedChange: (v: string) => void;
   onActualChange: (v: string) => void;
+  onRemoveScreenshot: (id: number) => void;
   onRemoveFile: (id: number) => void;
   onConfirmDiscard: () => void;
   onCancelClose: () => void;
@@ -725,6 +880,20 @@ function Thread(props: ThreadProps): JSX.Element {
           </Show>
         )}
       </For>
+      <For each={props.screenshots()}>
+        {(s, idx) => (
+          <AttachmentChip
+            name={
+              props.screenshots().length === 1
+                ? 'screenshot'
+                : `screenshot ${idx() + 1}`
+            }
+            size={s.blob.size}
+            previewUrl={s.url}
+            onRemove={() => props.onRemoveScreenshot(s.id)}
+          />
+        )}
+      </For>
       <For each={props.files}>
         {(f) => (
           <AttachmentChip
@@ -734,6 +903,14 @@ function Thread(props: ThreadProps): JSX.Element {
           />
         )}
       </For>
+      {/* In-thread loading indicator (issue #55): bridges the otherwise-
+          silent gap between clicking the capture button and the thumbnail
+          chip appearing. */}
+      <Show when={props.capturing()}>
+        <AssistantBubble>
+          <span class="brw-spinner" aria-hidden="true" /> Capturing screenshot…
+        </AssistantBubble>
+      </Show>
       <DisclosureExpectedActual
         open={props.showExtras}
         expected={props.expected}
@@ -990,12 +1167,20 @@ function CopyRawButton(props: {
 interface AttachmentChipProps {
   name: string;
   size: number;
+  /**
+   * Object URL of a screenshot thumbnail rendered inline on the chip.
+   * Solid V1 has no tap-to-preview modal (that surface stays React-only,
+   * SDD § 12) so the thumbnail is a plain `<img>`, not a preview button.
+   * File chips never pass this — they are not previewable.
+   */
+  previewUrl?: string;
   onRemove: () => void;
 }
 
 function AttachmentChip(props: AttachmentChipProps): JSX.Element {
   return (
     <div class="brw-chip">
+      <Show when={props.previewUrl}>{(url) => <img src={url()} alt="" />}</Show>
       <span class="brw-chip-name">{props.name}</span>
       <span class="brw-chip-size">{formatSize(props.size)}</span>
       <button
@@ -1065,11 +1250,20 @@ function DisclosureExpectedActual(props: DisclosureProps): JSX.Element {
 interface ComposerProps {
   draft: Accessor<string>;
   submitting: Accessor<boolean>;
+  /** True while a screenshot is being rasterised (issue #55). The composer
+   *  disables the screenshot + file-attach + send controls so the user
+   *  cannot stack a second capture on top of one already in flight. */
+  capturing: Accessor<boolean>;
+  /** True once `screenshots.length + files.length >= MAX_ATTACHMENTS`.
+   *  Disables the screenshot + file-attach buttons with an explanatory
+   *  aria-label so the user can't queue an attachment the SDK would
+   *  reject. */
   attachmentsAtCap: Accessor<boolean>;
   showAiToggle: Accessor<boolean>;
   useAi: Accessor<boolean>;
   onDraftChange: (v: string) => void;
   onSubmit: () => void;
+  onAttachScreenshot: () => void;
   onAttachFiles: (list: FileList | null) => void;
   onUseAiChange: (v: boolean) => void;
 }
@@ -1113,8 +1307,19 @@ function Composer(props: ComposerProps): JSX.Element {
     }
   };
 
+  // Once a capture is in flight or the attachment cap is reached, the
+  // screenshot + file-attach controls are disabled. The aria-label on the
+  // screenshot button mutates so AT users hear *why* the control is
+  // unavailable instead of the generic "Capture screenshot of this page,
+  // dimmed" announcement.
   const attachDisabled = (): boolean =>
-    props.submitting() || props.attachmentsAtCap();
+    props.submitting() || props.capturing() || props.attachmentsAtCap();
+  const screenshotLabel = (): string =>
+    props.attachmentsAtCap()
+      ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
+      : props.capturing()
+        ? 'Capturing screenshot…'
+        : 'Capture screenshot of this page';
   const fileLabel = (): string =>
     props.attachmentsAtCap()
       ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
@@ -1123,6 +1328,15 @@ function Composer(props: ComposerProps): JSX.Element {
   return (
     <div class="brw-composer">
       <div class="brw-composer-shell">
+        <button
+          type="button"
+          class="brw-icon-btn"
+          aria-label={screenshotLabel()}
+          onClick={props.onAttachScreenshot}
+          disabled={attachDisabled()}
+        >
+          <ScreenshotIcon />
+        </button>
         <label class="brw-icon-btn">
           <PaperclipIcon />
           <input
@@ -1158,7 +1372,11 @@ function Composer(props: ComposerProps): JSX.Element {
           type="button"
           class="brw-send-btn"
           aria-label="Send"
-          disabled={props.submitting() || props.draft().trim().length === 0}
+          disabled={
+            props.submitting() ||
+            props.capturing() ||
+            props.draft().trim().length === 0
+          }
           onClick={props.onSubmit}
         >
           <SendIcon />
@@ -1256,6 +1474,23 @@ function CloseIcon(): JSX.Element {
       aria-hidden="true"
     >
       <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+function ScreenshotIcon(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="5" width="18" height="12" rx="2" />
+      <rect x="7" y="8" width="10" height="6" rx="1" stroke-dasharray="2 2" />
     </svg>
   );
 }
