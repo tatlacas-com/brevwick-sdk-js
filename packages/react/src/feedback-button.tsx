@@ -503,6 +503,20 @@ export function FeedbackButton({
           ? await withCropDeadline(cropToRegion(blob, region), CROP_TIMEOUT_MS)
           : blob;
         if (!mountedRef.current) return;
+        // Build the attachment — object URL and id allocation included —
+        // BEFORE the `setScreenshots` updater so the updater is a pure
+        // function of `prev`. React StrictMode double-invokes updaters in
+        // dev to surface impurity; creating the object URL (or bumping the
+        // id ref) inside the updater would run the side effect twice, and
+        // the first invocation's URL is discarded — never stored, never
+        // revoked — leaking one blob URL per capture in dev. Allocating
+        // here makes both side effects run exactly once.
+        const url = URL.createObjectURL(finalBlob);
+        const attachment: ScreenshotAttachment = {
+          id: ++screenshotIdRef.current,
+          blob: finalBlob,
+          url,
+        };
         let rejectedAtCap = false;
         setScreenshots((prev) => {
           // Defence-in-depth: the screenshot button is disabled at the cap,
@@ -511,24 +525,17 @@ export function FeedbackButton({
           // Read the file count from the ref (not the closure) so we see
           // anything attached while the capture was in flight. Drop the
           // new capture rather than silently exceed the SDK's combined
-          // attachment ceiling. (Object URL is created inside the branch
-          // that keeps the capture so a rejected one doesn't leak.) The
-          // user-visible message is set after the setState below so the
-          // updater stays pure.
+          // attachment ceiling.
           if (prev.length + filesLengthRef.current >= MAX_ATTACHMENTS) {
             rejectedAtCap = true;
             return prev;
           }
-          return [
-            ...prev,
-            {
-              id: ++screenshotIdRef.current,
-              blob: finalBlob,
-              url: URL.createObjectURL(finalBlob),
-            },
-          ];
+          return [...prev, attachment];
         });
         if (rejectedAtCap) {
+          // Revoke the pre-created URL on the discard path so the dropped
+          // capture doesn't leak its object URL.
+          URL.revokeObjectURL(url);
           setSubmitError(`Maximum ${MAX_ATTACHMENTS} attachments reached`);
         }
       } catch (err) {

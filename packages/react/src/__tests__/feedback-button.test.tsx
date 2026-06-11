@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import {
   act,
   fireEvent,
@@ -1120,6 +1121,45 @@ describe('<FeedbackButton> — multi-screenshot + preview', () => {
     expect(input.attachments[1]!.filename).toBe('screenshot-2.webp');
   });
 
+  it('creates exactly one object URL per capture under StrictMode (no dev double-invoke leak)', async () => {
+    // React StrictMode double-invokes state updaters in dev to surface
+    // impurity. Object-URL allocation must therefore happen OUTSIDE the
+    // `setScreenshots` updater, otherwise the first (discarded) invocation
+    // leaks a blob URL that is never stored and never revoked. Asserting a
+    // single `createObjectURL` call per capture pins that the allocation is
+    // hoisted out of the updater.
+    let urlSeq = 0;
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(() => `blob:mock-strict-${++urlSeq}`);
+    const revokeObjectURL = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => undefined);
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['x'], { type: 'image/png' }),
+    );
+
+    render(
+      <StrictMode>
+        <BrevwickProvider config={{ projectKey: 'pk_test_fab' }}>
+          <FeedbackButton onSubmit={onSubmitSpy} />
+        </BrevwickProvider>
+      </StrictMode>,
+    );
+    openPanel();
+    await captureFullPage();
+
+    // Single capture → chip label is "screenshot" (no index suffix).
+    expect(
+      screen.getByRole('button', { name: /remove screenshot/i }),
+    ).toBeInTheDocument();
+    // One capture kept → exactly one URL minted, none orphaned/revoked.
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
+  });
+
   it('disables the screenshot button once the combined attachment cap (5) is hit', async () => {
     for (let i = 0; i < 5; i++) {
       captureScreenshot.mockResolvedValueOnce(
@@ -1246,6 +1286,13 @@ describe('<FeedbackButton> — multi-screenshot + preview', () => {
         releaseSecond = resolve;
       }),
     );
+    let urlSeq = 0;
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(() => `blob:mock-cap-${++urlSeq}`);
+    const revokeObjectURL = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => undefined);
     mount();
     openPanel();
     await captureFullPage();
@@ -1287,6 +1334,13 @@ describe('<FeedbackButton> — multi-screenshot + preview', () => {
         }),
       ).toBeInTheDocument(),
     );
+    // The over-cap capture's object URL is minted before the updater (so the
+    // updater stays pure under StrictMode) and revoked on the discard path —
+    // capture #1's kept URL is the only one that survives.
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-cap-2');
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
   });
 
   it('tapping a screenshot thumbnail opens a preview dialog with the captured image', async () => {
