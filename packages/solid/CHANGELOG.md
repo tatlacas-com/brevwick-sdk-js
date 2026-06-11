@@ -1,5 +1,34 @@
 # @tatlacas/brevwick-solid
 
+## 2.0.0-beta.1
+
+### Minor Changes
+
+- [#157](https://github.com/tatlacas-com/brevwick-sdk-js/pull/157) [`db60dd6`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/db60dd6c42a048d40a24e60232c885b835a9fe57) Thanks [@tatlacas](https://github.com/tatlacas)! - feat: launcher `variant` (vertical edge tab is the new default) + `compact` icon-only mode
+
+  The FeedbackButton launcher now supports two presentations across every adapter (React, Solid, Vue, Svelte, Angular, React Native):
+  - `variant="tab"` — **the new default**: a vertical tab flush against the right viewport edge (right edge of the host view on React Native), vertically centered. A new `offset` prop nudges the tab up/down from center in px.
+  - `variant="bubble"` — the legacy floating corner pill.
+  - `compact` — icon-only mode for either variant (circular bubble / square edge tab); the `label` is not rendered but becomes the launcher's `aria-label`.
+  - `position` gains the edge sides `'right' | 'left'` alongside the legacy corners. Defaults: `'right'` for the tab, `'bottom-right'` for the bubble.
+
+  Backwards compatibility: passing a legacy corner `position` (`'bottom-right'` / `'bottom-left'` — or the offset-object form on React Native) without an explicit `variant` keeps the corner bubble, so existing call sites render exactly as before. When both are set, `variant` wins and `position` contributes only its horizontal side.
+
+  The framework-agnostic placement resolver is now exported from the core package at `@tatlacas/brevwick-sdk/launcher` (`resolveLauncherPlacement`, `FeedbackButtonVariant`, `FeedbackButtonPosition`). Every adapter consumes this single tree-shakeable copy instead of carrying its own (the React Native adapter composes it for its offset-object form).
+
+  Fixes a bug where the left-edge tab (`position="left"`) rendered well below vertical center: the standalone CSS `rotate: 180deg` was applied after `transform` and inverted the centering `translateY(-50%)`. The 180° flip is now composed inside `transform`, so the left tab is correctly centered while keeping its mirrored radii, flat edge, and hover behavior. The Svelte compact bubble is also aligned to 48px to match the other adapters.
+
+- [#158](https://github.com/tatlacas-com/brevwick-sdk-js/pull/158) [`ede8731`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ede8731518a22831711198ee40389b53044be221) Thanks [@tatlacas](https://github.com/tatlacas)! - feat: restore the screenshot capture button in the widget composer
+
+  The screenshot capture button — removed in v1 behind a future-flag (PR [#111](https://github.com/tatlacas-com/brevwick-sdk-js/issues/111)) — is back across all five web widgets (React, Solid, Vue, Svelte, Angular), backed by the core SDK's lazy `captureScreenshot()` wrapper. Clicking the camera button captures the page via the dynamically imported `modern-screenshot` peer dep and attaches the resulting image to the submitted issue. The React, Vue, Svelte, and Angular widgets add a region-select overlay (drag to crop a viewport rectangle) and a preview dialog to confirm the capture before sending; the Solid widget deliberately ships full-page capture only for V1 — no region overlay, no preview modal — keeping its adapter well under the bundle ceiling.
+
+  `modern-screenshot` stays behind `await import('…')`, so the eager bundle cost is the UI surface only; bundle ceilings in `.size-limit.js` were raised accordingly (Vue 10 → 13 kB, Svelte SFC 14 → 22 kB, Angular 18 → 31 kB) and the on-widget-open budget remains under 25 kB gzip. React Native is unchanged — its widget intentionally ships no screenshot UI (issue [#116](https://github.com/tatlacas-com/brevwick-sdk-js/issues/116)).
+
+### Patch Changes
+
+- Updated dependencies [[`db60dd6`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/db60dd6c42a048d40a24e60232c885b835a9fe57), [`ede8731`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ede8731518a22831711198ee40389b53044be221)]:
+  - @tatlacas/brevwick-sdk@2.0.0-beta.1
+
 ## 2.0.0-beta.0
 
 ### Minor Changes

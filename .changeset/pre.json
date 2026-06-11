@@ -23,6 +23,8 @@
   },
   "changesets": [
     "debug-raw-payload",
-    "realign-linked-versions"
+    "launcher-tab-compact",
+    "realign-linked-versions",
+    "restore-screenshot-button"
   ]
 }
