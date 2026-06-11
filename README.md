@@ -14,15 +14,15 @@ Ship feedback from any browser app straight into clean, AI-formatted GitHub issu
 
 ## Packages
 
-| Package                                                      | Description                                                                                                   | API reference                                                        |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [`@tatlacas/brevwick-sdk`](./packages/sdk)                   | Framework-agnostic core: submit, screenshot, rings.                                                           | [packages/sdk/README.md](./packages/sdk/README.md)                   |
-| [`@tatlacas/brevwick-react`](./packages/react)               | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19.                                       | [packages/react/README.md](./packages/react/README.md)               |
-| [`@tatlacas/brevwick-solid`](./packages/solid)               | Provider, floating FAB widget, and `useFeedback` hook for Solid 1.8+.                                         | [packages/solid/README.md](./packages/solid/README.md)               |
-| [`@tatlacas/brevwick-vue`](./packages/vue)                   | Plugin, floating FAB component, and `useFeedback` composable for Vue 3.4+.                                    | [packages/vue/README.md](./packages/vue/README.md)                   |
-| [`@tatlacas/brevwick-svelte`](./packages/svelte)             | Context setter, FAB, and `getFeedback()` for Svelte 5 and SvelteKit.                                          | [packages/svelte/README.md](./packages/svelte/README.md)             |
-| [`@tatlacas/brevwick-angular`](./packages/angular)           | `provideBrevwick`, `BrevwickService`, and `bw-feedback-button` standalone component for Angular 17+.          | [packages/angular/README.md](./packages/angular/README.md)           |
-| [`@tatlacas/brevwick-react-native`](./packages/react-native) | Provider, `useFeedback` hook, route-ring helper, and native screenshot path for Expo SDK 51+ / bare RN 0.72+. | [packages/react-native/README.md](./packages/react-native/README.md) |
+| Package                                                      | Description                                                                                                                              | API reference                                                        |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [`@tatlacas/brevwick-sdk`](./packages/sdk)                   | Framework-agnostic core: submit, screenshot, rings.                                                                                      | [packages/sdk/README.md](./packages/sdk/README.md)                   |
+| [`@tatlacas/brevwick-react`](./packages/react)               | Provider, floating FAB widget, and `useFeedback` hook for React 18+/19.                                                                  | [packages/react/README.md](./packages/react/README.md)               |
+| [`@tatlacas/brevwick-solid`](./packages/solid)               | Provider, floating FAB widget, and `useFeedback` hook for Solid 1.8+.                                                                    | [packages/solid/README.md](./packages/solid/README.md)               |
+| [`@tatlacas/brevwick-vue`](./packages/vue)                   | Plugin, floating FAB component, and `useFeedback` composable for Vue 3.4+.                                                               | [packages/vue/README.md](./packages/vue/README.md)                   |
+| [`@tatlacas/brevwick-svelte`](./packages/svelte)             | Context setter, FAB, and `getFeedback()` for Svelte 5 and SvelteKit.                                                                     | [packages/svelte/README.md](./packages/svelte/README.md)             |
+| [`@tatlacas/brevwick-angular`](./packages/angular)           | `provideBrevwick`, `BrevwickService`, and `bw-feedback-button` standalone component for Angular 17+.                                     | [packages/angular/README.md](./packages/angular/README.md)           |
+| [`@tatlacas/brevwick-react-native`](./packages/react-native) | Provider, drop-in feedback launcher, `useFeedback` hook, route-ring helper, and native screenshot path for Expo SDK 51+ / bare RN 0.72+. | [packages/react-native/README.md](./packages/react-native/README.md) |
 
 ## Install
 
@@ -52,6 +52,8 @@ Works with `pnpm add`, `yarn add`, `bun add` — same package names.
 
 ## Quick start
 
+> **Launcher default changed:** the feedback launcher now renders as a vertical tab flush against the right viewport edge (vertically centered) instead of the old bottom-corner bubble. Every adapter accepts `variant: 'bubble' | 'tab'`, `position` (edge sides `'right' | 'left'` plus the legacy corners), `compact` for an icon-only launcher, and `offset` to nudge the tab from vertical center. **Migrating?** Pass `position="bottom-right"` (or your previous corner) to keep the old look — a legacy corner without an explicit `variant` still renders the bubble.
+
 ### React
 
 ```tsx
@@ -67,7 +69,7 @@ export default function App() {
 }
 ```
 
-That's it. A floating action button appears in the bottom-right; clicking it opens a feedback dialog with file attachments and your project's AI formatting (if enabled).
+That's it. A vertical feedback tab appears on the right edge of the viewport; clicking it opens a feedback dialog with file attachments and your project's AI formatting (if enabled).
 
 Full API and theming → [packages/react/README.md](./packages/react/README.md).
 
@@ -168,7 +170,7 @@ export default function App() {
 }
 ```
 
-Build a custom feedback UI with `useFeedback()` (the drop-in `<FeedbackButton />` lands with #88) and wire the React Navigation route ring by rendering `useRouteRing()` inside the provider.
+Drop `<FeedbackButton />` inside the provider for the launcher + modal form (right-edge tab by default, same `variant` / `position` / `compact` / `offset` API as the web adapters, plus an RN-only `{ bottom?, right?, left? }` position form), or build a custom feedback UI with `useFeedback()`. Wire the React Navigation route ring by rendering `useRouteRing()` inside the provider.
 
 Full API → [packages/react-native/README.md](./packages/react-native/README.md).
 

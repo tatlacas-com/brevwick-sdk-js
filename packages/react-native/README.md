@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 React Native bindings for [Brevwick](https://brevwick.dev) — a provider, a
+drop-in `<FeedbackButton />` launcher + modal feedback form, a
 `useFeedback` hook, a `useRouteRing` helper for React Navigation / Expo
 Router, a `BrevwickSkip` wrapper, and a native screenshot path that
 gracefully falls back to a placeholder when the optional
@@ -59,11 +60,11 @@ import {
 import { createStackNavigator } from '@react-navigation/stack';
 import {
   BrevwickProvider,
+  FeedbackButton,
   type BrevwickConfig,
 } from '@tatlacas/brevwick-react-native';
 import { Home } from './screens/Home';
 import { Details } from './screens/Details';
-import { FeedbackFab } from './FeedbackFab';
 
 const Stack = createStackNavigator();
 
@@ -85,11 +86,16 @@ export default function App() {
           <Stack.Screen name="Details" component={Details} />
         </Stack.Navigator>
       </NavigationContainer>
-      <FeedbackFab />
+      <FeedbackButton />
     </BrevwickProvider>
   );
 }
 ```
+
+`<FeedbackButton />` renders a vertical feedback tab flush against the
+right edge of the host view by default — see
+[`FeedbackButton`](#feedbackbutton) for the bubble variant, placement,
+and compact mode.
 
 End-to-end runnable app:
 [`examples/react-native`](https://github.com/tatlacas-com/brevwick-sdk-js/tree/main/examples/react-native).
@@ -148,12 +154,58 @@ outside the provider tree, pass an explicit ref:
 useRouteRing(navigationRef);
 ```
 
-The drop-in `<FeedbackButton />` (#88) will own this wiring once it lands.
+The drop-in `<FeedbackButton />` does not own this wiring — keep the
+bridge mounted alongside it when you want route breadcrumbs in submits.
 Under the hood the hook composes `attachRouteRing(navigationRef, push)`
 with a captured `Brevwick._internal.push` — the lockstep coupling that
 the SDK + adapters version together. Consumers should prefer the hook
 over reaching into `_internal` directly so the documented-private surface
 crosses the adapter boundary in exactly one place.
+
+## `FeedbackButton`
+
+Drop-in feedback launcher + modal feedback form. The launcher renders as
+a vertical tab flush against the right edge of the host view by default
+(vertically centered), or as the classic floating corner bubble via
+`variant="bubble"`. The label tracks the submit lifecycle
+(`Send feedback` → `Capturing…` → `Sending…` → `Sent ✓` / `Try again`).
+
+```tsx
+// Default: vertical tab on the right edge, vertically centered.
+<FeedbackButton />
+
+// Icon-only tab, nudged 120 logical px above the vertical center. The
+// label becomes the launcher's accessibilityLabel.
+<FeedbackButton compact offset={-120} label="Report a bug" />
+
+// Legacy floating corner bubble (24px inset), or with explicit offsets
+// to clear a tab bar / safe area — both imply the bubble:
+<FeedbackButton position="bottom-right" />
+<FeedbackButton position={{ bottom: 96, right: 16 }} />
+```
+
+> **Migration:** the default presentation changed from the corner bubble
+> to the right-edge tab. Pass `position="bottom-right"` (or your previous
+> corner / offset object) to keep the old look — a legacy corner or
+> offset-object `position` without an explicit `variant` still renders
+> the bubble, so existing call sites are unaffected.
+
+### Props
+
+| Prop       | Type                                                                                 | Default                                     | Description                                                                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `variant`  | `'tab' \| 'bubble'`                                                                  | `'tab'`                                     | Launcher presentation — vertical edge tab (the new default) or the legacy floating corner pill. A legacy corner / offset-object `position` without an explicit `variant` implies `'bubble'`.                                   |
+| `position` | `'right' \| 'left' \| 'bottom-right' \| 'bottom-left' \| { bottom?, right?, left? }` | `'right'` (tab) / `'bottom-right'` (bubble) | Where the launcher sits. The offset-object form is RN-only (safe areas / tab bars have no DOM analogue) and applies to the bubble; when `variant` and `position` disagree, `variant` wins and `position` contributes its side. |
+| `compact`  | `boolean`                                                                            | `false`                                     | Icon-only launcher (circular bubble / square edge tab). The label — including the phase-tracking copy — is not rendered; `label` (or `'Feedback'`) becomes the `accessibilityLabel`.                                           |
+| `offset`   | `number`                                                                             | `0`                                         | Tab only: vertical offset in logical px from the host view's vertical center. Positive moves the tab down, negative up. Ignored for the bubble.                                                                                |
+| `label`    | `string`                                                                             | phase-driven                                | Label override. Default copy advances by submission phase, so most apps leave it unset. Hidden visually when `compact`.                                                                                                        |
+| `theme`    | `'system' \| 'light' \| 'dark'`                                                      | `'system'`                                  | Forced palette. `'system'` follows the host color scheme.                                                                                                                                                                      |
+| `style`    | `StyleProp<ViewStyle>`                                                               | —                                           | Style overrides applied last to the launcher Pressable, so consumer entries win.                                                                                                                                               |
+| `hidden`   | `boolean`                                                                            | `false`                                     | Renders nothing — useful for feature flags.                                                                                                                                                                                    |
+| `disabled` | `boolean`                                                                            | `false`                                     | Launcher renders disabled and cannot open the modal.                                                                                                                                                                           |
+
+Must be rendered inside `<BrevwickProvider>` — `useFeedback()` throws
+synchronously otherwise.
 
 ## `useFeedback`
 
@@ -276,11 +328,12 @@ so orientation / locale changes show up on the next submit.
 
 ## Theming
 
-A `theme` prop on the eventual `<FeedbackButton />` (lands with #88) will
-accept `'system' | 'light' | 'dark'` matching the React (web) widget. The
-underlying token surface (accent / panel / chip / border) is shared with
-`@tatlacas/brevwick-react`; until the RN button lands you control your
-own surface in custom UIs (see the `useFeedback` snippet above).
+The `theme` prop on `<FeedbackButton />` accepts
+`'system' | 'light' | 'dark'`, matching the React (web) widget —
+`'system'` (the default) follows the host's color scheme. The underlying
+token surface (accent / panel / chip / border) is shared with
+`@tatlacas/brevwick-react`; custom UIs built on `useFeedback` control
+their own surface (see the snippet above).
 
 ## Hiding sensitive content from screenshots
 
