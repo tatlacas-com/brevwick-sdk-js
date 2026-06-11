@@ -24,6 +24,26 @@ interface IconProps {
 const STROKE_WIDTH = 2;
 
 /**
+ * Speech-bubble chat glyph for the launcher. Path from the React adapter's
+ * `ChatIcon` (`.brw-fab-icon`) — shared by the compact bubble and both
+ * orientations of the edge tab so the launcher reads identically across
+ * the web and native adapters.
+ */
+export function ChatIcon({ color, size = 18 }: IconProps): ReactElement {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/**
  * Paperclip icon used by the file-attach button in the composer. Path from
  * the React adapter's `PaperclipIcon`.
  */

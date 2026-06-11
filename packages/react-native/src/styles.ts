@@ -104,6 +104,50 @@ export function createWidgetStyles(palette: BrevwickPalette) {
       shadowRadius: 12,
       elevation: 6,
     },
+    // Compact bubble: 48px circle, icon only — visual twin of the web
+    // adapter's `.brw-fab--bubble.brw-fab--compact`.
+    fabCompact: {
+      width: 48,
+      minWidth: 48,
+      paddingHorizontal: 0,
+    },
+    // Tab (NEW DEFAULT): vertical edge tab — visual twin of the web
+    // adapter's `.brw-fab--tab` (40px wide, 16px vertical padding, 8px gap
+    // between icon and rotated label). The chrome (accent fill, shadow,
+    // elevation) mirrors `fab` above; geometry diverges because the tab is
+    // a column hugging an edge rather than a corner pill.
+    fabTab: {
+      position: 'absolute',
+      width: 40,
+      minHeight: 48,
+      paddingVertical: 16,
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: palette.accent,
+      shadowColor: palette.shadow,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 1,
+      shadowRadius: 12,
+      elevation: 6,
+    },
+    // Rounded on the page-facing side, flat against the edge — same
+    // one-sided radii as the web `.brw-fab--tab` / `.brw-fab-l` pair.
+    fabTabRight: {
+      borderTopLeftRadius: 10,
+      borderBottomLeftRadius: 10,
+    },
+    fabTabLeft: {
+      borderTopRightRadius: 10,
+      borderBottomRightRadius: 10,
+    },
+    // Compact tab: square-ish icon-only edge chip (`.brw-fab--tab.brw-fab--compact`).
+    fabTabCompact: {
+      width: 44,
+      minHeight: 44,
+      paddingVertical: 0,
+    },
     fabPressed: {
       opacity: 0.85,
     },

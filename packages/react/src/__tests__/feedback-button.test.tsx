@@ -153,6 +153,11 @@ describe('<FeedbackButton>', () => {
     const fab = screen.getByRole('button', { name: /open feedback form/i });
     expect(fab).toHaveAttribute('data-brevwick-skip');
     expect(fab.className).toMatch(/brw-fab/);
+    // Zero-config default changed in vNEXT: right-edge vertical tab, not
+    // the legacy bottom-right bubble.
+    expect(fab.className).toMatch(/brw-fab--tab/);
+    expect(fab.className).toMatch(/brw-fab-r\b/);
+    expect(fab).toHaveAttribute('data-brw-variant', 'tab');
 
     openPanel();
 
@@ -197,15 +202,30 @@ describe('<FeedbackButton>', () => {
     );
   });
 
-  it('applies the bottom-left position class to FAB and panel', () => {
+  it('keeps the bubble at bottom-left for a legacy corner position (no variant)', () => {
+    // Legacy compat: an explicit corner without a `variant` must keep the
+    // pre-vNEXT presentation — the bubble at that corner, not a tab.
     mount({ position: 'bottom-left' });
     const fab = screen.getByRole('button', { name: /open feedback form/i });
+    expect(fab.className).toMatch(/brw-fab--bubble/);
     expect(fab.className).toMatch(/brw-fab-bl/);
     expect(fab.className).not.toMatch(/brw-fab-br/);
+    expect(fab).toHaveAttribute('data-brw-variant', 'bubble');
     openPanel();
     const dialog = screen.getByRole('dialog');
     expect(dialog.className).toMatch(/brw-panel-bl/);
     expect(dialog.className).not.toMatch(/brw-panel-br/);
+  });
+
+  it('keeps the bubble at bottom-right for a legacy corner position (no variant)', () => {
+    mount({ position: 'bottom-right' });
+    const fab = screen.getByRole('button', { name: /open feedback form/i });
+    expect(fab.className).toMatch(/brw-fab--bubble/);
+    expect(fab.className).toMatch(/brw-fab-br/);
+    expect(fab.className).not.toMatch(/brw-fab-bl/);
+    expect(fab).toHaveAttribute('data-brw-variant', 'bubble');
+    openPanel();
+    expect(screen.getByRole('dialog').className).toMatch(/brw-panel-br/);
   });
 
   it('Enter submits, Shift+Enter inserts a newline', async () => {
@@ -1065,6 +1085,166 @@ describe('<FeedbackButton>', () => {
     } finally {
       nowSpy.mockRestore();
     }
+  });
+});
+
+/**
+ * Launcher presentation (variant + position). Pins the full resolution
+ * table: explicit `variant` always wins, `position` contributes only its
+ * horizontal side to a mismatched variant, and a legacy corner without a
+ * variant keeps the bubble. The zero-config default — right-edge tab —
+ * is asserted in the main describe block above.
+ */
+describe('<FeedbackButton> — launcher presentation (variant + position)', () => {
+  function getFab(name: RegExp | string = /open feedback form/i): HTMLElement {
+    return screen.getByRole('button', { name });
+  }
+
+  it('variant="bubble" without a position renders the bottom-right bubble', () => {
+    mount({ variant: 'bubble' });
+    const fab = getFab();
+    expect(fab.className).toMatch(/brw-fab--bubble/);
+    expect(fab.className).toMatch(/brw-fab-br/);
+    expect(fab).toHaveAttribute('data-brw-variant', 'bubble');
+  });
+
+  it('position="left" renders the tab on the left edge', () => {
+    mount({ position: 'left' });
+    const fab = getFab();
+    expect(fab.className).toMatch(/brw-fab--tab/);
+    expect(fab.className).toMatch(/brw-fab-l\b/);
+    expect(fab).toHaveAttribute('data-brw-variant', 'tab');
+  });
+
+  it('position="right" renders the tab on the right edge', () => {
+    mount({ position: 'right' });
+    const fab = getFab();
+    expect(fab.className).toMatch(/brw-fab--tab/);
+    expect(fab.className).toMatch(/brw-fab-r\b/);
+  });
+
+  it('variant="tab" + corner position keeps the tab and takes only the horizontal side', () => {
+    // Conflict rule: variant wins; 'bottom-left' contributes only 'left'.
+    mount({ variant: 'tab', position: 'bottom-left' });
+    const fab = getFab();
+    expect(fab.className).toMatch(/brw-fab--tab/);
+    expect(fab.className).toMatch(/brw-fab-l\b/);
+    expect(fab.className).not.toMatch(/brw-fab-bl/);
+  });
+
+  it('variant="tab" + position="bottom-right" resolves to the right-edge tab', () => {
+    mount({ variant: 'tab', position: 'bottom-right' });
+    const fab = getFab();
+    expect(fab.className).toMatch(/brw-fab--tab/);
+    expect(fab.className).toMatch(/brw-fab-r\b/);
+  });
+
+  it('variant="bubble" + position="left" renders the bubble at the bottom-left corner', () => {
+    mount({ variant: 'bubble', position: 'left' });
+    const fab = getFab();
+    expect(fab.className).toMatch(/brw-fab--bubble/);
+    expect(fab.className).toMatch(/brw-fab-bl/);
+  });
+
+  it('variant="bubble" + position="right" renders the bubble at the bottom-right corner', () => {
+    mount({ variant: 'bubble', position: 'right' });
+    const fab = getFab();
+    expect(fab.className).toMatch(/brw-fab--bubble/);
+    expect(fab.className).toMatch(/brw-fab-br/);
+  });
+
+  it('left-edge tab opens the panel anchored bottom-left', () => {
+    mount({ position: 'left' });
+    openPanel();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toMatch(/brw-panel-bl/);
+    expect(dialog.className).not.toMatch(/brw-panel-br/);
+  });
+
+  it('compact drops the visible label and promotes the string label to aria-label', () => {
+    mount({ compact: true, label: 'Report a bug' });
+    const fab = getFab('Report a bug');
+    expect(fab.className).toMatch(/brw-fab--compact/);
+    // The label text must not render — compact is icon-only.
+    expect(fab.querySelector('.brw-fab-label')).toBeNull();
+    expect(screen.queryByText('Report a bug')).toBeNull();
+  });
+
+  it('compact with a non-string ReactNode label falls back to aria-label="Feedback"', () => {
+    mount({ compact: true, label: <strong>Fancy</strong> });
+    const fab = getFab('Feedback');
+    expect(fab).toHaveAttribute('aria-label', 'Feedback');
+    expect(fab.querySelector('.brw-fab-label')).toBeNull();
+  });
+
+  it('non-compact keeps aria-label="Open feedback form" and the visible label span', () => {
+    mount({ label: 'Report a bug' });
+    const fab = getFab();
+    expect(fab).toHaveAttribute('aria-label', 'Open feedback form');
+    const labelSpan = fab.querySelector('.brw-fab-label');
+    expect(labelSpan).not.toBeNull();
+    expect(labelSpan!.textContent).toBe('Report a bug');
+  });
+
+  it('offset sets --brw-fab-tab-offset inline on the tab only when non-zero', () => {
+    mount({ offset: 120 });
+    const fab = getFab();
+    expect(fab.style.getPropertyValue('--brw-fab-tab-offset')).toBe('120px');
+  });
+
+  it('offset=0 sets no inline custom property on the tab', () => {
+    mount({ offset: 0 });
+    expect(getFab().style.getPropertyValue('--brw-fab-tab-offset')).toBe('');
+  });
+
+  it('offset is ignored for the bubble (no inline custom property)', () => {
+    mount({ variant: 'bubble', offset: 120 });
+    expect(getFab().style.getPropertyValue('--brw-fab-tab-offset')).toBe('');
+  });
+
+  it('emitted stylesheet declares the vertical tab + keeps the launcher chrome contract', () => {
+    // Tab geometry: writing-mode flips the inline axis vertical.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-fab--tab\s*\{[^}]*writing-mode:\s*vertical-rl/,
+    );
+    // Shared launcher chrome keeps the max-ish stacking contract.
+    expect(BREVWICK_CSS).toMatch(/\.brw-fab\s*\{[^}]*z-index:\s*2147483000/);
+    // Bubble keeps the legacy pill geometry under its own class.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-fab--bubble\s*\{[^}]*border-radius:\s*999px/,
+    );
+  });
+
+  // Regression: the left-edge tab must stay vertically centred. The earlier
+  // shape used the standalone `rotate: 180deg` property on `.brw-fab-l`,
+  // which CSS Transforms L2 applies AFTER the `transform` property — flipping
+  // the centering `translateY(-50%)` into `+50%` and dropping the left tab a
+  // full tab-height below centre. jsdom cannot compute composed transforms,
+  // so we assert the stylesheet shape that keeps the fix:
+  //   - no standalone `rotate:` declaration (the inverting form), and
+  //   - the 180° flip composed INSIDE `transform`, AFTER `translateY(-50%)`,
+  //     via the `--brw-fab-tab-flip` custom property set on `.brw-fab-l`.
+  it('left-edge tab composes its 180° flip inside transform so centering survives', () => {
+    // The inverting standalone `rotate` property must be gone everywhere.
+    expect(BREVWICK_CSS).not.toMatch(/rotate:\s*180deg/);
+    // translateY(-50%) stays the outermost transform; the flip follows it.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-fab--tab\s*\{[^}]*transform:\s*translateY\(-50%\)\s*rotate\(var\(--brw-fab-tab-flip/,
+    );
+    // The left tab drives the flip purely through the custom property.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-fab-l\s*\{[^}]*--brw-fab-tab-flip:\s*180deg/,
+    );
+    // Hover keeps translateX innermost so the flip turns -2px into +2px.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-fab--tab:hover[^{]*\{[^}]*transform:\s*translateY\(-50%\)\s*rotate\(var\(--brw-fab-tab-flip[^)]*\)\)\s*translateX\(-2px\)/,
+    );
+  });
+
+  it('vitest-axe is clean on a tab-variant launcher', async () => {
+    mount();
+    const results = await axe(getFab());
+    expect(results).toHaveNoViolations();
   });
 });
 

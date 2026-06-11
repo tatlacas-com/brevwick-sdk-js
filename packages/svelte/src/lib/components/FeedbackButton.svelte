@@ -9,19 +9,42 @@
   } from '@tatlacas/brevwick-sdk';
   import { getFeedback } from '../context';
   import { BREVWICK_SVELTE_VERSION } from '../internal/version';
+  import {
+    resolveLauncherPlacement,
+    type FeedbackButtonPosition,
+    type FeedbackButtonVariant,
+  } from '../launcher';
 
-  // Props use Svelte's `export let` (legacy mode under Svelte 5) rather
-  // than `$props()` runes. This keeps the SFC compiling under both legacy
-  // and runes-mode hosts: Svelte 5 supports `export let` cleanly in legacy
-  // mode, and a runes-mode parent simply sees the same prop interface.
-  // We will revisit when Svelte 6 (rune-only) lands.
-  /** Corner the FAB pins to. Default `'bottom-right'`. */
-  export let position: 'bottom-right' | 'bottom-left' = 'bottom-right';
+  // Props use `export let` (not `$props()` runes) so the SFC compiles
+  // under both legacy and runes-mode hosts. Revisit at Svelte 6.
+  /**
+   * Launcher presentation. Default `'tab'` (new default). Intentionally no
+   * prop-level default — `resolveLauncherPlacement` must see "unset" so the
+   * corner-implies-bubble compat rule can fire.
+   */
+  export let variant: FeedbackButtonVariant | undefined = undefined;
+  /**
+   * Launcher placement. Defaults: `'right'` (tab), `'bottom-right'`
+   * (bubble). A legacy corner without an explicit `variant` keeps the
+   * bubble; when both are set, `variant` wins and `position` contributes
+   * only its horizontal side.
+   */
+  export let position: FeedbackButtonPosition | undefined = undefined;
+  /**
+   * Icon-only mode (circular bubble / square edge tab). The `label` is not
+   * rendered but becomes the `aria-label`. Default `false`.
+   */
+  export let compact: boolean = false;
+  /**
+   * Tab-only: vertical offset in px from the viewport's vertical center
+   * (positive = down). Ignored for the bubble. Default `0`.
+   */
+  export let offset: number = 0;
   /** When true, the FAB renders as disabled and cannot open the dialog. */
   export let disabled: boolean = false;
   /** When true, the component renders nothing. Useful for feature-flagging. */
   export let hidden: boolean = false;
-  /** FAB label. Default `'Feedback'`. */
+  /** Launcher label. Default `'Feedback'`. Hidden visually when `compact`. */
   export let label: string = 'Feedback';
   /** Force a palette regardless of the OS `prefers-color-scheme` setting. */
   export let theme: 'light' | 'dark' | 'system' = 'system';
@@ -29,24 +52,15 @@
   export let onSubmit: ((result: SubmitResult) => void) | undefined = undefined;
 
   // File attachment cap. Keep in sync with MAX_ATTACHMENT_COUNT in
-  // packages/sdk/src/submit.ts (not exported on the SDK's frozen public
-  // surface) and the matching constant in packages/react/src/feedback-button.tsx.
-  // Enforced in the UI so the user can't queue an attachment the SDK would
-  // reject downstream.
+  // packages/sdk/src/submit.ts and the React adapter's constant.
   const MAX_ATTACHMENTS = 5;
 
-  // Stagger between staged-status rows in milliseconds. Applied as
-  // `animation-delay` per row (the rows mount with a CSS @keyframes
-  // entrance, not a transition) so the rows fade in sequentially even
-  // when the underlying SDK phase events fire microseconds apart.
-  // Honoured only when the user has not requested reduced motion —
-  // see `prefersReducedMotion` below.
+  // Per-row `animation-delay` stagger (ms) so the staged-status rows fade
+  // in sequentially; skipped under prefers-reduced-motion.
   const STATUS_ROW_STAGGER_MS = 200;
 
-  // Phase ordinal mirrored from the React adapter (#74). Row 1 ("Captured")
-  // shows from `'sanitising'` onwards, row 2 ("Sanitised") from
-  // `'formatting'` onwards. Row 3 ("Formatting with AI") has its own
-  // exact-match rule and does not consult this table.
+  // Phase ordinal mirrored from the React adapter (#74). Row 3
+  // ("Formatting with AI") has its own exact-match rule.
   const PHASE_RANK: Record<string, number> = {
     idle: 0,
     capturing: 1,
@@ -64,11 +78,7 @@
   const phase = feedback.phase;
   const submitErrorTagged = feedback.error;
 
-  /**
-   * One bubble in the conversation thread. The greeting and submitted-issue
-   * receipt are `assistant` messages; submitted drafts become `user`
-   * messages. Mirrors the React adapter's Message shape.
-   */
+  /** One bubble in the conversation thread (React's Message shape). */
   type Message = {
     id: string;
     role: 'assistant' | 'user';
@@ -76,10 +86,8 @@
     sentAt?: number;
     issueSent?: boolean;
     /**
-     * The exact, post-redaction payload the SDK POSTed for this message —
-     * set only when the host enabled `config.debug`. When present, the bubble
-     * renders a "copy raw payload" affordance so a developer can inspect
-     * everything that left the device (rings/context the widget never shows).
+     * Exact post-redaction payload the SDK POSTed — set only under
+     * `config.debug`; renders a "copy raw payload" affordance.
      */
     rawPayload?: Record<string, unknown>;
   };
@@ -110,16 +118,11 @@
   let fileId = 0;
   let messageId = 0;
   let prefersReducedMotion = false;
-  // Bound to the composer textarea so the autogrow reactive block can
-  // measure scrollHeight and resize between min-height (one row) and
-  // COMPOSER_MAX_HEIGHT_PX without coupling to a CSS-only grow that
-  // would jump in row-sized increments.
+  // Bound to the composer textarea for scrollHeight-based autogrow.
   let textareaEl: HTMLTextAreaElement | undefined;
 
   // Project-config render-policy state. Mirrors React's `useProjectConfig`:
-  // lazy fetch on first panel open, cache the result for the lifetime of the
-  // component. The fetch is gated behind the open-state to preserve the
-  // widget's "zero-cost until opened" property.
+  // lazy fetch on first open, cached for the component's lifetime.
   type ProjectConfigStatus = 'idle' | 'loading' | 'ready' | 'error';
   let projectConfigStatus: ProjectConfigStatus = 'idle';
   let projectConfig: ProjectConfig | null = null;
@@ -134,22 +137,16 @@
     projectConfig?.ai_enabled === true &&
     projectConfig?.ai_submitter_choice_allowed === true;
 
-  // Last submitted FeedbackInput so the retry path can re-run the exact same
-  // payload without forcing the user to re-type the draft we cleared
-  // synchronously on Send.
+  // Last submitted FeedbackInput so retry re-runs the exact same payload.
   let lastSubmittedInput: FeedbackInput | null = null;
-  // Id of the user bubble for the most recent submit, so the retry path can
-  // re-attach a freshly composed `rawPayload` to the same bubble.
+  // User bubble id for the most recent submit, so retry can re-attach a
+  // freshly composed `rawPayload` to the same bubble.
   let lastUserMessageId: string | null = null;
-  // Id of the bubble whose copy button is showing "Copied!" feedback, plus
-  // the timer that clears it. A single id (not per-button state) keeps the
-  // dev-only affordance off the markup hot path.
+  // Bubble id showing "Copied!" feedback + the timer that clears it.
   let copiedRawId: string | null = null;
   let copiedRawTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  // Receipt timestamps live in a writable so the relative-time formatter
-  // re-runs reactively without coupling to the message identity. Mirrors
-  // the React `formatRelativeTime` reading `Date.now()` once at render.
+  // Writable so the relative-time formatter re-runs reactively.
   const nowStore = writable<number>(Date.now());
 
   $: attachmentsAtCap = files.length >= MAX_ATTACHMENTS;
@@ -160,19 +157,15 @@
     files.length > 0;
   $: canSend = draft.trim().length > 0 && $status !== 'submitting';
 
-  // Autogrow the composer textarea between one row and
-  // COMPOSER_MAX_HEIGHT_PX as the user types. Mirrors the React adapter:
-  // reset to `auto` first so shrinking on backspace works, then size to
-  // `scrollHeight` capped at the ceiling.
+  // Autogrow the composer textarea up to COMPOSER_MAX_HEIGHT_PX. Reset to
+  // `auto` first so shrinking on backspace works (parity with React).
   $: if (textareaEl && draft !== undefined) {
     textareaEl.style.height = 'auto';
     textareaEl.style.height = `${Math.min(textareaEl.scrollHeight, COMPOSER_MAX_HEIGHT_PX)}px`;
   }
 
-  // Phase-driven row visibility. Parity with the React adapter — row 1
-  // shows from `sanitising` onwards, row 2 from `formatting` onwards, row
-  // 3 only during the exact `formatting` phase (and only when the project
-  // has AI enabled). The retry row owns the `error` phase exclusively.
+  // Phase-driven row visibility, parity with React. The retry row owns
+  // the `error` phase exclusively.
   $: phaseRank = PHASE_RANK[$phase] ?? 0;
   $: showCaptured = phaseRank >= PHASE_RANK.sanitising;
   $: showSanitised = phaseRank >= PHASE_RANK.formatting;
@@ -197,10 +190,8 @@
     if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
   });
 
-  // Lazy project-config fetch on first panel open. Subsequent opens reuse
-  // the cached result. Mirrors the React adapter's useProjectConfig — the
-  // SDK itself caches per session, so the second call would no-op anyway,
-  // but tracking here avoids an extra awaited microtask on every open.
+  // Lazy project-config fetch on first panel open; later opens reuse the
+  // cached result (the SDK also caches per session).
   $: if (open && !projectConfigTriggered) {
     projectConfigTriggered = true;
     projectConfigStatus = 'loading';
@@ -546,10 +537,27 @@
     return `${days} d ago`;
   }
 
-  // Reactive so the FAB / panel CSS classes re-derive when `position` changes.
-  $: fabPosClass = position === 'bottom-left' ? 'brw-fab-bl' : 'brw-fab-br';
+  // resolveLauncherPlacement is the single source of truth for the
+  // variant/position matrix (shared shape with React).
+  $: placement = resolveLauncherPlacement(variant, position);
+  $: fabModifierClasses = [
+    placement.variant === 'tab' ? 'brw-fab--tab' : 'brw-fab--bubble',
+    placement.variant === 'tab'
+      ? placement.side === 'left'
+        ? 'brw-fab-l'
+        : 'brw-fab-r'
+      : placement.side === 'left'
+        ? 'brw-fab-bl'
+        : 'brw-fab-br',
+    compact ? 'brw-fab--compact' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   $: panelPosClass =
-    position === 'bottom-left' ? 'brw-panel-bl' : 'brw-panel-br';
+    placement.side === 'left' ? 'brw-panel-bl' : 'brw-panel-br';
+  // Compact removes the visible text, so `label` becomes the aria-label;
+  // non-compact keeps the established accessible name (parity with React).
+  $: fabAriaLabel = compact ? label : 'Open feedback form';
 
   // Per-instance ID for the disclosure aria-controls relationship. Stays
   // stable across re-renders so AT focus tracking doesn't churn. Uses a
@@ -917,16 +925,23 @@
       </div>
     {/if}
 
+    <!-- --brw-fab-tab-offset is a positioning input, not part of the
+         public --brw-* theming contract — set only when it has an effect. -->
     <button
       type="button"
-      class="brw-svelte-fab {fabPosClass}"
+      class="brw-svelte-fab {fabModifierClasses}"
       data-brevwick-skip
       data-testid="brw-svelte-fab"
-      aria-label="Open feedback form"
+      data-brw-variant={placement.variant}
+      aria-label={fabAriaLabel}
+      style:--brw-fab-tab-offset={placement.variant === 'tab' && offset !== 0
+        ? `${offset}px`
+        : undefined}
       {disabled}
       on:click={toggleOpen}
     >
       <svg
+        class="brw-fab-icon"
         viewBox="0 0 24 24"
         width="18"
         height="18"
@@ -939,7 +954,7 @@
       >
         <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
       </svg>
-      <span>{label}</span>
+      {#if !compact}<span class="brw-fab-label">{label}</span>{/if}
     </button>
   </div>
 {/if}
@@ -971,11 +986,8 @@
     --brw-accent: #4f46e5;
     --brw-accent-fg: #ffffff;
     --brw-error: #b91c1c;
-    /* Success / check colour for the staged-status checklist. Matches the
-       emerald used in the marketing AnimatedDemo so the in-widget checklist
-       reads as the same affordance the docs preview. Widget-internal: no
-       public --brw-success alias by design — host overrides flow through
-       --brw-accent for chrome and don't need a knob for the green tick. */
+    /* Checklist tick colour. Widget-internal by design — no public
+       --brw-success knob; host overrides flow through --brw-accent. */
     --brw-success: #10b981;
     --brw-shadow:
       0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -1028,14 +1040,13 @@
     }
   }
 
+  /* Shared launcher chrome — variant geometry lives on .brw-fab--bubble /
+     .brw-fab--tab (mirrors the React adapter's .brw-fab split). */
   .brw-svelte-fab {
     position: fixed;
-    bottom: 24px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 16px;
-    border-radius: 999px;
     border: 1px solid var(--brw-border);
     background: var(--brw-panel-bg);
     color: var(--brw-fg);
@@ -1043,23 +1054,97 @@
     cursor: pointer;
     font: inherit;
     z-index: 2147483646;
+    transition: transform 120ms ease-out;
   }
   .brw-svelte-fab:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
-  .brw-svelte-fab.brw-fab-br {
-    right: 24px;
+  /* Ring sits 2px outside the box so it clears the tab's flat edge. */
+  .brw-svelte-fab:focus-visible {
+    outline: 2px solid var(--brw-border-focus);
+    outline-offset: 2px;
   }
-  .brw-svelte-fab.brw-fab-bl {
-    left: 24px;
+  .brw-svelte-fab .brw-fab-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
   }
 
-  /* Anchor the panel at the same `bottom: 24px` / corner offset as the
-     FAB so the panel's higher z-index covers the FAB while it is open
-     (parity with the React adapter — Radix Dialog there mounts the
-     panel above the trigger at the same position, hiding the FAB
-     behind the panel rather than leaving them side-by-side). */
+  /* Bubble — legacy corner pill. Fixed 48px height + 48px compact circle
+     to stay a visual twin of the react/solid/vue/RN bubble. */
+  .brw-svelte-fab.brw-fab--bubble {
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    height: 48px;
+    min-width: 48px;
+    padding: 0 18px;
+    border-radius: 999px;
+  }
+  .brw-svelte-fab.brw-fab--bubble:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  .brw-svelte-fab.brw-fab-br {
+    right: calc(24px + env(safe-area-inset-right, 0px));
+  }
+  .brw-svelte-fab.brw-fab-bl {
+    left: calc(24px + env(safe-area-inset-left, 0px));
+  }
+  .brw-svelte-fab.brw-fab--bubble.brw-fab--compact {
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  /* Tab — vertical edge tab, the new default. writing-mode stacks the
+     icon + label vertically; the left tab mirrors the flat edge and radii
+     by rotating 180° composed INSIDE `transform` (after the centering
+     translateY) via `--brw-fab-tab-flip`. Composing in `transform` (not the
+     standalone `rotate` property, which applies AFTER `transform` per CSS
+     Transforms L2) keeps `translateY(-50%)` outermost, so it never inverts
+     into `+50%` and the left tab stays vertically centred. */
+  .brw-svelte-fab.brw-fab--tab {
+    top: calc(50% + var(--brw-fab-tab-offset, 0px));
+    transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg));
+    writing-mode: vertical-rl;
+    min-height: 48px;
+    width: 40px;
+    padding: 16px 0;
+    justify-content: center;
+    /* Rounded page-facing side, flat against the viewport edge. */
+    border-radius: 10px 0 0 10px;
+  }
+  .brw-svelte-fab.brw-fab-r {
+    right: env(safe-area-inset-right, 0px);
+    border-right: none; /* flat edge: no hairline against the viewport */
+  }
+  .brw-svelte-fab.brw-fab-l {
+    left: env(safe-area-inset-left, 0px);
+    border-right: none; /* pre-flip right edge IS the viewport edge */
+    --brw-fab-tab-flip: 180deg;
+  }
+  /* Hover pulls the tab 2px out of its edge (the whole transform is
+     restated — transform overwrites). translateX(-2px) is innermost, so
+     the left tab's 180° flip turns it into +2px visually. */
+  .brw-svelte-fab.brw-fab--tab:hover:not(:disabled) {
+    transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg)) translateX(-2px);
+  }
+  .brw-svelte-fab .brw-fab-label {
+    letter-spacing: 0.02em;
+  }
+  .brw-svelte-fab.brw-fab--tab.brw-fab--compact {
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brw-svelte-fab {
+      transition: none;
+    }
+  }
+
+  /* Anchored at the FAB's corner offset so the panel's higher z-index
+     covers the FAB while open (parity with React's Radix Dialog). */
   .brw-svelte-panel {
     position: fixed;
     bottom: 24px;
@@ -1278,18 +1363,11 @@
     min-height: 34px;
   }
 
-  /* Staged-status rows: progress indicators, not conversation bubbles.
-     They sit under a dashed top divider as a compact stacked checklist,
-     mirroring the marketing AnimatedDemo widget mock — and intentionally
-     stay outside the bubble class family so message-count queries ignore
-     them. .brw-svelte-status-rows is the grouping container that owns
-     the divider + stacking; .brw-svelte-status-row is one ticked line.
-     The animation-delay is set inline per row so the three rows fade in
-     sequentially under the shared @keyframes entrance even when the
-     underlying SDK phase events fire microseconds apart. The
-     reduced-motion media query collapses the entrance to an instant
-     fade, pairing with the inline 0ms delay the template emits when
-     prefers-reduced-motion: reduce. */
+  /* Staged-status rows: a stacked checklist under a dashed divider,
+     intentionally outside the bubble class family so message-count
+     queries ignore them. animation-delay is set inline per row so the
+     rows fade in sequentially even when SDK phase events fire
+     microseconds apart; reduced-motion collapses the entrance. */
   .brw-svelte-status-rows {
     align-self: stretch;
     display: flex;
@@ -1321,10 +1399,7 @@
     width: 12px;
     height: 12px;
   }
-  /* The shared .brw-svelte-spinner ships at 14px so it reads at full size
-     in the composer; inside the staged-status checklist it has to match
-     the 12px tick so the third row's indicator sits on the same baseline
-     as the first two. */
+  /* Downsize the shared 14px spinner to match the 12px ticks. */
   .brw-svelte-status-row .brw-svelte-spinner {
     width: 12px;
     height: 12px;
@@ -1332,11 +1407,8 @@
   .brw-svelte-status-row-label {
     flex: 1;
   }
-  /* The retry row is a standalone alert that sits outside the checklist
-     container, so it carries its own chrome — padding, radius, border —
-     instead of inheriting the checklist's tick-line minimalism. The
-     background stays transparent so the red border + red label read as
-     an alert overlay rather than a filled bubble surface. */
+  /* Retry row: a standalone alert outside the checklist container, with
+     its own chrome; transparent bg so it reads as an alert overlay. */
   .brw-svelte-status-row--error {
     align-self: stretch;
     padding: 10px 12px;
@@ -1426,15 +1498,9 @@
     }
   }
 
-  /* Outer composer is just the bottom strip — padding + bg + the
-     divider line above. The actual input affordance lives in
-     `.brw-svelte-composer-shell` so it reads as one unified chip
-     containing the attach button, textarea, optional AI toggle and
-     send button. Mirrors the React adapter's `.brw-composer` /
-     `.brw-composer-shell` split (#114 follow-up — the original Svelte
-     parity PR shipped a 3-row grid that put the textarea on its own
-     row; this shape lines everything up on one row to match the
-     React reference). */
+  /* Outer composer is the bottom strip; the unified input chip (attach,
+     textarea, AI toggle, send on one row) lives in -composer-shell.
+     Mirrors React's .brw-composer / .brw-composer-shell split (#114). */
   .brw-svelte-composer {
     flex-shrink: 0;
     padding: 8px 10px;
@@ -1505,12 +1571,9 @@
     pointer-events: none;
   }
 
-  /* AI toggle — track-and-thumb switch, parity with the React adapter's
-     iOS-style toggle (#65). The "AI" text sits outside the button so the
-     switch itself is an unambiguous track, not a pressed-button state. */
-  /* Wrap matches `.brw-svelte-send` height (34px) so the switch
-     centre and the send-button centre land on the same baseline
-     under the shell's `align-items: flex-end`. */
+  /* AI toggle — track-and-thumb switch, parity with React (#65). The
+     "AI" text sits outside the button; the wrap matches the send
+     button's 34px height so both centre on the same baseline. */
   .brw-svelte-aitoggle-wrap {
     flex-shrink: 0;
     display: inline-flex;

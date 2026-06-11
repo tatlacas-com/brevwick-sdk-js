@@ -53,6 +53,7 @@ export { FeedbackButton } from './feedback-button';
 export type {
   FeedbackButtonProps,
   FeedbackButtonPosition,
+  FeedbackButtonVariant,
 } from './feedback-button';
 export { FeedbackModal } from './feedback-modal';
 export type { FeedbackModalProps } from './feedback-modal';

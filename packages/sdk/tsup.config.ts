@@ -16,7 +16,7 @@ const pkg = JSON.parse(
  * `__tests__/chunk-split.test.ts`.
  */
 export default defineConfig({
-  entry: ['src/index.ts', 'src/testing.ts'],
+  entry: ['src/index.ts', 'src/testing.ts', 'src/launcher.ts'],
   format: ['esm', 'cjs'],
   dts: true,
   clean: true,
