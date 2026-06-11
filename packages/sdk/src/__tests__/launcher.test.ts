@@ -9,7 +9,10 @@ import { resolveLauncherPlacement } from '../launcher';
  */
 describe('resolveLauncherPlacement', () => {
   it('defaults to the right-edge tab with no arguments', () => {
-    expect(resolveLauncherPlacement()).toEqual({ variant: 'tab', side: 'right' });
+    expect(resolveLauncherPlacement()).toEqual({
+      variant: 'tab',
+      side: 'right',
+    });
   });
 
   it('an explicit legacy corner without a variant implies the bubble', () => {
