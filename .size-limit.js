@@ -97,25 +97,29 @@ export default [
     '25 kB',
   ),
 
-  // ── Solid bundle (≤ 12 kB gzip) ──────────────────────────────────────────
+  // ── Solid bundle (≤ 13 kB gzip) ──────────────────────────────────────────
   // Bumped from 5 kB → 12 kB when the Solid widget reached UX parity with
   // the React adapter (issue #113). The widget ships the chat-thread
   // panel: greeting + user/assistant bubbles, autogrow composer,
   // expected/actual disclosure, file attachment chips, AI toggle, staged-
   // status rows driven by the SDK's phase bus, retry CTA, and the panel
   // footer. The screenshot capture button (restored after the v1
-  // future-flag removal in PR #111) also lands here. Current sizes ESM
-  // ~10.6 / CJS ~10.9 kB; 12 kB leaves headroom for incremental UX work
-  // without dragging the package over the React adapter (25 kB).
+  // future-flag removal in PR #111) also lands here. Bumped 12 → 13 kB
+  // when the launcher redesign (PR #157: side-tab/bubble variants, compact
+  // icon-only mode, offset, shared `resolveLauncherPlacement`) landed on
+  // top of the restored screenshot button — the two features together
+  // pushed the CJS interop bundle to ~12.1 kB. Current sizes ESM ~11.7 /
+  // CJS ~12.1 kB; 13 kB leaves headroom for incremental UX work without
+  // dragging the package over the React adapter (25 kB).
   fileEntry(
     '@tatlacas/brevwick-solid (ESM)',
     'packages/solid/dist/index.js',
-    '12 kB',
+    '13 kB',
   ),
   fileEntry(
     '@tatlacas/brevwick-solid (CJS)',
     'packages/solid/dist/index.cjs',
-    '12 kB',
+    '13 kB',
   ),
 
   // ── Vue bundle (≤ 10 kB gzip eager) ──────────────────────────────────────

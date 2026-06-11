@@ -26,13 +26,33 @@ import type {
   SubmitError,
   SubmitResult,
 } from '@tatlacas/brevwick-sdk';
+import { resolveLauncherPlacement } from '@tatlacas/brevwick-sdk/launcher';
 import { BrevwickService, type FeedbackPhase } from '../brevwick.service';
 import { BREVWICK_ANGULAR_VERSION } from '../internal/version';
 
 /**
- * Pin corner for the FAB. Mirrors the React adapter's `FeedbackButtonProps.position`.
+ * Launcher presentation: `'tab'` (new default, vertical edge button) or
+ * `'bubble'` (legacy corner pill). Mirrors the React adapter.
  */
-export type BwFeedbackButtonPosition = 'bottom-right' | 'bottom-left';
+export type BwFeedbackButtonVariant = 'bubble' | 'tab';
+
+/**
+ * Launcher placement. `'right' | 'left'` are edge sides (tab); the legacy
+ * corners are the bubble's home — passing one WITHOUT an explicit `variant`
+ * opts into the bubble, preserving pre-2.x call sites. Mirrors React.
+ */
+export type BwFeedbackButtonPosition =
+  | 'right'
+  | 'left'
+  | 'bottom-right'
+  | 'bottom-left';
+
+/**
+ * The variant/position resolution table (`resolveLauncherPlacement`) is a
+ * pure, framework-agnostic function shared by every adapter, so it lives in
+ * `@tatlacas/brevwick-sdk/launcher` rather than being copied here. See the
+ * resolution semantics in that module (mirrored in SDD § 12).
+ */
 
 /**
  * Forced-palette choice. `'system'` defers to the OS-level
@@ -51,18 +71,14 @@ export type BwFeedbackButtonTheme = 'light' | 'dark' | 'system';
 const MAX_ATTACHMENTS = 5;
 
 /**
- * Maximum autogrow height of the composer textarea in pixels. Single source
- * of truth for both the JS effect (sets `style.height` against `scrollHeight`
- * bounded by this) and the CSS `max-height` rule.
+ * Max autogrow height of the composer textarea (px). Single source of
+ * truth for the JS effect and the CSS `max-height` rule.
  */
 const COMPOSER_MAX_HEIGHT_PX = 120;
 
 /**
- * Stagger between staged-status rows in milliseconds. Applied as
- * `style.animationDelay` per row (the rows mount with a CSS @keyframes
- * entrance, not a transition) so rows fade in sequentially even when
- * the underlying SDK phase events fire microseconds apart on a healthy
- * happy path. Honoured only when the user has not requested reduced motion.
+ * Per-row `animation-delay` stagger (ms) so the staged-status rows fade in
+ * sequentially; skipped under prefers-reduced-motion.
  */
 const STATUS_ROW_STAGGER_MS = 200;
 
@@ -81,10 +97,8 @@ interface Message {
   readonly issueSent?: boolean;
   readonly sentAt?: number;
   /**
-   * The exact, post-redaction payload the SDK POSTed for this message — set
-   * only when the host enabled `config.debug`. When present, the bubble
-   * renders a "copy raw payload" affordance so a developer can inspect
-   * everything that left the device (rings/context the widget never shows).
+   * Exact post-redaction payload the SDK POSTed — set only under
+   * `config.debug`; renders a "copy raw payload" affordance.
    */
   readonly rawPayload?: Record<string, unknown>;
 }
@@ -305,12 +319,25 @@ export class BwFocusOnInitDirective implements AfterViewInit {
       <button
         type="button"
         class="brw-root brw-fab"
-        [class.brw-fab-bl]="position === 'bottom-left'"
-        [class.brw-fab-br]="position !== 'bottom-left'"
+        [class.brw-fab--tab]="launcherVariant === 'tab'"
+        [class.brw-fab--bubble]="launcherVariant === 'bubble'"
+        [class.brw-fab-r]="
+          launcherVariant === 'tab' && launcherSide === 'right'
+        "
+        [class.brw-fab-l]="launcherVariant === 'tab' && launcherSide === 'left'"
+        [class.brw-fab-br]="
+          launcherVariant === 'bubble' && launcherSide === 'right'
+        "
+        [class.brw-fab-bl]="
+          launcherVariant === 'bubble' && launcherSide === 'left'
+        "
+        [class.brw-fab--compact]="compact"
         [attr.data-brevwick-skip]="''"
         [attr.data-brw-theme]="theme"
+        [attr.data-brw-variant]="launcherVariant"
+        [style.--brw-fab-tab-offset.px]="tabOffset"
         [disabled]="disabled || isSubmitting()"
-        aria-label="Open feedback form"
+        [attr.aria-label]="ariaLabel"
         (click)="toggle()"
       >
         <svg
@@ -325,7 +352,9 @@ export class BwFocusOnInitDirective implements AfterViewInit {
         >
           <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
         </svg>
-        {{ label }}
+        @if (!compact) {
+          <span class="brw-fab-label">{{ label }}</span>
+        }
       </button>
 
       @if (open()) {
@@ -334,8 +363,8 @@ export class BwFocusOnInitDirective implements AfterViewInit {
              occluding the page content the user is trying to screenshot. -->
         <div
           class="brw-root brw-panel"
-          [class.brw-panel-bl]="position === 'bottom-left'"
-          [class.brw-panel-br]="position !== 'bottom-left'"
+          [class.brw-panel-bl]="launcherSide === 'left'"
+          [class.brw-panel-br]="launcherSide !== 'left'"
           [class.brw-panel-hidden]="regionOpen()"
           role="dialog"
           aria-label="Send feedback"
@@ -972,14 +1001,10 @@ export class BwFocusOnInitDirective implements AfterViewInit {
           'Helvetica Neue', Arial, sans-serif;
         color: var(--brw-fg, var(--brw-fg-base));
       }
+      /* Shared launcher chrome — variant-independent. */
       .brw-fab {
         position: fixed;
         z-index: 2147483000;
-        bottom: 24px;
-        height: 48px;
-        min-width: 48px;
-        padding: 0 18px;
-        border-radius: 999px;
         border: 1px solid var(--brw-border, var(--brw-border-base));
         background: var(--brw-accent, var(--brw-accent-base));
         color: var(--brw-accent-fg, var(--brw-accent-fg-base));
@@ -990,24 +1015,90 @@ export class BwFocusOnInitDirective implements AfterViewInit {
         gap: 8px;
         cursor: pointer;
         box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+        /* Only transform animates; box-shadow intentionally static. */
         transition: transform 120ms ease-out;
-      }
-      .brw-fab:hover:not(:disabled) {
-        transform: translateY(-1px);
       }
       .brw-fab:disabled {
         cursor: not-allowed;
         opacity: 0.5;
       }
-      .brw-fab-br {
-        right: 24px;
-      }
-      .brw-fab-bl {
-        left: 24px;
+      .brw-fab:focus-visible {
+        outline: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+        outline-offset: 2px;
       }
       .brw-fab-icon {
         width: 18px;
         height: 18px;
+        flex-shrink: 0;
+      }
+      /* ── Bubble (legacy corner pill) ───────────────────────────────────── */
+      .brw-fab--bubble {
+        bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+        height: 48px;
+        min-width: 48px;
+        padding: 0 18px;
+        border-radius: 999px;
+      }
+      .brw-fab--bubble:hover:not(:disabled) {
+        transform: translateY(-1px);
+      }
+      .brw-fab-br {
+        right: calc(24px + env(safe-area-inset-right, 0px));
+      }
+      .brw-fab-bl {
+        left: calc(24px + env(safe-area-inset-left, 0px));
+      }
+      /* Compact bubble: 48px circle, icon only. */
+      .brw-fab--bubble.brw-fab--compact {
+        width: 48px;
+        min-width: 48px;
+        padding: 0;
+        justify-content: center;
+      }
+      /* ── Tab (NEW DEFAULT: vertical edge tab) ──────────────────────────── */
+      /* writing-mode flips the inline axis vertical: the flex row (icon,
+         label) stacks top→bottom and the label glyphs read top→bottom,
+         rotated 90° cw. The left tab adds \`rotate: 180deg\` (the standalone
+         property, NOT transform, so it composes with the hover translateX)
+         — flat edge stays against the viewport edge, radii mirror
+         automatically, and the label reads bottom→top, Userback-style. */
+      .brw-fab--tab {
+        top: calc(50% + var(--brw-fab-tab-offset, 0px));
+        transform: translateY(-50%);
+        writing-mode: vertical-rl;
+        min-height: 48px;
+        width: 40px;
+        padding: 16px 0;
+        justify-content: center;
+        /* Rounded on the page-facing side, flat against the edge (right-tab
+           orientation; the left tab's rotate mirrors it). */
+        border-radius: 10px 0 0 10px;
+      }
+      .brw-fab-r {
+        right: env(safe-area-inset-right, 0px);
+        /* flat edge: no hairline against the viewport */
+        border-right: none;
+      }
+      .brw-fab-l {
+        left: env(safe-area-inset-left, 0px);
+        /* pre-rotation right edge IS the viewport edge */
+        border-right: none;
+        rotate: 180deg;
+      }
+      /* Hover pulls the tab 2px out of the edge (translateY(-50%) must be
+         restated — transform is overwritten, not merged). For .brw-fab-l the
+         180° rotate flips -2px into +2px visually: also away from its edge. */
+      .brw-fab--tab:hover:not(:disabled) {
+        transform: translateY(-50%) translateX(-2px);
+      }
+      .brw-fab-label {
+        letter-spacing: 0.02em;
+      }
+      /* Compact tab: square-ish icon-only edge chip. */
+      .brw-fab--tab.brw-fab--compact {
+        width: 44px;
+        min-height: 44px;
+        padding: 0;
       }
       .brw-panel {
         position: fixed;
@@ -1725,13 +1816,34 @@ export class BwFocusOnInitDirective implements AfterViewInit {
   ],
 })
 export class BwFeedbackButtonComponent {
-  /** Corner the FAB pins to. Default `'bottom-right'`. */
-  @Input() position: BwFeedbackButtonPosition = 'bottom-right';
-  /** When true, the FAB renders as disabled and cannot open the panel. */
+  /**
+   * Launcher presentation. Default `'tab'` (new default). Intentionally no
+   * eager default — the corner-implies-bubble compat rule in
+   * `resolveLauncherPlacement` needs to see "unset".
+   */
+  @Input() variant?: BwFeedbackButtonVariant;
+  /**
+   * Launcher placement. Defaults: `'right'` (tab), `'bottom-right'`
+   * (bubble). A legacy corner without an explicit `variant` keeps the
+   * bubble; when both are set, `variant` wins and `position` contributes
+   * only its horizontal side.
+   */
+  @Input() position?: BwFeedbackButtonPosition;
+  /**
+   * Icon-only mode (circular bubble / square edge tab). The `label` is not
+   * rendered but becomes the `aria-label`. Default `false`.
+   */
+  @Input() compact = false;
+  /**
+   * Tab-only: vertical offset in px from the viewport's vertical center
+   * (positive = down). Ignored for the bubble. Default `0`.
+   */
+  @Input() offset = 0;
+  /** When true, the launcher renders as disabled and cannot open the panel. */
   @Input() disabled = false;
   /** When true, the component renders nothing. Useful for feature-flagging. */
   @Input() hidden = false;
-  /** FAB label. Default `'Feedback'`. */
+  /** Launcher label. Default `'Feedback'`. Hidden visually when `compact`. */
   @Input() label = 'Feedback';
   /**
    * Forced palette. `'system'` defers to the OS-level `prefers-color-scheme`
@@ -1745,6 +1857,38 @@ export class BwFeedbackButtonComponent {
    * failure). Mirrors React adapter's `onSubmit` prop.
    */
   @Output() submit = new EventEmitter<SubmitResult>();
+
+  // Launcher presentation. Plain getters (not signals): classic @Input
+  // fields re-derive every change-detection pass — cheap and OnPush-safe.
+
+  /** Resolved presentation: `'tab'` (new default) or `'bubble'` (legacy). */
+  protected get launcherVariant(): BwFeedbackButtonVariant {
+    return resolveLauncherPlacement(this.variant, this.position).variant;
+  }
+
+  /** Resolved horizontal side — also anchors the panel (`brw-panel-bl/br`). */
+  protected get launcherSide(): 'right' | 'left' {
+    return resolveLauncherPlacement(this.variant, this.position).side;
+  }
+
+  /**
+   * Compact removes the visible text, so `label` becomes the aria-label;
+   * non-compact keeps the established accessible name.
+   */
+  protected get ariaLabel(): string {
+    return this.compact ? this.label : 'Open feedback form';
+  }
+
+  /**
+   * Inline `--brw-fab-tab-offset` value — a positioning input, not part of
+   * the public `--brw-*` theming contract. Set only when it has an effect;
+   * `null` removes the binding entirely.
+   */
+  protected get tabOffset(): number | null {
+    return this.launcherVariant === 'tab' && this.offset !== 0
+      ? this.offset
+      : null;
+  }
 
   protected readonly version = BREVWICK_ANGULAR_VERSION;
   private static idSeq = 0;

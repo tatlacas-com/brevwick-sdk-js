@@ -64,9 +64,10 @@ else stays server-side and is `undefined` at runtime.
   network, route via stack push), the fourth opens the feedback FAB.
 - `Details` is a trivial second screen that exists so the route ring
   records `Home → Details → Home` transitions.
-- The floating <kbd>Feedback</kbd> button at the bottom-right opens a
-  modal, calls `useFeedback().submit({ description })`, and surfaces the
-  staged success / error states inline.
+- The vertical <kbd>Feedback</kbd> tab on the right edge (the launcher's
+  new default; pass `position="bottom-right"` for the legacy corner
+  bubble) opens a modal, calls `useFeedback().submit({ description })`,
+  and surfaces the staged success / error states inline.
 
 ## Why `@types/react@19` with React 18.2 runtime?
 

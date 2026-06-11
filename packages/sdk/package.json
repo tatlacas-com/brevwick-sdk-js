@@ -17,6 +17,21 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js",
       "require": "./dist/testing.cjs"
+    },
+    "./launcher": {
+      "types": "./dist/launcher.d.ts",
+      "import": "./dist/launcher.js",
+      "require": "./dist/launcher.cjs"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "testing": [
+        "./dist/testing.d.ts"
+      ],
+      "launcher": [
+        "./dist/launcher.d.ts"
+      ]
     }
   },
   "files": [

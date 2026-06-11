@@ -270,7 +270,7 @@ Top-level provider. Creates a single SDK instance, installs rings on mount, unin
 
 ## `FeedbackButton`
 
-A floating action button + chat-style feedback dialog. Opens to a composer with:
+A feedback launcher + chat-style feedback dialog. The launcher renders as a vertical tab flush against the right viewport edge by default, or as the classic floating corner bubble via `variant="bubble"`. Opens to a composer with:
 
 - **Textarea** with Enter-to-send (Shift+Enter for newline).
 - **Screenshot** capture with region-select overlay (drag a rectangle, or "Capture full page").
@@ -280,20 +280,33 @@ A floating action button + chat-style feedback dialog. Opens to a composer with:
 - **Success / error** inline states with "Send another" reset.
 
 ```tsx
-<FeedbackButton position="bottom-right" label="Report a bug" />
+// Default: vertical tab on the right edge, vertically centered.
+<FeedbackButton label="Report a bug" />
+
+// Legacy floating corner bubble.
+<FeedbackButton variant="bubble" position="bottom-right" label="Report a bug" />
+
+// Icon-only tab, nudged 120px above the vertical center. The string
+// `label` becomes the launcher's aria-label.
+<FeedbackButton compact offset={-120} label="Report a bug" />
 ```
+
+> **Migration:** the default presentation changed from the corner bubble to the right-edge tab. Pass `position="bottom-right"` (or your previous corner) to keep the old look — a legacy corner `position` without an explicit `variant` still renders the bubble, so existing call sites are unaffected.
 
 ### Props
 
-| Prop        | Type                              | Default          | Description                                                                        |
-| ----------- | --------------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
-| `position`  | `'bottom-right' \| 'bottom-left'` | `'bottom-right'` | Which corner the FAB pins to.                                                      |
-| `disabled`  | `boolean`                         | `false`          | FAB renders as disabled and cannot open the dialog.                                |
-| `hidden`    | `boolean`                         | `false`          | Component renders nothing — useful for feature flags.                              |
-| `className` | `string`                          | —                | Appended to the FAB and dialog root for styling overrides.                         |
-| `label`     | `ReactNode`                       | `'Feedback'`     | FAB label (can be a string or any React node).                                     |
-| `theme`     | `'system' \| 'light' \| 'dark'`   | `'system'`       | Force a palette regardless of OS `prefers-color-scheme`.                           |
-| `onSubmit`  | `(result: SubmitResult) => void`  | —                | Fired after every submit (success or failure). Use for analytics or custom toasts. |
+| Prop        | Type                                                   | Default                                     | Description                                                                                                                                                                          |
+| ----------- | ------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `variant`   | `'tab' \| 'bubble'`                                    | `'tab'`                                     | Launcher presentation — vertical edge tab (the new default) or the legacy floating corner pill. A legacy corner `position` without an explicit `variant` implies `'bubble'`.         |
+| `position`  | `'right' \| 'left' \| 'bottom-right' \| 'bottom-left'` | `'right'` (tab) / `'bottom-right'` (bubble) | Where the launcher sits. Edge sides are the tab's home, corners the bubble's. When `variant` and `position` disagree, `variant` wins and `position` contributes its horizontal side. |
+| `compact`   | `boolean`                                              | `false`                                     | Icon-only launcher (circular bubble / square edge tab). The `label` is not rendered but (when a string) becomes the launcher's `aria-label`.                                         |
+| `offset`    | `number`                                               | `0`                                         | Tab only: vertical offset in px from the viewport's vertical center. Positive moves the tab down, negative up. Ignored for the bubble.                                               |
+| `disabled`  | `boolean`                                              | `false`                                     | Launcher renders as disabled and cannot open the dialog.                                                                                                                             |
+| `hidden`    | `boolean`                                              | `false`                                     | Component renders nothing — useful for feature flags.                                                                                                                                |
+| `className` | `string`                                               | —                                           | Appended to the launcher and dialog root for styling overrides.                                                                                                                      |
+| `label`     | `ReactNode`                                            | `'Feedback'`                                | Launcher label (can be a string or any React node). Hidden visually when `compact`.                                                                                                  |
+| `theme`     | `'system' \| 'light' \| 'dark'`                        | `'system'`                                  | Force a palette regardless of OS `prefers-color-scheme`.                                                                                                                             |
+| `onSubmit`  | `(result: SubmitResult) => void`                       | —                                           | Fired after every submit (success or failure). Use for analytics or custom toasts.                                                                                                   |
 
 ### Theming via CSS custom properties
 

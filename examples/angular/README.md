@@ -10,7 +10,7 @@ pnpm --filter @tatlacas/brevwick-sdk --filter @tatlacas/brevwick-angular build
 pnpm --filter brevwick-example-angular start
 ```
 
-Open http://localhost:4200. The Feedback FAB pins to the bottom-right.
+Open http://localhost:4200. The Feedback launcher renders as a vertical tab on the right edge (pass `position="bottom-right"` for the legacy corner bubble).
 
 ## Configure your project key
 

@@ -19,6 +19,7 @@ import type {
   SubmitError,
   SubmitResult,
 } from '@tatlacas/brevwick-sdk';
+import { resolveLauncherPlacement } from '@tatlacas/brevwick-sdk/launcher';
 import { useFeedback, type FeedbackPhase } from '../composables/use-feedback';
 import {
   BREVWICK_CSS,
@@ -34,6 +35,30 @@ import { BREVWICK_INJECTION_KEY } from '../plugin';
  * behaviour); `'light'` / `'dark'` override it regardless of the OS setting.
  */
 export type BrevwickTheme = 'light' | 'dark' | 'system';
+
+/** Launcher presentation. `'tab'` (NEW DEFAULT) is a vertical button flush
+ *  against a viewport edge; `'bubble'` is the legacy floating corner pill. */
+export type FeedbackButtonVariant = 'bubble' | 'tab';
+
+/**
+ * Launcher placement.
+ * - `'right' | 'left'`        — edge sides (natural home of the tab).
+ * - `'bottom-right' | 'bottom-left'` — legacy corners (natural home of the
+ *   bubble). Passing one of these WITHOUT an explicit `variant` opts into
+ *   the bubble, preserving pre-2.x call sites byte-for-byte.
+ */
+export type FeedbackButtonPosition =
+  | 'right'
+  | 'left'
+  | 'bottom-right'
+  | 'bottom-left';
+
+/**
+ * The variant/position resolution table (`resolveLauncherPlacement`) is a
+ * pure, framework-agnostic function shared by every adapter, so it lives in
+ * `@tatlacas/brevwick-sdk/launcher` rather than being copied here. See the
+ * resolution semantics in that module (mirrored in SDD § 12).
+ */
 
 /**
  * Stable snapshot of one attachment that rode along with a submit. We store
@@ -205,12 +230,49 @@ function formatRelativeTime(ms: number | undefined): string {
 export const FeedbackButton = defineComponent({
   name: 'BrevwickFeedbackButton',
   props: {
-    position: {
-      type: String as PropType<'bottom-right' | 'bottom-left'>,
-      default: 'bottom-right',
+    /**
+     * Launcher presentation. Default `'tab'` — **this changed in vNEXT**:
+     * the zero-config launcher is now a vertical tab on the right viewport
+     * edge. Pass `variant="bubble"` (or a legacy corner `position`) to keep
+     * the floating corner pill.
+     *
+     * No prop-layer default on purpose — `resolveLauncherPlacement` must
+     * see "unset" so the corner-implies-bubble compat rule can apply.
+     */
+    variant: {
+      type: String as PropType<FeedbackButtonVariant>,
+      default: undefined,
     },
+    /**
+     * Where the launcher sits. Defaults: `'right'` for the tab,
+     * `'bottom-right'` for the bubble.
+     *
+     * Compatibility: passing a legacy corner (`'bottom-right'` /
+     * `'bottom-left'`) without an explicit `variant` renders the BUBBLE at
+     * that corner — existing call sites keep their pre-vNEXT presentation.
+     * When `variant` and `position` disagree (e.g. `variant="tab"` +
+     * `position="bottom-left"`), `variant` wins and `position` contributes
+     * only its horizontal side.
+     */
+    position: {
+      type: String as PropType<FeedbackButtonPosition>,
+      default: undefined,
+    },
+    /**
+     * Icon-only mode. Bubble → 48px circular icon button; tab → compact
+     * square edge tab with just the icon. The `label` is not rendered but
+     * becomes the launcher's `aria-label`. Default `false`.
+     */
+    compact: { type: Boolean, default: false },
+    /**
+     * Tab-only: vertical offset in px from the vertical center of the
+     * viewport. Positive moves the tab down, negative up. Ignored for the
+     * bubble. Default `0`.
+     */
+    offset: { type: Number, default: 0 },
     disabled: { type: Boolean, default: false },
     hidden: { type: Boolean, default: false },
+    /** Launcher label. Default `'Feedback'`. Hidden visually when `compact`. */
     label: { type: String, default: 'Feedback' },
     theme: { type: String as PropType<BrevwickTheme>, default: 'system' },
     className: { type: String, default: '' },
@@ -367,14 +429,38 @@ export const FeedbackButton = defineComponent({
         files.value.length > 0,
     );
 
-    const fabPosClass = computed(() =>
-      props.position === 'bottom-left' ? 'brw-fab-bl' : 'brw-fab-br',
-    );
-    const panelPosClass = computed(() =>
-      props.position === 'bottom-left' ? 'brw-panel-bl' : 'brw-panel-br',
-    );
     const rootClassName = computed(() =>
       ['brw-root', props.className].filter(Boolean).join(' '),
+    );
+    const placement = computed(() =>
+      resolveLauncherPlacement(props.variant, props.position),
+    );
+    const fabClasses = computed(() => {
+      const { variant: v, side } = placement.value;
+      return [
+        rootClassName.value,
+        'brw-fab',
+        v === 'tab' ? 'brw-fab--tab' : 'brw-fab--bubble',
+        v === 'tab'
+          ? side === 'left'
+            ? 'brw-fab-l'
+            : 'brw-fab-r'
+          : side === 'left'
+            ? 'brw-fab-bl'
+            : 'brw-fab-br',
+        props.compact ? 'brw-fab--compact' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+    });
+    const panelPosClass = computed(() =>
+      placement.value.side === 'left' ? 'brw-panel-bl' : 'brw-panel-br',
+    );
+    // Non-compact keeps the established accessible name (the visible label
+    // still supplements it). Compact removes the visible text, so the
+    // `label` string becomes the aria-label.
+    const fabAriaLabel = computed(() =>
+      props.compact ? props.label : 'Open feedback form',
     );
 
     function maybeFetchConfig(): void {
@@ -822,18 +908,32 @@ export const FeedbackButton = defineComponent({
     };
 
     function renderFab(): VNode {
+      const { variant: v } = placement.value;
       return h(
         'button',
         {
           type: 'button',
           'data-brevwick-skip': '',
           'data-brw-theme': props.theme,
-          class: [rootClassName.value, 'brw-fab', fabPosClass.value],
+          'data-brw-variant': v,
+          class: fabClasses.value,
           disabled: props.disabled,
-          'aria-label': 'Open feedback form',
+          'aria-label': fabAriaLabel.value,
+          // `--brw-fab-tab-offset` is a positioning input (like the inline
+          // animation-delay on status rows), not part of the public
+          // --brw-* theming contract — set only when it has an effect.
+          style:
+            v === 'tab' && props.offset !== 0
+              ? { '--brw-fab-tab-offset': `${props.offset}px` }
+              : undefined,
           onClick: handleOpen,
         },
-        [renderChatIcon(), props.label],
+        [
+          renderChatIcon(),
+          props.compact
+            ? null
+            : h('span', { class: 'brw-fab-label' }, props.label),
+        ],
       );
     }
 
