@@ -1,9 +1,14 @@
 /**
- * Launcher presentation types + placement resolution for the Svelte
- * FeedbackButton. Mirrors the React adapter byte-for-byte (see
- * packages/react/src/feedback-button.tsx) so every adapter resolves the
- * variant/position matrix identically.
+ * Launcher presentation types for the Svelte FeedbackButton.
+ *
+ * The placement RESOLUTION (`resolveLauncherPlacement`) is a pure,
+ * framework-agnostic function shared by every adapter, so it is hoisted into
+ * `@tatlacas/brevwick-sdk/launcher` (CLAUDE.md: "shared utilities go in
+ * core") and re-exported here for the component. Only the public prop TYPES
+ * stay adapter-local so this package can carry its own JSDoc.
  */
+
+export { resolveLauncherPlacement } from '@tatlacas/brevwick-sdk/launcher';
 
 /** Launcher presentation. `'tab'` (NEW DEFAULT) is a vertical button flush
  *  against a viewport edge; `'bubble'` is the legacy floating corner pill. */
@@ -21,30 +26,3 @@ export type FeedbackButtonPosition =
   | 'left'
   | 'bottom-right'
   | 'bottom-left';
-
-/**
- * Resolved launcher placement — the single source of truth shared by the
- * FAB class derivation and the panel anchor. See the resolution table in
- * the design spec (mirrored in every adapter):
- *
- * - Explicit `variant` always wins; `position` then only contributes its
- *   horizontal side (a corner's vertical component is ignored for the tab
- *   — tabs are always vertically centered, ± `offset`).
- * - With `variant` unset, an explicit legacy corner implies the bubble so
- *   pre-existing call sites keep their corner pill; everything else is
- *   the tab (the new default), on the right edge unless `position` says
- *   otherwise.
- *
- * Every combination is total — no throws, no dead states.
- */
-export function resolveLauncherPlacement(
-  variant?: FeedbackButtonVariant,
-  position?: FeedbackButtonPosition,
-): { variant: FeedbackButtonVariant; side: 'right' | 'left' } {
-  const side: 'right' | 'left' =
-    position === 'left' || position === 'bottom-left' ? 'left' : 'right';
-  if (variant !== undefined) return { variant, side };
-  // Legacy compat: an explicit corner without a variant keeps the bubble.
-  const isCorner = position === 'bottom-right' || position === 'bottom-left';
-  return { variant: isCorner ? 'bubble' : 'tab', side };
-}

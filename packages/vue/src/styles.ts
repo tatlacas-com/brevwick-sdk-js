@@ -47,17 +47,21 @@ export const COMPOSER_MAX_HEIGHT_PX = 120;
 //   48px circle). Only transform animates; box-shadow intentionally static.
 // - `.brw-fab--tab` (NEW DEFAULT): `writing-mode: vertical-rl` flips the
 //   inline axis vertical — the flex row (icon, label) stacks top→bottom and
-//   the label glyphs read top→bottom, rotated 90° cw. The left tab adds
-//   `rotate: 180deg` (the standalone property, NOT transform, so it composes
-//   with the hover translateX) — flat edge stays against the viewport edge,
-//   radii mirror automatically, and the label reads bottom→top,
-//   Userback-style. Rounded on the page-facing side, flat against the edge
-//   (right-tab orientation; the left tab's rotate mirrors it); `border-right:
-//   none` removes the hairline on the flat edge (for `.brw-fab-l` the
-//   pre-rotation right edge IS the viewport edge).
-// - Tab hover pulls the tab 2px out of the edge (`translateY(-50%)` must be
-//   restated — transform is overwritten, not merged). For `.brw-fab-l` the
-//   180° rotate flips -2px into +2px visually: also away from its edge.
+//   the label glyphs read top→bottom, rotated 90° cw. The left tab mirrors
+//   the flat edge / radii by rotating 180° via the `--brw-fab-tab-flip`
+//   custom property composed INSIDE `transform` (after the centering
+//   translateY) — flat edge stays against the viewport edge, radii mirror,
+//   and the label reads bottom→top, Userback-style. Composing the rotate in
+//   `transform` (not the standalone `rotate` property, which applies AFTER
+//   `transform` per CSS Transforms L2) keeps `translateY(-50%)` the
+//   outermost transform, so it never inverts into `+50%` and the left tab
+//   stays vertically centred. `border-right: none` removes the hairline on
+//   the flat edge (for `.brw-fab-l` the pre-flip right edge IS the
+//   viewport edge).
+// - Tab hover pulls the tab 2px out of the edge (the whole transform is
+//   restated — transform is overwritten, not merged). translateX(-2px) is
+//   innermost, so `.brw-fab-l`'s 180° flip turns it into +2px visually:
+//   also away from its edge.
 // - Compact tab: square-ish icon-only edge chip.
 // - `--brw-fab-tab-offset` is set inline by the adapter only when
 //   `offset !== 0`; it is a positioning input, not part of the public
@@ -213,7 +217,7 @@ export const BREVWICK_CSS =
 }
 .brw-fab--tab {
   top: calc(50% + var(--brw-fab-tab-offset, 0px));
-  transform: translateY(-50%);
+  transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg));
   writing-mode: vertical-rl;
   min-height: 48px;
   width: 40px;
@@ -228,10 +232,10 @@ export const BREVWICK_CSS =
 .brw-fab-l {
   left: env(safe-area-inset-left, 0px);
   border-right: none;
-  rotate: 180deg;
+  --brw-fab-tab-flip: 180deg;
 }
 .brw-fab--tab:hover:not(:disabled) {
-  transform: translateY(-50%) translateX(-2px);
+  transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg)) translateX(-2px);
 }
 .brw-fab-label { letter-spacing: 0.02em; }
 .brw-fab--tab.brw-fab--compact {

@@ -24,6 +24,7 @@ import type {
   SubmitError,
   SubmitResult,
 } from '@tatlacas/brevwick-sdk';
+import { resolveLauncherPlacement } from '@tatlacas/brevwick-sdk/launcher';
 import { BrevwickService, type FeedbackPhase } from '../brevwick.service';
 import { BREVWICK_ANGULAR_VERSION } from '../internal/version';
 
@@ -45,23 +46,11 @@ export type BwFeedbackButtonPosition =
   | 'bottom-left';
 
 /**
- * Resolved launcher placement — single source of truth shared by the FAB
- * class derivation and the panel anchor (mirrored in every adapter).
- * Explicit `variant` wins and `position` then only contributes its
- * horizontal side; with `variant` unset, a legacy corner implies the
- * bubble, everything else is the tab. Total — no throws, no dead states.
+ * The variant/position resolution table (`resolveLauncherPlacement`) is a
+ * pure, framework-agnostic function shared by every adapter, so it lives in
+ * `@tatlacas/brevwick-sdk/launcher` rather than being copied here. See the
+ * resolution semantics in that module (mirrored in SDD § 12).
  */
-function resolveLauncherPlacement(
-  variant?: BwFeedbackButtonVariant,
-  position?: BwFeedbackButtonPosition,
-): { variant: BwFeedbackButtonVariant; side: 'right' | 'left' } {
-  const side: 'right' | 'left' =
-    position === 'left' || position === 'bottom-left' ? 'left' : 'right';
-  if (variant !== undefined) return { variant, side };
-  // Legacy compat: an explicit corner without a variant keeps the bubble.
-  const isCorner = position === 'bottom-right' || position === 'bottom-left';
-  return { variant: isCorner ? 'bubble' : 'tab', side };
-}
 
 /**
  * Forced-palette choice. `'system'` defers to the OS-level

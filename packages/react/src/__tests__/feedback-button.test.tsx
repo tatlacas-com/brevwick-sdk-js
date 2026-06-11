@@ -1215,6 +1215,32 @@ describe('<FeedbackButton> — launcher presentation (variant + position)', () =
     );
   });
 
+  // Regression: the left-edge tab must stay vertically centred. The earlier
+  // shape used the standalone `rotate: 180deg` property on `.brw-fab-l`,
+  // which CSS Transforms L2 applies AFTER the `transform` property — flipping
+  // the centering `translateY(-50%)` into `+50%` and dropping the left tab a
+  // full tab-height below centre. jsdom cannot compute composed transforms,
+  // so we assert the stylesheet shape that keeps the fix:
+  //   - no standalone `rotate:` declaration (the inverting form), and
+  //   - the 180° flip composed INSIDE `transform`, AFTER `translateY(-50%)`,
+  //     via the `--brw-fab-tab-flip` custom property set on `.brw-fab-l`.
+  it('left-edge tab composes its 180° flip inside transform so centering survives', () => {
+    // The inverting standalone `rotate` property must be gone everywhere.
+    expect(BREVWICK_CSS).not.toMatch(/rotate:\s*180deg/);
+    // translateY(-50%) stays the outermost transform; the flip follows it.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-fab--tab\s*\{[^}]*transform:\s*translateY\(-50%\)\s*rotate\(var\(--brw-fab-tab-flip/,
+    );
+    // The left tab drives the flip purely through the custom property.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-fab-l\s*\{[^}]*--brw-fab-tab-flip:\s*180deg/,
+    );
+    // Hover keeps translateX innermost so the flip turns -2px into +2px.
+    expect(BREVWICK_CSS).toMatch(
+      /\.brw-fab--tab:hover[^{]*\{[^}]*transform:\s*translateY\(-50%\)\s*rotate\(var\(--brw-fab-tab-flip[^)]*\)\)\s*translateX\(-2px\)/,
+    );
+  });
+
   it('vitest-axe is clean on a tab-variant launcher', async () => {
     mount();
     const results = await axe(getFab());

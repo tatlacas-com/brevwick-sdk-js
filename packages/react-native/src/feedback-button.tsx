@@ -22,6 +22,7 @@ import {
   resolvePalette,
   type BrevwickTheme,
 } from './styles';
+import { resolveLauncherPlacement as resolveBasePlacement } from '@tatlacas/brevwick-sdk/launcher';
 
 /** Launcher presentation. `'tab'` (NEW DEFAULT) is a vertical button flush
  *  against an edge of the absolute-positioned host view; `'bubble'` is the
@@ -55,18 +56,17 @@ export type FeedbackButtonPosition =
   | { bottom?: number; right?: number; left?: number };
 
 /**
- * Resolved launcher placement — the single source of truth shared by the
- * FAB style derivation. See the resolution table in the design spec
- * (mirrored in every adapter):
+ * RN superset of the shared placement resolver. The named-string matrix is
+ * the framework-agnostic `resolveLauncherPlacement` in
+ * `@tatlacas/brevwick-sdk/launcher` (one home for the logic, per CLAUDE.md).
+ * This wrapper only adds the RN-only `{ bottom?, right?, left? }` offset
+ * object — a platform safe-area/tab-bar inset with no DOM analogue — then
+ * delegates the named-string cases to core:
  *
- * - Explicit `variant` always wins; `position` then only contributes its
- *   horizontal side (a corner's vertical component — or an offset
- *   object's pixel values — is ignored for the tab, which is always
- *   vertically centered, ± `offset`).
- * - With `variant` unset, an explicit legacy corner (or the RN-only
- *   offset-object form) implies the bubble so pre-existing call sites
- *   keep their corner pill; everything else is the tab (the new
- *   default), on the right edge unless `position` says otherwise.
+ * - Object form: `left` set without `right` → left edge, otherwise right;
+ *   its pixel values apply to the bubble only. Like a legacy corner, an
+ *   offset object without an explicit `variant` implies the bubble.
+ * - Everything else is resolved by the shared core function.
  *
  * Every combination is total — no throws, no dead states.
  */
@@ -74,22 +74,15 @@ function resolveLauncherPlacement(
   variant?: FeedbackButtonVariant,
   position?: FeedbackButtonPosition,
 ): { variant: FeedbackButtonVariant; side: 'right' | 'left' } {
-  const side: 'right' | 'left' =
-    position === 'left' ||
-    position === 'bottom-left' ||
-    (typeof position === 'object' &&
-      position.left !== undefined &&
-      position.right === undefined)
-      ? 'left'
-      : 'right';
-  if (variant !== undefined) return { variant, side };
-  // Legacy compat: an explicit corner (or offset object) without a
-  // variant keeps the bubble.
-  const impliesBubble =
-    position === 'bottom-right' ||
-    position === 'bottom-left' ||
-    typeof position === 'object';
-  return { variant: impliesBubble ? 'bubble' : 'tab', side };
+  if (typeof position === 'object') {
+    const side: 'right' | 'left' =
+      position.left !== undefined && position.right === undefined
+        ? 'left'
+        : 'right';
+    // An offset object without a variant keeps the bubble (like a corner).
+    return { variant: variant ?? 'bubble', side };
+  }
+  return resolveBasePlacement(variant, position);
 }
 
 /**

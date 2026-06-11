@@ -1417,4 +1417,26 @@ describe('<FeedbackButton> — launcher presentation (variant + position)', () =
       /\.brw-svelte-fab\.brw-fab--bubble\s*\{[^}]*border-radius:\s*999px/,
     );
   });
+
+  // Regression: the left-edge tab must stay vertically centred. The standalone
+  // `rotate: 180deg` property on `.brw-fab-l` is applied AFTER `transform`
+  // (CSS Transforms L2), flipping the centering `translateY(-50%)` into
+  // `+50%` and dropping the tab a full tab-height below centre. happy-dom
+  // cannot compute composed transforms, so we assert the corrected SFC shape.
+  it('left-edge tab composes its 180° flip inside transform so centering survives', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src', 'lib', 'components', 'FeedbackButton.svelte'),
+      'utf8',
+    );
+    expect(source).not.toMatch(/rotate:\s*180deg/);
+    expect(source).toMatch(
+      /\.brw-svelte-fab\.brw-fab--tab\s*\{[^}]*transform:\s*translateY\(-50%\)\s*rotate\(var\(--brw-fab-tab-flip/,
+    );
+    expect(source).toMatch(
+      /\.brw-svelte-fab\.brw-fab-l\s*\{[^}]*--brw-fab-tab-flip:\s*180deg/,
+    );
+    expect(source).toMatch(
+      /\.brw-svelte-fab\.brw-fab--tab:hover[^{]*\{[^}]*transform:\s*translateY\(-50%\)\s*rotate\(var\(--brw-fab-tab-flip[^)]*\)\)\s*translateX\(-2px\)/,
+    );
+  });
 });

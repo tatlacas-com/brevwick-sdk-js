@@ -1071,10 +1071,13 @@
     flex-shrink: 0;
   }
 
-  /* Bubble — legacy corner pill. */
+  /* Bubble — legacy corner pill. Fixed 48px height + 48px compact circle
+     to stay a visual twin of the react/solid/vue/RN bubble. */
   .brw-svelte-fab.brw-fab--bubble {
     bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-    padding: 10px 16px;
+    height: 48px;
+    min-width: 48px;
+    padding: 0 18px;
     border-radius: 999px;
   }
   .brw-svelte-fab.brw-fab--bubble:hover:not(:disabled) {
@@ -1087,19 +1090,22 @@
     left: calc(24px + env(safe-area-inset-left, 0px));
   }
   .brw-svelte-fab.brw-fab--bubble.brw-fab--compact {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     padding: 0;
     justify-content: center;
   }
 
   /* Tab — vertical edge tab, the new default. writing-mode stacks the
-     icon + label vertically; the left tab adds `rotate: 180deg` (the
-     standalone property, NOT transform, so it composes with the hover
-     translateX) to mirror the flat edge and radii automatically. */
+     icon + label vertically; the left tab mirrors the flat edge and radii
+     by rotating 180° composed INSIDE `transform` (after the centering
+     translateY) via `--brw-fab-tab-flip`. Composing in `transform` (not the
+     standalone `rotate` property, which applies AFTER `transform` per CSS
+     Transforms L2) keeps `translateY(-50%)` outermost, so it never inverts
+     into `+50%` and the left tab stays vertically centred. */
   .brw-svelte-fab.brw-fab--tab {
     top: calc(50% + var(--brw-fab-tab-offset, 0px));
-    transform: translateY(-50%);
+    transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg));
     writing-mode: vertical-rl;
     min-height: 48px;
     width: 40px;
@@ -1114,13 +1120,14 @@
   }
   .brw-svelte-fab.brw-fab-l {
     left: env(safe-area-inset-left, 0px);
-    border-right: none; /* pre-rotation right edge IS the viewport edge */
-    rotate: 180deg;
+    border-right: none; /* pre-flip right edge IS the viewport edge */
+    --brw-fab-tab-flip: 180deg;
   }
-  /* Hover pulls the tab 2px out of its edge (the left tab's rotate flips
-     the sign); translateY(-50%) must be restated, transform overwrites. */
+  /* Hover pulls the tab 2px out of its edge (the whole transform is
+     restated — transform overwrites). translateX(-2px) is innermost, so
+     the left tab's 180° flip turns it into +2px visually. */
   .brw-svelte-fab.brw-fab--tab:hover:not(:disabled) {
-    transform: translateY(-50%) translateX(-2px);
+    transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg)) translateX(-2px);
   }
   .brw-svelte-fab .brw-fab-label {
     letter-spacing: 0.02em;
