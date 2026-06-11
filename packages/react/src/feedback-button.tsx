@@ -10,6 +10,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
@@ -94,19 +95,93 @@ const ASSISTANT_RECEIPT_TEXT = 'Thanks — your issue is on its way.';
  */
 export type BrevwickTheme = 'light' | 'dark' | 'system';
 
+/** Launcher presentation. `'tab'` (NEW DEFAULT) is a vertical button flush
+ *  against a viewport edge; `'bubble'` is the legacy floating corner pill. */
+export type FeedbackButtonVariant = 'bubble' | 'tab';
+
+/**
+ * Launcher placement.
+ * - `'right' | 'left'`        — edge sides (natural home of the tab).
+ * - `'bottom-right' | 'bottom-left'` — legacy corners (natural home of the
+ *   bubble). Passing one of these WITHOUT an explicit `variant` opts into
+ *   the bubble, preserving pre-2.x call sites byte-for-byte.
+ */
+export type FeedbackButtonPosition =
+  | 'right'
+  | 'left'
+  | 'bottom-right'
+  | 'bottom-left';
+
+/**
+ * Resolved launcher placement — the single source of truth shared by the
+ * FAB class derivation and the panel anchor. See the resolution table in
+ * the design spec (mirrored in every adapter):
+ *
+ * - Explicit `variant` always wins; `position` then only contributes its
+ *   horizontal side (a corner's vertical component is ignored for the tab
+ *   — tabs are always vertically centered, ± `offset`).
+ * - With `variant` unset, an explicit legacy corner implies the bubble so
+ *   pre-existing call sites keep their corner pill; everything else is
+ *   the tab (the new default), on the right edge unless `position` says
+ *   otherwise.
+ *
+ * Every combination is total — no throws, no dead states.
+ */
+function resolveLauncherPlacement(
+  variant?: FeedbackButtonVariant,
+  position?: FeedbackButtonPosition,
+): { variant: FeedbackButtonVariant; side: 'right' | 'left' } {
+  const side: 'right' | 'left' =
+    position === 'left' || position === 'bottom-left' ? 'left' : 'right';
+  if (variant !== undefined) return { variant, side };
+  // Legacy compat: an explicit corner without a variant keeps the bubble.
+  const isCorner = position === 'bottom-right' || position === 'bottom-left';
+  return { variant: isCorner ? 'bubble' : 'tab', side };
+}
+
 /**
  * Props for {@link FeedbackButton}. See SDD § 12 for the React contract.
  */
 export interface FeedbackButtonProps {
-  /** Corner the FAB pins to. Default `'bottom-right'`. */
-  position?: 'bottom-right' | 'bottom-left';
-  /** When true, the FAB renders as disabled and cannot open the dialog. */
+  /**
+   * Launcher presentation. Default `'tab'` — **this changed in vNEXT**:
+   * the zero-config launcher is now a vertical tab on the right viewport
+   * edge. Pass `variant="bubble"` (or a legacy corner `position`) to keep
+   * the floating corner pill.
+   */
+  variant?: FeedbackButtonVariant;
+  /**
+   * Where the launcher sits. Defaults: `'right'` for the tab,
+   * `'bottom-right'` for the bubble.
+   *
+   * Compatibility: passing a legacy corner (`'bottom-right'` /
+   * `'bottom-left'`) without an explicit `variant` renders the BUBBLE at
+   * that corner — existing call sites keep their pre-vNEXT presentation.
+   * When `variant` and `position` disagree (e.g. `variant="tab"` +
+   * `position="bottom-left"`), `variant` wins and `position` contributes
+   * only its horizontal side.
+   */
+  position?: FeedbackButtonPosition;
+  /**
+   * Icon-only mode. Bubble → 48px circular icon button; tab → compact
+   * square edge tab with just the icon. The `label` is not rendered but
+   * (when it is a string) becomes the launcher's `aria-label`. Default
+   * `false`.
+   */
+  compact?: boolean;
+  /**
+   * Tab-only: vertical offset in px from the vertical center of the
+   * viewport. Positive moves the tab down, negative up. Ignored for the
+   * bubble. Default `0`.
+   */
+  offset?: number;
+  /** When true, the launcher renders as disabled and cannot open the dialog. */
   disabled?: boolean;
   /** When true, the component renders nothing. Useful for feature-flagging. */
   hidden?: boolean;
-  /** Additional class appended to the FAB and dialog root for styling overrides. */
+  /** Additional class appended to the launcher and dialog root for styling overrides. */
   className?: string;
-  /** FAB label. Default `'Feedback'`. */
+  /** Launcher label. Default `'Feedback'`. Hidden visually when `compact`. */
   label?: ReactNode;
   /**
    * Force a palette regardless of the OS `prefers-color-scheme` setting.
@@ -248,7 +323,10 @@ interface FileAttachment {
  * @see SDD § 12 for the React contract.
  */
 export function FeedbackButton({
-  position = 'bottom-right',
+  variant,
+  position,
+  compact = false,
+  offset = 0,
   disabled = false,
   hidden = false,
   className,
@@ -546,10 +624,33 @@ export function FeedbackButton({
 
   if (hidden) return null;
 
-  const fabPosClass = position === 'bottom-left' ? 'brw-fab-bl' : 'brw-fab-br';
-  const panelPosClass =
-    position === 'bottom-left' ? 'brw-panel-bl' : 'brw-panel-br';
   const rootClassName = ['brw-root', className].filter(Boolean).join(' ');
+  const { variant: v, side } = resolveLauncherPlacement(variant, position);
+  const fabClasses = [
+    rootClassName,
+    'brw-fab',
+    v === 'tab' ? 'brw-fab--tab' : 'brw-fab--bubble',
+    v === 'tab'
+      ? side === 'left'
+        ? 'brw-fab-l'
+        : 'brw-fab-r'
+      : side === 'left'
+        ? 'brw-fab-bl'
+        : 'brw-fab-br',
+    compact ? 'brw-fab--compact' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const panelPosClass = side === 'left' ? 'brw-panel-bl' : 'brw-panel-br';
+  // Non-compact keeps the established accessible name (the visible label
+  // still supplements it). Compact removes the visible text, so the string
+  // `label` becomes the aria-label; a non-string ReactNode label falls
+  // back to 'Feedback'.
+  const ariaLabel = compact
+    ? typeof label === 'string'
+      ? label
+      : 'Feedback'
+    : 'Open feedback form';
 
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
@@ -558,12 +659,21 @@ export function FeedbackButton({
           type="button"
           data-brevwick-skip=""
           data-brw-theme={theme}
-          className={`${rootClassName} brw-fab ${fabPosClass}`}
+          data-brw-variant={v}
+          className={fabClasses}
           disabled={disabled}
-          aria-label="Open feedback form"
+          aria-label={ariaLabel}
+          /* `--brw-fab-tab-offset` is a positioning input (like the inline
+             animation-delay on status rows), not part of the public
+             --brw-* theming contract — set only when it has an effect. */
+          style={
+            v === 'tab' && offset !== 0
+              ? ({ '--brw-fab-tab-offset': `${offset}px` } as CSSProperties)
+              : undefined
+          }
         >
           <ChatIcon />
-          {label}
+          {!compact && <span className="brw-fab-label">{label}</span>}
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>

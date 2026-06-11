@@ -9,7 +9,16 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Linking, Modal, Pressable, Text, TextInput } from 'react-native';
+import {
+  Linking,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import type {
   Brevwick,
   BrevwickConfig,
@@ -94,6 +103,7 @@ vi.mock('@tatlacas/brevwick-sdk', async () => {
 import { BrevwickProvider } from '../provider';
 import { FeedbackButton } from '../feedback-button';
 import { FeedbackModal } from '../feedback-modal';
+import { ChatIcon } from '../icons';
 
 // ---- Helpers ------------------------------------------------------------
 const renderTree = async (ui: ReactElement): Promise<ReactTestRenderer> => {
@@ -192,6 +202,16 @@ describe('FeedbackButton', () => {
       true,
     );
 
+    // Zero-config default changed in vNEXT: vertically-centered tab flush
+    // against the RIGHT edge of the host view, not the legacy bottom-right
+    // corner pill.
+    const computed = fab!.props.style({ pressed: false }) as ViewStyle;
+    expect(computed.top).toBe('50%');
+    expect(computed.right).toBe(0);
+    expect(computed.left).toBeUndefined();
+    expect(computed.bottom).toBeUndefined();
+    expect(computed.transform).toEqual([{ translateY: '-50%' }]);
+
     // Modal starts closed.
     const modal = renderer.root.findByType(Modal);
     expect(modal.props.visible).toBe(false);
@@ -230,7 +250,7 @@ describe('FeedbackButton', () => {
     expect(renderer.root.findAllByType(Pressable)).toHaveLength(0);
   });
 
-  it('honours an explicit `position` offset object', async () => {
+  it('honours an explicit `position` offset object (still the bubble)', async () => {
     const renderer = await renderTree(
       <FeedbackButton position={{ bottom: 80, left: 16 }} />,
     );
@@ -240,9 +260,14 @@ describe('FeedbackButton', () => {
     expect(computed.bottom).toBe(80);
     expect(computed.left).toBe(16);
     expect(computed.right).toBeUndefined();
+    // Legacy compat: the offset-object form without a `variant` keeps the
+    // pre-vNEXT bubble — no tab geometry rides along.
+    expect(computed.top).toBeUndefined();
+    expect(computed.transform).toBeUndefined();
+    expect(computed.borderRadius).toBe(24);
   });
 
-  it('pins the FAB to bottom-left when position="bottom-left"', async () => {
+  it('keeps the bubble at bottom-left for a legacy corner position (no variant)', async () => {
     const renderer = await renderTree(
       <FeedbackButton position="bottom-left" />,
     );
@@ -253,6 +278,23 @@ describe('FeedbackButton', () => {
     expect(computed.bottom).toBe(24);
     expect(computed.left).toBe(24);
     expect(computed.right).toBeUndefined();
+    // An explicit corner without a `variant` must keep the pre-vNEXT
+    // presentation — the bubble at that corner, not a tab.
+    expect(computed.top).toBeUndefined();
+    expect(computed.transform).toBeUndefined();
+    expect(computed.borderRadius).toBe(24);
+  });
+
+  it('keeps the bubble at bottom-right for a legacy corner position (no variant)', async () => {
+    const renderer = await renderTree(
+      <FeedbackButton position="bottom-right" />,
+    );
+    const computed = findFab(renderer)!.props.style({ pressed: false });
+    expect(computed.bottom).toBe(24);
+    expect(computed.right).toBe(24);
+    expect(computed.left).toBeUndefined();
+    expect(computed.top).toBeUndefined();
+    expect(computed.borderRadius).toBe(24);
   });
 
   it('renders the dark scrim colour when theme="dark"', async () => {
@@ -276,6 +318,192 @@ describe('FeedbackButton', () => {
     );
     expect(darkScrimNodes.length).toBeGreaterThan(0);
     expect(modal.props.visible).toBe(true);
+  });
+});
+
+/**
+ * Launcher presentation (variant + position). Pins the full resolution
+ * table: explicit `variant` always wins, `position` contributes only its
+ * horizontal side to a mismatched variant, and a legacy corner (or the
+ * RN-only offset object) without a variant keeps the bubble. The
+ * zero-config default — right-edge tab — is asserted in the main describe
+ * block above.
+ */
+describe('FeedbackButton — launcher presentation (variant + position)', () => {
+  const fabStyle = (renderer: ReactTestRenderer): ViewStyle =>
+    findFab(renderer)!.props.style({ pressed: false }) as ViewStyle;
+
+  // The tab's vertical label is the Text whose style carries a `rotate`
+  // transform entry; returns that rotation (or undefined when no rotated
+  // label is mounted — bubble / compact renders).
+  const labelRotation = (renderer: ReactTestRenderer): string | undefined => {
+    for (const t of findFab(renderer)!.findAllByType(Text)) {
+      const flat = StyleSheet.flatten(t.props.style) as {
+        transform?: readonly Record<string, unknown>[];
+      };
+      const entry = flat.transform?.find((e) => 'rotate' in e);
+      if (entry) return entry['rotate'] as string;
+    }
+    return undefined;
+  };
+
+  it('rotates the default right-edge tab label 90° (reads top→bottom) with page-side radii', async () => {
+    const renderer = await renderTree(<FeedbackButton />);
+    expect(labelRotation(renderer)).toBe('90deg');
+    const computed = fabStyle(renderer);
+    // Rounded on the page-facing side, flat against the right edge —
+    // mirrors the web `.brw-fab--tab` one-sided `border-radius: 10px 0 0 10px`.
+    expect(computed.borderTopLeftRadius).toBe(10);
+    expect(computed.borderBottomLeftRadius).toBe(10);
+    expect(computed.borderTopRightRadius).toBeUndefined();
+    expect(computed.width).toBe(40);
+  });
+
+  it('position="left" renders the tab on the left edge with the mirrored rotation', async () => {
+    const renderer = await renderTree(<FeedbackButton position="left" />);
+    const computed = fabStyle(renderer);
+    expect(computed.top).toBe('50%');
+    expect(computed.left).toBe(0);
+    expect(computed.right).toBeUndefined();
+    expect(computed.bottom).toBeUndefined();
+    // Label reads bottom→top on the left edge (Userback-style), and the
+    // radii mirror to the page-facing right side.
+    expect(labelRotation(renderer)).toBe('-90deg');
+    expect(computed.borderTopRightRadius).toBe(10);
+    expect(computed.borderBottomRightRadius).toBe(10);
+    expect(computed.borderTopLeftRadius).toBeUndefined();
+  });
+
+  it('position="right" renders the tab on the right edge', async () => {
+    const renderer = await renderTree(<FeedbackButton position="right" />);
+    const computed = fabStyle(renderer);
+    expect(computed.top).toBe('50%');
+    expect(computed.right).toBe(0);
+    expect(computed.left).toBeUndefined();
+  });
+
+  it('variant="tab" + corner position keeps the tab and takes only the horizontal side', async () => {
+    // Conflict rule: variant wins; 'bottom-left' contributes only 'left'.
+    const renderer = await renderTree(
+      <FeedbackButton variant="tab" position="bottom-left" />,
+    );
+    const computed = fabStyle(renderer);
+    expect(computed.top).toBe('50%');
+    expect(computed.left).toBe(0);
+    expect(computed.bottom).toBeUndefined();
+    expect(computed.right).toBeUndefined();
+  });
+
+  it('variant="tab" + offset object takes only the horizontal side and drops the pixel values', async () => {
+    // RN-only corner of the conflict rule: the object's `left` (set
+    // without `right`) selects the left edge; its pixel values apply to
+    // the bubble only.
+    const renderer = await renderTree(
+      <FeedbackButton variant="tab" position={{ bottom: 80, left: 16 }} />,
+    );
+    const computed = fabStyle(renderer);
+    expect(computed.top).toBe('50%');
+    expect(computed.left).toBe(0);
+    expect(computed.bottom).toBeUndefined();
+  });
+
+  it('variant="bubble" without a position renders the bottom-right bubble', async () => {
+    const renderer = await renderTree(<FeedbackButton variant="bubble" />);
+    const computed = fabStyle(renderer);
+    expect(computed.bottom).toBe(24);
+    expect(computed.right).toBe(24);
+    expect(computed.top).toBeUndefined();
+    expect(computed.transform).toBeUndefined();
+    expect(computed.borderRadius).toBe(24);
+  });
+
+  it('variant="bubble" + position="left" renders the bubble at the bottom-left corner', async () => {
+    const renderer = await renderTree(
+      <FeedbackButton variant="bubble" position="left" />,
+    );
+    const computed = fabStyle(renderer);
+    expect(computed.bottom).toBe(24);
+    expect(computed.left).toBe(24);
+    expect(computed.right).toBeUndefined();
+  });
+
+  it('offset nudges the tab with a second composed translate', async () => {
+    const renderer = await renderTree(<FeedbackButton offset={120} />);
+    const computed = fabStyle(renderer);
+    expect(computed.transform).toEqual([
+      { translateY: '-50%' },
+      { translateY: 120 },
+    ]);
+  });
+
+  it('offset is ignored for the bubble (no transform)', async () => {
+    const renderer = await renderTree(
+      <FeedbackButton variant="bubble" offset={120} />,
+    );
+    expect(fabStyle(renderer).transform).toBeUndefined();
+  });
+
+  it('compact renders the icon-only tab chip with the "Feedback" fallback accessibilityLabel', async () => {
+    const renderer = await renderTree(<FeedbackButton compact />);
+    const fab = findFab(renderer)!;
+    expect(fab.props.accessibilityLabel).toBe('Feedback');
+    // No visible label — including the phase-tracking copy.
+    expect(fab.findAllByType(Text)).toHaveLength(0);
+    expect(fab.findAllByType(ChatIcon)).toHaveLength(1);
+    const computed = fabStyle(renderer);
+    expect(computed.width).toBe(44);
+    expect(computed.minHeight).toBe(44);
+  });
+
+  it('compact promotes the explicit string label to the accessibilityLabel', async () => {
+    const renderer = await renderTree(
+      <FeedbackButton compact label="Report a bug" />,
+    );
+    const fab = findFab(renderer)!;
+    expect(fab.props.accessibilityLabel).toBe('Report a bug');
+    expect(fab.findAllByType(Text)).toHaveLength(0);
+  });
+
+  it('compact bubble renders the 48px icon-only circle', async () => {
+    const renderer = await renderTree(
+      <FeedbackButton variant="bubble" compact />,
+    );
+    const fab = findFab(renderer)!;
+    expect(fab.findAllByType(Text)).toHaveLength(0);
+    expect(fab.findAllByType(ChatIcon)).toHaveLength(1);
+    const computed = fabStyle(renderer);
+    expect(computed.width).toBe(48);
+    expect(computed.paddingHorizontal).toBe(0);
+    expect(computed.borderRadius).toBe(24);
+  });
+
+  it('sizes the vertical label wrapper to the rotated extents after onLayout', async () => {
+    const renderer = await renderTree(<FeedbackButton />);
+    const labelText = findFab(renderer)!
+      .findAllByType(Text)
+      .find((t) => {
+        const flat = StyleSheet.flatten(t.props.style) as {
+          transform?: readonly Record<string, unknown>[];
+        };
+        return flat.transform?.some((e) => 'rotate' in e) ?? false;
+      })!;
+
+    // Drive the measurement callback the way RN's layout pass would —
+    // the unrotated text box is 96×18, so the wrapper must swap to 18×96
+    // (rotation is paint-only; layout uses the pre-transform box).
+    await act(async () => {
+      labelText.props.onLayout({
+        nativeEvent: { layout: { x: 0, y: 0, width: 96, height: 18 } },
+      });
+    });
+
+    const wrapper = findFab(renderer)!
+      .findAllByType(View)
+      .find((v) => {
+        const flat = StyleSheet.flatten(v.props.style) as ViewStyle;
+        return flat.width === 18 && flat.height === 96;
+      });
+    expect(wrapper).toBeDefined();
   });
 });
 

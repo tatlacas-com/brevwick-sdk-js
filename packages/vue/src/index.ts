@@ -14,7 +14,11 @@ export type {
   UseFeedbackResult,
 } from './composables/use-feedback';
 export { FeedbackButton } from './components/feedback-button';
-export type { BrevwickTheme } from './components/feedback-button';
+export type {
+  BrevwickTheme,
+  FeedbackButtonPosition,
+  FeedbackButtonVariant,
+} from './components/feedback-button';
 export { BREVWICK_VUE_VERSION } from './internal/version';
 export type {
   BrevwickPluginOptions,

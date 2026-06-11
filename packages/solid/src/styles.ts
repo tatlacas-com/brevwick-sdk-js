@@ -126,14 +126,10 @@ export const BREVWICK_CSS = `
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: var(--brw-fg, var(--brw-fg-base));
 }
+/* Shared launcher chrome — variant-independent. */
 .brw-fab {
   position: fixed;
   z-index: 2147483000;
-  bottom: 24px;
-  height: 48px;
-  min-width: 48px;
-  padding: 0 18px;
-  border-radius: 999px;
   border: 1px solid var(--brw-border, var(--brw-border-base));
   background: var(--brw-accent, var(--brw-accent-base));
   color: var(--brw-accent-fg, var(--brw-accent-fg-base));
@@ -144,15 +140,76 @@ export const BREVWICK_CSS = `
   gap: 8px;
   cursor: pointer;
   box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+  /* Only transform animates; box-shadow intentionally static. */
   transition: transform 120ms ease-out;
 }
-.brw-fab:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
 .brw-fab:disabled { cursor: not-allowed; opacity: 0.5; }
-.brw-fab-br { right: 24px; }
-.brw-fab-bl { left: 24px; }
-.brw-fab-icon { width: 18px; height: 18px; }
+.brw-fab:focus-visible {
+  outline: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+  outline-offset: 2px;
+}
+.brw-fab-icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+/* ── Bubble (legacy corner pill) ───────────────────────────────────── */
+.brw-fab--bubble {
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  height: 48px;
+  min-width: 48px;
+  padding: 0 18px;
+  border-radius: 999px;
+}
+.brw-fab--bubble:hover:not(:disabled) { transform: translateY(-1px); }
+.brw-fab-br { right: calc(24px + env(safe-area-inset-right, 0px)); }
+.brw-fab-bl { left: calc(24px + env(safe-area-inset-left, 0px)); }
+/* Compact bubble: 48px circle, icon only. */
+.brw-fab--bubble.brw-fab--compact {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* ── Tab (NEW DEFAULT: vertical edge tab) ──────────────────────────── */
+/* writing-mode flips the inline axis vertical: the flex row (icon, label)
+   stacks top→bottom and the label glyphs read top→bottom, rotated 90° cw.
+   The left tab adds \`rotate: 180deg\` (the standalone property, NOT
+   transform, so it composes with the hover translateX) — flat edge stays
+   against the viewport edge, radii mirror automatically, and the label
+   reads bottom→top, Userback-style. */
+.brw-fab--tab {
+  top: calc(50% + var(--brw-fab-tab-offset, 0px));
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  min-height: 48px;
+  width: 40px;
+  padding: 16px 0;
+  justify-content: center;
+  /* Rounded on the page-facing side, flat against the edge (right-tab
+     orientation; the left tab's rotate mirrors it). */
+  border-radius: 10px 0 0 10px;
+}
+.brw-fab-r {
+  right: env(safe-area-inset-right, 0px);
+  border-right: none;            /* flat edge: no hairline against the viewport */
+}
+.brw-fab-l {
+  left: env(safe-area-inset-left, 0px);
+  border-right: none;            /* pre-rotation right edge IS the viewport edge */
+  rotate: 180deg;
+}
+/* Hover pulls the tab 2px out of the edge (translateY(-50%) must be
+   restated — transform is overwritten, not merged). For .brw-fab-l the
+   180° rotate flips -2px into +2px visually: also away from its edge. */
+.brw-fab--tab:hover:not(:disabled) {
+  transform: translateY(-50%) translateX(-2px);
+}
+.brw-fab-label { letter-spacing: 0.02em; }
+/* Compact tab: square-ish icon-only edge chip. */
+.brw-fab--tab.brw-fab--compact {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
 .brw-panel {
   position: fixed;
   z-index: 2147483002;
