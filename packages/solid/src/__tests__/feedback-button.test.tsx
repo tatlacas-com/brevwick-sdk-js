@@ -1062,6 +1062,173 @@ describe('<FeedbackButton> — screenshot capture', () => {
       filename: 'screenshot-2.webp',
     });
   });
+
+  it('removing a screenshot chip revokes its object URL and drops it from the submit payload', async () => {
+    captureScreenshot
+      .mockResolvedValueOnce(new Blob(['1'], { type: 'image/png' }))
+      .mockResolvedValueOnce(new Blob(['2'], { type: 'image/webp' }));
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_rm' });
+
+    let urlSeq = 0;
+    const createSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(() => `blob:rm-${++urlSeq}`);
+    const revokeSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => undefined);
+
+    try {
+      mount();
+      openPanel();
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture screenshot/i }),
+      );
+      await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
+      fireEvent.click(
+        screen.getByRole('button', { name: /capture screenshot/i }),
+      );
+      await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /^remove screenshot 1$/i }),
+        ).toBeInTheDocument(),
+      );
+
+      fireEvent.click(
+        screen.getByRole('button', { name: /^remove screenshot 1$/i }),
+      );
+      // The removed capture's URL is revoked immediately; the second one
+      // stays live for its thumbnail.
+      await waitFor(() => expect(revokeSpy).toHaveBeenCalledWith('blob:rm-1'));
+      expect(revokeSpy).not.toHaveBeenCalledWith('blob:rm-2');
+      // The remaining chip re-labels as the only screenshot.
+      expect(
+        screen.getByRole('button', { name: /^remove screenshot$/i }),
+      ).toBeInTheDocument();
+
+      typeDraft('kept only the second shot');
+      fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+      const input = submit.mock.calls[0]![0]!;
+      expect(input.attachments).toHaveLength(1);
+      expect(input.attachments![0]).toMatchObject({
+        filename: 'screenshot.webp',
+      });
+    } finally {
+      createSpy.mockRestore();
+      revokeSpy.mockRestore();
+    }
+  });
+
+  it('drops a capture that lands after the attachment cap was reached mid-flight', async () => {
+    let release: (b: Blob) => void = () => undefined;
+    captureScreenshot.mockReturnValueOnce(
+      new Promise<Blob>((resolve) => {
+        release = resolve;
+      }),
+    );
+    mount();
+    openPanel();
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+
+    // While the capture is in flight, the user attaches five files — the
+    // combined total hits the SDK ceiling before the capture resolves.
+    const fileInput = screen.getByLabelText(/attach file/i) as HTMLInputElement;
+    const files = Array.from(
+      { length: 5 },
+      (_, i) => new File([`f${i}`], `f${i}.txt`, { type: 'text/plain' }),
+    );
+    fireEvent.change(fileInput, { target: { files } });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^remove f4\.txt$/i }),
+      ).toBeInTheDocument(),
+    );
+
+    release(new Blob(['late'], { type: 'image/png' }));
+    // The stale capture is dropped (no chip) and the inline alert explains
+    // why instead of silently exceeding the ceiling.
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/maximum 5 attachments reached/i);
+    expect(
+      screen.queryByRole('button', { name: /remove screenshot/i }),
+    ).toBeNull();
+    // The screenshot button's aria-label mutates so AT users hear why the
+    // control is unavailable.
+    expect(
+      screen.getAllByRole('button', {
+        name: /maximum 5 attachments reached/i,
+      })[0],
+    ).toBeDisabled();
+  });
+
+  it('a files-only submit stamps file chips (and no screenshots) on the user bubble', async () => {
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_files_only' });
+    mount();
+    openPanel();
+    const fileInput = screen.getByLabelText(/attach file/i) as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File(['log'], 'trace.log', { type: 'text/plain' })],
+      },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^remove trace\.log$/i }),
+      ).toBeInTheDocument(),
+    );
+
+    typeDraft('file only, no screenshot');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+
+    const input = submit.mock.calls[0]![0]!;
+    expect(input.attachments).toHaveLength(1);
+    expect(input.attachments![0]).toMatchObject({ filename: 'trace.log' });
+    // The composer chip row is cleared after the successful submit — the
+    // file rode along and is no longer pending.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: /^remove trace\.log$/i }),
+      ).toBeNull(),
+    );
+  });
+
+  it('falls back to a generic alert when capture rejects with a non-Error', async () => {
+    captureScreenshot.mockRejectedValueOnce('tainted');
+    mount();
+    openPanel();
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/screenshot capture failed/i);
+  });
+
+  it('defaults the attachment extension to webp when the blob carries no MIME type', async () => {
+    captureScreenshot.mockResolvedValueOnce(new Blob(['raw'], { type: '' }));
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_ext' });
+    mount();
+    openPanel();
+    fireEvent.click(
+      screen.getByRole('button', { name: /capture screenshot/i }),
+    );
+    await waitFor(() => expect(captureScreenshot).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^remove screenshot$/i }),
+      ).toBeInTheDocument(),
+    );
+    typeDraft('untyped blob');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const input = submit.mock.calls[0]![0]!;
+    expect(input.attachments![0]).toMatchObject({
+      filename: 'screenshot.webp',
+    });
+  });
 });
 
 describe('<FeedbackButton> — debug raw payload (config.debug)', () => {

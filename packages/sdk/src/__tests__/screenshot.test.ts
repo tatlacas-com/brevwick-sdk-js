@@ -1467,4 +1467,53 @@ describe('captureScreenshot — engine chunk-load resilience', () => {
       warn.mockRestore();
     }
   });
+
+  it('falls back to console.warn when the ring push itself throws during a chunk-load failure', async () => {
+    // The chunk-failure handler pushes a warn entry into the console ring.
+    // A throwing bus 'entry' listener propagates out of `internal.push` —
+    // the handler must still resolve with the placeholder and route the
+    // warning through `globalThis.console.warn` instead of rejecting.
+    vi.doMock('../screenshot', () => {
+      throw new Error('Failed to fetch dynamically imported module');
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const instance = createBrevwick({ projectKey: KEY });
+      getInternal(instance).bus.on('entry', () => {
+        throw new Error('listener explode');
+      });
+      const blob = await instance.captureScreenshot();
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe('image/webp');
+      expect(blob.size).toBeGreaterThan(0);
+      // The ring buffered the entry before the bus listener threw — the
+      // catch still fires and duplicates the warning onto the console so
+      // the failure is never silent.
+      expect(getInternal(instance).buffers.console.snapshot()).toHaveLength(1);
+      expect(warn).toHaveBeenCalled();
+      const msg = String(warn.mock.calls[0]?.[0] ?? '');
+      expect(msg).toMatch(
+        /brevwick: screenshot capture failed, using placeholder/,
+      );
+    } finally {
+      vi.doUnmock('../screenshot');
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('placeholderBlob', () => {
+  it('reuses the decoded buffer across calls but returns a fresh Blob each time', async () => {
+    // The base64 placeholder is decoded once and cached; every call must
+    // still mint a NEW Blob so consumers can hold/revoke object URLs from
+    // one without poisoning the next failure path.
+    const { placeholderBlob } = await import('../screenshot-fallback');
+    const first = placeholderBlob();
+    const second = placeholderBlob();
+    expect(second).not.toBe(first);
+    expect(first.type).toBe('image/webp');
+    expect(second.type).toBe('image/webp');
+    expect(second.size).toBe(first.size);
+    expect(first.size).toBeGreaterThan(0);
+  });
 });

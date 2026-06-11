@@ -1602,6 +1602,45 @@ describe('BwFeedbackButtonComponent — screenshot capture', () => {
     );
   });
 
+  it('falls back to a generic alert when captureScreenshot rejects with a non-Error', async () => {
+    captureScreenshot.mockRejectedValueOnce('tainted');
+    const fixture = setup('pk_test_ss_err_nonerror');
+    openPanel(fixture);
+    await captureFullPage(fixture);
+    const alert = q<HTMLElement>(fixture, '.brw-error[role="alert"]');
+    expect(alert?.textContent).toContain('Screenshot capture failed');
+    expect(q(fixture, '.brw-chip')).toBeNull();
+  });
+
+  it('quietly drops a null capture (non-browser platform guard) without chip or alert', async () => {
+    // The Angular service resolves null on non-browser platforms. The guard
+    // is unreachable from a real click (the button only exists in the DOM)
+    // but must stay a silent no-op rather than crash on `null` blob access.
+    captureScreenshot.mockResolvedValueOnce(null);
+    const fixture = setup('pk_test_ss_null');
+    openPanel(fixture);
+    await captureFullPage(fixture);
+    expect(captureScreenshot).toHaveBeenCalledTimes(1);
+    expect(q(fixture, '.brw-chip')).toBeNull();
+    expect(q(fixture, '.brw-error[role="alert"]')).toBeNull();
+    // The capturing flag still resets — the button is usable again.
+    expect(screenshotButton(fixture)!.disabled).toBe(false);
+  });
+
+  it('defaults the attachment extension to webp when the blob carries no MIME type', async () => {
+    captureScreenshot.mockResolvedValueOnce(new Blob(['raw'], { type: '' }));
+    submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_untyped' });
+    const fixture = setup('pk_test_ss_untyped');
+    openPanel(fixture);
+    await captureFullPage(fixture);
+    setDraft(fixture, 'untyped blob');
+    await internals(fixture.componentInstance).doSubmit();
+    const input = submit.mock.calls[0]![0] as {
+      attachments: Array<{ blob: Blob; filename: string }>;
+    };
+    expect(input.attachments[0]!.filename).toBe('screenshot.webp');
+  });
+
   it('minimize preserves draft and screenshot attachments across reopen', async () => {
     captureScreenshot.mockResolvedValueOnce(
       new Blob(['x'], { type: 'image/png' }),
@@ -1916,6 +1955,22 @@ describe('BwFeedbackButtonComponent — multi-screenshot + preview', () => {
     expect(previewDialog(fixture)).toBeNull();
     // Chip survives the Esc — the screenshot is still attached.
     expect(q(fixture, '.brw-chip-preview-btn')).not.toBeNull();
+  });
+
+  it('non-Escape keys on the preview dialog leave it open', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['x'], { type: 'image/png' }),
+    );
+    const fixture = setup('pk_test_ss_preview_other_key');
+    openPanel(fixture);
+    await captureFullPage(fixture);
+    q<HTMLButtonElement>(fixture, '.brw-chip-preview-btn')!.click();
+    fixture.detectChanges();
+    previewDialog(fixture)!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+    fixture.detectChanges();
+    expect(previewDialog(fixture)).not.toBeNull();
   });
 
   it('clicking the chip × does not open the preview dialog', async () => {
@@ -2297,5 +2352,187 @@ describe('BwFeedbackButtonComponent — region capture overlay', () => {
     fixture.detectChanges();
     openOverlay(fixture);
     expect(q(fixture, '[data-testid="brw-region-selection"]')).toBeNull();
+  });
+
+  it('non-primary-button pointerdown and dragless move/up never start a selection', () => {
+    const fixture = setup('pk_test_ro_pointer_guards');
+    openPanel(fixture);
+    openOverlay(fixture);
+    const layer = overlay(fixture)!;
+    // Right-click directly on the overlay layer is ignored.
+    layer.dispatchEvent(pointerEvent('pointerdown', { x: 5, y: 5, button: 2 }));
+    // Move/up without an active drag are no-ops, not crashes.
+    layer.dispatchEvent(pointerEvent('pointermove', { x: 80, y: 90 }));
+    layer.dispatchEvent(pointerEvent('pointerup', { x: 80, y: 90 }));
+    fixture.detectChanges();
+    expect(q(fixture, '[data-testid="brw-region-selection"]')).toBeNull();
+  });
+
+  it('Enter on the overlay root confirms a valid region selection', async () => {
+    const stub = installCropStub();
+    try {
+      captureScreenshot.mockResolvedValueOnce(
+        new Blob(['full'], { type: 'image/webp' }),
+      );
+      // Unset DPR (legacy engines) exercises the `|| 1` fallback in the
+      // crop math.
+      vi.stubGlobal('devicePixelRatio', undefined);
+      const fixture = setup('pk_test_ro_enter_ok');
+      openPanel(fixture);
+      openOverlay(fixture);
+      const layer = overlay(fixture)!;
+      drag(fixture, { x: 10, y: 20 }, { x: 210, y: 120 });
+
+      // Keys other than Enter/Escape are ignored by the overlay handler.
+      layer.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'a', bubbles: true }),
+      );
+      fixture.detectChanges();
+      expect(captureScreenshot).not.toHaveBeenCalled();
+      expect(overlay(fixture)).not.toBeNull();
+
+      layer.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+      fixture.detectChanges();
+      await flush(fixture);
+
+      expect(captureScreenshot).toHaveBeenCalledTimes(1);
+      expect(overlay(fixture)).toBeNull();
+      expect(stub.drawImageArgs).toHaveLength(1);
+      expect(q(fixture, '.brw-chip-preview-btn')).not.toBeNull();
+    } finally {
+      stub.restore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rapid-fire degenerate confirms replace the shake timer; the shake settles after 320 ms', async () => {
+    const fixture = setup('pk_test_ro_shake_settle');
+    openPanel(fixture);
+    openOverlay(fixture);
+    const capture = btnByText(fixture, 'Capture')!;
+    capture.click();
+    fixture.detectChanges();
+    expect(overlay(fixture)!.className).toContain('brw-region-shake');
+    // Second degenerate confirm while the settle timer is pending —
+    // replaces (clears) the in-flight timer instead of stacking.
+    capture.click();
+    fixture.detectChanges();
+    expect(overlay(fixture)!.className).toContain('brw-region-shake');
+
+    // The replaced timer fires once, ~320 ms later, and clears the shake.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    expect(overlay(fixture)).not.toBeNull();
+    expect(overlay(fixture)!.className).not.toContain('brw-region-shake');
+    expect(captureScreenshot).not.toHaveBeenCalled();
+  });
+
+  // Coverage for the `OffscreenCanvas` branch of `cropToRegion`. The main
+  // crop test forces the `<canvas>` fallback (happy-dom's stock
+  // `OffscreenCanvas`, where present, has no `convertToBlob`). This test
+  // installs a minimal `OffscreenCanvas` shim with `getContext('2d')` +
+  // `convertToBlob` and confirms the crop blob lands in the composer.
+  it('uses OffscreenCanvas for the crop when available and delivers its convertToBlob output', async () => {
+    const originalImageSrc = Object.getOwnPropertyDescriptor(
+      HTMLImageElement.prototype,
+      'src',
+    );
+    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+      configurable: true,
+      get() {
+        return (this as { _brwSrc?: string })._brwSrc ?? '';
+      },
+      set(value: string) {
+        (this as { _brwSrc?: string })._brwSrc = value;
+        queueMicrotask(() => {
+          const self = this as HTMLImageElement & {
+            onload?: ((ev: Event) => void) | null;
+          };
+          self.onload?.(new Event('load'));
+        });
+      },
+    });
+
+    const drawImageCalls: unknown[][] = [];
+    class OffscreenCanvasStub {
+      public readonly width: number;
+      public readonly height: number;
+      constructor(width: number, height: number) {
+        this.width = width;
+        this.height = height;
+      }
+      getContext(
+        kind: string,
+      ): { drawImage: (...args: unknown[]) => void } | null {
+        if (kind !== '2d') return null;
+        return {
+          drawImage: (...args: unknown[]) => {
+            drawImageCalls.push(args);
+          },
+        };
+      }
+      convertToBlob(options: { type: string }): Promise<Blob> {
+        return Promise.resolve(
+          new Blob([`offscreen:${this.width}x${this.height}`], {
+            type: options.type,
+          }),
+        );
+      }
+    }
+
+    const originalOffscreen = (globalThis as { OffscreenCanvas?: unknown })
+      .OffscreenCanvas;
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+      OffscreenCanvasStub;
+
+    try {
+      captureScreenshot.mockResolvedValueOnce(
+        new Blob(['full'], { type: 'image/webp' }),
+      );
+      submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_offscreen' });
+      vi.stubGlobal('devicePixelRatio', 2);
+      const fixture = setup('pk_test_ro_offscreen');
+      openPanel(fixture);
+      openOverlay(fixture);
+      drag(fixture, { x: 10, y: 20 }, { x: 210, y: 120 });
+      btnByText(fixture, 'Capture')!.click();
+      fixture.detectChanges();
+      await flush(fixture);
+
+      expect(q(fixture, '.brw-chip-preview-btn')).not.toBeNull();
+      // Crop ran on the OffscreenCanvas stub with DPR-scaled source args.
+      expect(drawImageCalls).toHaveLength(1);
+      const [, sx, sy, sw, sh, , , dw, dh] = drawImageCalls[0]!;
+      expect([sx, sy, sw, sh]).toEqual([20, 40, 400, 200]);
+      expect([dw, dh]).toEqual([200, 100]);
+
+      // The convertToBlob output (image/png) is what rides the submit —
+      // not the <canvas> fallback.
+      setDraft(fixture, 'offscreen crop');
+      await internals(fixture.componentInstance).doSubmit();
+      const input = submit.mock.calls[0]![0] as {
+        attachments: Array<{ blob: Blob; filename: string }>;
+      };
+      expect(input.attachments[0]!.filename).toBe('screenshot.png');
+      const text = await input.attachments[0]!.blob.text();
+      expect(text).toBe('offscreen:200x100');
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalImageSrc) {
+        Object.defineProperty(
+          HTMLImageElement.prototype,
+          'src',
+          originalImageSrc,
+        );
+      }
+      if (originalOffscreen !== undefined) {
+        (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+          originalOffscreen;
+      } else {
+        delete (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas;
+      }
+    }
   });
 });
