@@ -427,6 +427,40 @@ describe('FeedbackButton — launcher presentation (variant + position)', () => 
     expect(computed.right).toBeUndefined();
   });
 
+  it('tolerates a null position from JS consumers without crashing (defaults to the tab)', async () => {
+    // `typeof null === 'object'`, so an unguarded object branch would
+    // dereference `null.left` and throw. A JS consumer passing
+    // `position={null}` must fall through to the right-edge tab default.
+    const renderer = await renderTree(
+      <FeedbackButton position={null as never} />,
+    );
+    const computed = fabStyle(renderer);
+    expect(computed.top).toBe('50%');
+    expect(computed.right).toBe(0);
+    expect(computed.left).toBeUndefined();
+  });
+
+  it('tolerates a null position on the bubble without crashing (default corner)', async () => {
+    // Same guard on the bubble path: `resolveBubblePositionStyle(null)`
+    // must not dereference `null.bottom` and instead default to the
+    // bottom-right corner.
+    const renderer = await renderTree(
+      <FeedbackButton variant="bubble" position={null as never} />,
+    );
+    const computed = fabStyle(renderer);
+    expect(computed.bottom).toBe(24);
+    expect(computed.right).toBe(24);
+    expect(computed.top).toBeUndefined();
+  });
+
+  it('treats an undefined position as the zero-config right-edge tab', async () => {
+    const renderer = await renderTree(<FeedbackButton position={undefined} />);
+    const computed = fabStyle(renderer);
+    expect(computed.top).toBe('50%');
+    expect(computed.right).toBe(0);
+    expect(computed.left).toBeUndefined();
+  });
+
   it('offset nudges the tab with a second composed translate', async () => {
     const renderer = await renderTree(<FeedbackButton offset={120} />);
     const computed = fabStyle(renderer);

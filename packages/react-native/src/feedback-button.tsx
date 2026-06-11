@@ -74,7 +74,10 @@ function resolveLauncherPlacement(
   variant?: FeedbackButtonVariant,
   position?: FeedbackButtonPosition,
 ): { variant: FeedbackButtonVariant; side: 'right' | 'left' } {
-  if (typeof position === 'object') {
+  // `typeof null === 'object'`, so guard `null` explicitly — a JS consumer
+  // passing `position={null}` must fall through to the core string resolver,
+  // not dereference `null.left`.
+  if (typeof position === 'object' && position !== null) {
     const side: 'right' | 'left' =
       position.left !== undefined && position.right === undefined
         ? 'left'
@@ -195,7 +198,10 @@ function resolveBubblePositionStyle(
   position: FeedbackButtonPosition | undefined,
   side: 'right' | 'left',
 ): ViewStyle {
-  if (typeof position === 'object') {
+  // `typeof null === 'object'`, so guard `null` explicitly — a JS consumer
+  // passing `position={null}` must hit the default-corner fallthrough, not
+  // dereference `null.bottom`.
+  if (typeof position === 'object' && position !== null) {
     // Explicit offsets — only spread the keys that were provided so we
     // don't overwrite a `right` that the caller intentionally omitted in
     // favour of `left`.
