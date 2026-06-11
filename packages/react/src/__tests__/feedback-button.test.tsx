@@ -2715,6 +2715,81 @@ describe('<FeedbackButton> — region capture overlay', () => {
     }
   });
 
+  // Regression for the OffscreenCanvas feature-detect (Copilot PR #158):
+  // some environments expose `OffscreenCanvas` but never implement
+  // `convertToBlob`. Gating the crop on presence alone threw there and
+  // killed region capture even though the `<canvas>.toBlob` fallback would
+  // have worked. With the `'convertToBlob' in OffscreenCanvas.prototype`
+  // guard the fallback is taken: the OffscreenCanvas constructor must never
+  // run and the delivered blob is the `<canvas>` output (stamped `_brwW`/
+  // `_brwH`, not `_brwOffscreen`).
+  it('falls back to <canvas>.toBlob when OffscreenCanvas lacks convertToBlob', async () => {
+    const stub = installCropStub();
+    let offscreenConstructed = false;
+    // installCropStub() deletes OffscreenCanvas to force the fallback; here
+    // we re-install a partial implementation (no convertToBlob) to prove the
+    // feature-detect — not mere absence — routes us to the canvas path.
+    class OffscreenCanvasNoConvert {
+      constructor() {
+        offscreenConstructed = true;
+      }
+      getContext(): null {
+        return null;
+      }
+    }
+    const originalOffscreen = (globalThis as { OffscreenCanvas?: unknown })
+      .OffscreenCanvas;
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+      OffscreenCanvasNoConvert;
+    try {
+      const fullBlob = new Blob(['full'], { type: 'image/webp' });
+      captureScreenshot.mockResolvedValueOnce(fullBlob);
+      vi.stubGlobal('devicePixelRatio', 2);
+      submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_fallback' });
+      mount();
+      openOverlay();
+      drag(getOverlay(), { x: 10, y: 20 }, { x: 210, y: 120 });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^capture$/i }));
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /remove screenshot/i }),
+        ).toBeInTheDocument(),
+      );
+      // The partial OffscreenCanvas was never instantiated — the guard
+      // skipped it on the missing convertToBlob.
+      expect(offscreenConstructed).toBe(false);
+      // The crop still ran via the <canvas> fallback stub.
+      expect(stub.drawImageArgs).toHaveLength(1);
+      typeDraft('fallback crop');
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+      });
+      const input = submit.mock.calls[0]![0] as {
+        attachments: Array<{ blob: Blob; filename: string }>;
+      };
+      const delivered = input.attachments[0]!.blob as Blob & {
+        _brwW?: number;
+        _brwH?: number;
+        _brwOffscreen?: boolean;
+      };
+      expect(delivered._brwOffscreen).toBeUndefined();
+      expect(delivered._brwW).toBe(200);
+      expect(delivered._brwH).toBe(100);
+      expect(input.attachments[0]!.filename).toBe('screenshot.png');
+    } finally {
+      if (originalOffscreen !== undefined) {
+        (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+          originalOffscreen;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (globalThis as any).OffscreenCanvas;
+      }
+      stub.restore();
+    }
+  });
+
   // Coverage for the `<canvas>.toBlob` null branch. `installCropStub`
   // always resolves with a stamped Blob; this override forces the
   // `reject(new Error('Canvas produced no blob'))` path and confirms the

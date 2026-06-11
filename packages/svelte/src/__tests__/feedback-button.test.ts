@@ -2193,6 +2193,77 @@ describe('<FeedbackButton> — region capture overlay', () => {
       }
     }
   });
+
+  // Regression for the OffscreenCanvas feature-detect (Copilot PR #158):
+  // some environments expose `OffscreenCanvas` without `convertToBlob`.
+  // Gating on presence alone threw there; the `'convertToBlob' in
+  // OffscreenCanvas.prototype` guard routes to the `<canvas>.toBlob`
+  // fallback. The partial OffscreenCanvas must never be constructed and the
+  // delivered blob is the canvas output (`cropped:…`).
+  it('falls back to <canvas>.toBlob when OffscreenCanvas lacks convertToBlob', async () => {
+    const stub = installCropStub();
+    let offscreenConstructed = false;
+    class OffscreenCanvasNoConvert {
+      constructor() {
+        offscreenConstructed = true;
+      }
+      getContext(): null {
+        return null;
+      }
+    }
+    const originalOffscreen = (globalThis as { OffscreenCanvas?: unknown })
+      .OffscreenCanvas;
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+      OffscreenCanvasNoConvert;
+    try {
+      captureScreenshot.mockResolvedValueOnce(
+        new Blob(['full'], { type: 'image/webp' }),
+      );
+      submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_fallback' });
+      vi.stubGlobal('devicePixelRatio', 2);
+      mountFab();
+      await openOverlay();
+      await drag(getOverlay(), { x: 10, y: 20 }, { x: 210, y: 120 });
+      await act(async () => {
+        await fireEvent.click(
+          screen.getByRole('button', { name: /^capture$/i }),
+        );
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /remove screenshot/i }),
+        ).toBeInTheDocument(),
+      );
+      // The partial OffscreenCanvas was skipped on the missing convertToBlob.
+      expect(offscreenConstructed).toBe(false);
+      expect(stub.drawImageArgs).toHaveLength(1);
+      await act(async () => {
+        await fireEvent.input(
+          screen.getByRole('textbox', { name: /feedback message/i }),
+          { target: { value: 'fallback crop' } },
+        );
+      });
+      await act(async () => {
+        await fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+      });
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+      const input = submit.mock.calls[0]![0] as {
+        attachments: Array<{ blob: Blob; filename: string }>;
+      };
+      expect(input.attachments[0]!.filename).toBe('screenshot.png');
+      const text = await input.attachments[0]!.blob.text();
+      expect(text).toBe('cropped:200x100');
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalOffscreen !== undefined) {
+        (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+          originalOffscreen;
+      } else {
+        delete (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas;
+      }
+      stub.restore();
+    }
+  });
 });
 
 describe('<FeedbackButton> — debug raw payload (config.debug)', () => {

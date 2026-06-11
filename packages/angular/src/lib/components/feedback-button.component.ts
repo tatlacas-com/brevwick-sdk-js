@@ -1,9 +1,11 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
+  type AfterViewInit,
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  type ElementRef,
+  Directive,
+  ElementRef,
   EventEmitter,
   Input,
   Output,
@@ -132,10 +134,12 @@ const REGION_MIN_SIDE_PX = 2;
  * `modern-screenshot`, but the region came from pointer-events in CSS pixels,
  * so we multiply the source rectangle by `devicePixelRatio` on the way in and
  * draw out at the selection's CSS-pixel size. Uses `OffscreenCanvas` when the
- * host provides it (cheaper, avoids a DOM node); otherwise falls back to a
- * detached `<canvas>` + `toBlob`. Output MIME is PNG — the caller derives
- * the attachment filename from `blob.type`. Mirrors the React adapter's
- * `cropToRegion` line-for-line.
+ * host provides it *with* a working `convertToBlob` (cheaper, avoids a DOM
+ * node); otherwise falls back to a detached `<canvas>` + `toBlob`. Some
+ * environments expose `OffscreenCanvas` without `convertToBlob`, so presence
+ * alone is not enough — we feature-detect the method before taking that path.
+ * Output MIME is PNG — the caller derives the attachment filename from
+ * `blob.type`. Mirrors the React adapter's `cropToRegion` line-for-line.
  */
 async function cropToRegion(blob: Blob, region: Region): Promise<Blob> {
   const url = URL.createObjectURL(blob);
@@ -149,7 +153,10 @@ async function cropToRegion(blob: Blob, region: Region): Promise<Blob> {
     const sh = region.h * dpr;
 
     const OffscreenCanvasCtor =
-      typeof OffscreenCanvas !== 'undefined' ? OffscreenCanvas : undefined;
+      typeof OffscreenCanvas !== 'undefined' &&
+      'convertToBlob' in OffscreenCanvas.prototype
+        ? OffscreenCanvas
+        : undefined;
     if (OffscreenCanvasCtor) {
       const canvas = new OffscreenCanvasCtor(region.w, region.h);
       const ctx = canvas.getContext('2d');
@@ -233,6 +240,32 @@ function formatSize(bytes: number): string {
 }
 
 /**
+ * Moves focus to its host element as soon as that element is created. Applied
+ * to the region overlay and the screenshot preview dialog — both rendered
+ * inside `@if` control-flow — so their `(keydown)` handlers receive Escape
+ * (and the overlay's Enter shortcut) without an extra Tab, instead of focus
+ * staying on the underlying trigger button. The React adapter gets this for
+ * free from Radix's dialog focus trap.
+ *
+ * `ngAfterViewInit` fires the instant the structural block instantiates the
+ * directive, so focus lands deterministically in the same change-detection
+ * pass that renders the layer — unlike a `viewChild` signal read inside an
+ * `effect`/`afterNextRender`, which races the `@if` query refresh and can
+ * latch the pre-render `undefined`.
+ */
+@Directive({
+  selector: '[brwFocusOnInit]',
+  standalone: true,
+})
+export class BwFocusOnInitDirective implements AfterViewInit {
+  private readonly el = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  ngAfterViewInit(): void {
+    this.el.nativeElement.focus();
+  }
+}
+
+/**
  * Standalone feedback widget — a FAB plus a chat-style submission panel.
  *
  * Mirrors the React adapter's `FeedbackButton` (UI / UX / wire format),
@@ -257,6 +290,7 @@ function formatSize(bytes: number): string {
 @Component({
   selector: 'bw-feedback-button',
   standalone: true,
+  imports: [BwFocusOnInitDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // ViewEncapsulation.None: the React widget ships a single global
   // stylesheet that targets `.brw-*` class names; replicating it under
@@ -741,7 +775,7 @@ function formatSize(bytes: number): string {
           aria-hidden="true"
         ></div>
         <div
-          #regionLayerEl
+          brwFocusOnInit
           class="brw-root brw-region-layer"
           [class.brw-region-shake]="regionShake()"
           [attr.data-brevwick-skip]="''"
@@ -810,7 +844,7 @@ function formatSize(bytes: number): string {
           (click)="closePreview()"
         ></div>
         <div
-          #previewLayerEl
+          brwFocusOnInit
           class="brw-root brw-preview-layer"
           [attr.data-brevwick-skip]="''"
           [attr.data-brw-theme]="theme"
@@ -1929,8 +1963,6 @@ export class BwFeedbackButtonComponent {
     viewChild<ElementRef<HTMLTextAreaElement>>('composerEl');
   private readonly keepBtn =
     viewChild<ElementRef<HTMLButtonElement>>('keepBtn');
-  private readonly regionLayerEl =
-    viewChild<ElementRef<HTMLDivElement>>('regionLayerEl');
 
   // Helpers exposed to the template — narrow wrappers around the module-level
   // formatters so the binding expressions stay short.
@@ -2056,15 +2088,6 @@ export class BwFeedbackButtonComponent {
       if (!this.confirmClose()) return;
       const btn = this.keepBtn()?.nativeElement;
       btn?.focus();
-    });
-
-    // Focus the region overlay root when it opens so the Enter shortcut
-    // (confirm region) and Escape (dismiss) work without an extra Tab. The
-    // React adapter gets this for free from Radix's focus trap; here we own
-    // it directly via the tabindex="-1" layer.
-    effect(() => {
-      if (!this.regionOpen()) return;
-      this.regionLayerEl()?.nativeElement.focus();
     });
 
     this.destroyRef.onDestroy(() => {
@@ -2227,6 +2250,9 @@ export class BwFeedbackButtonComponent {
    */
   protected onScreenshotClick(): void {
     this.errorMessage.set(null);
+    // The overlay layer carries `brwFocusOnInit`, which moves focus to it the
+    // moment the `@if` renders it — so the Enter shortcut (confirm region) and
+    // Escape (dismiss) work without an extra Tab.
     this.regionOpen.set(true);
   }
 
@@ -2399,6 +2425,9 @@ export class BwFeedbackButtonComponent {
   }
 
   protected openPreview(id: number): void {
+    // The preview dialog carries `brwFocusOnInit`, which focuses it on render
+    // so its `(keydown)` handler receives Escape — otherwise focus stays on the
+    // chip preview button and Esc-to-dismiss never reaches `onPreviewKeydown`.
     this.previewId.set(id);
   }
 

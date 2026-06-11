@@ -1609,9 +1609,12 @@ export const FeedbackButton = defineComponent({
  * `modern-screenshot`, but the region came from pointer-events in CSS pixels,
  * so we multiply the source rectangle by `devicePixelRatio` on the way in and
  * draw out at the selection's CSS-pixel size. Uses `OffscreenCanvas` when the
- * host provides it (cheaper, avoids a DOM node); otherwise falls back to a
- * detached `<canvas>` + `toBlob`. Output MIME is PNG — the caller derives
- * the attachment filename from `blob.type`.
+ * host provides it *with* a working `convertToBlob` (cheaper, avoids a DOM
+ * node); otherwise falls back to a detached `<canvas>` + `toBlob`. Some
+ * environments expose `OffscreenCanvas` without `convertToBlob`, so presence
+ * alone is not enough — we feature-detect the method before taking that path.
+ * Output MIME is PNG — the caller derives the attachment filename from
+ * `blob.type`.
  */
 async function cropToRegion(blob: Blob, region: Region): Promise<Blob> {
   const url = URL.createObjectURL(blob);
@@ -1625,7 +1628,10 @@ async function cropToRegion(blob: Blob, region: Region): Promise<Blob> {
     const sh = region.h * dpr;
 
     const OffscreenCanvasCtor =
-      typeof OffscreenCanvas !== 'undefined' ? OffscreenCanvas : undefined;
+      typeof OffscreenCanvas !== 'undefined' &&
+      'convertToBlob' in OffscreenCanvas.prototype
+        ? OffscreenCanvas
+        : undefined;
     if (OffscreenCanvasCtor) {
       const canvas = new OffscreenCanvasCtor(region.w, region.h);
       const ctx = canvas.getContext('2d');

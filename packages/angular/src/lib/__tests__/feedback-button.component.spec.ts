@@ -1957,6 +1957,42 @@ describe('BwFeedbackButtonComponent — multi-screenshot + preview', () => {
     expect(q(fixture, '.brw-chip-preview-btn')).not.toBeNull();
   });
 
+  // Regression (Copilot PR #158): the preview dialog wires Escape via its own
+  // `(keydown)` handler but never received focus on open — focus stayed on the
+  // underlying chip button, so a real keyboard Escape never reached
+  // `onPreviewKeydown` and keyboard users could not dismiss the preview. The
+  // fix registers the `#previewLayerEl` viewChild and focuses it on open
+  // (mirroring the region overlay). Assert focus lands on the dialog root.
+  it('moves focus to the preview dialog on open so Escape reaches the keydown handler', async () => {
+    captureScreenshot.mockResolvedValueOnce(
+      new Blob(['x'], { type: 'image/png' }),
+    );
+    const focusCalls: EventTarget[] = [];
+    const originalFocus = HTMLElement.prototype.focus;
+    const focusSpy = vi
+      .spyOn(HTMLElement.prototype, 'focus')
+      .mockImplementation(function (this: HTMLElement, ...args: unknown[]) {
+        focusCalls.push(this);
+        return (originalFocus as (...a: unknown[]) => void).apply(this, args);
+      });
+    try {
+      const fixture = setup('pk_test_ss_preview_focus');
+      openPanel(fixture);
+      await captureFullPage(fixture);
+      q<HTMLButtonElement>(fixture, '.brw-chip-preview-btn')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const dialog = previewDialog(fixture)!;
+      expect(dialog).not.toBeNull();
+      // The focus effect fired on the preview layer root — without it Escape
+      // would never reach onPreviewKeydown from the chip button.
+      expect(focusCalls).toContain(dialog);
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
+
   it('non-Escape keys on the preview dialog leave it open', async () => {
     captureScreenshot.mockResolvedValueOnce(
       new Blob(['x'], { type: 'image/png' }),
@@ -2045,6 +2081,31 @@ describe('BwFeedbackButtonComponent — region capture overlay', () => {
     openOverlay(fixture);
     const title = overlay(fixture)!.querySelector('h2.brw-sr-only');
     expect(title?.textContent?.trim()).toBe('Select screenshot region');
+  });
+
+  // Regression (Copilot PR #158, parity with the preview-dialog focus fix):
+  // the region overlay must receive focus on open via `brwFocusOnInit` so its
+  // `(keydown)` Escape/Enter handler works without an extra Tab — focus left
+  // on the underlying screenshot button never reaches `onRegionKeydown`.
+  it('moves focus to the region overlay on open so its keydown handler works', () => {
+    const focusCalls: EventTarget[] = [];
+    const originalFocus = HTMLElement.prototype.focus;
+    const focusSpy = vi
+      .spyOn(HTMLElement.prototype, 'focus')
+      .mockImplementation(function (this: HTMLElement, ...args: unknown[]) {
+        focusCalls.push(this);
+        return (originalFocus as (...a: unknown[]) => void).apply(this, args);
+      });
+    try {
+      const fixture = setup('pk_test_ro_focus');
+      openPanel(fixture);
+      openOverlay(fixture);
+      const layer = overlay(fixture)!;
+      expect(layer).not.toBeNull();
+      expect(focusCalls).toContain(layer);
+    } finally {
+      focusSpy.mockRestore();
+    }
   });
 
   it('propagates the theme input to the region overlay layer', () => {
@@ -2533,6 +2594,65 @@ describe('BwFeedbackButtonComponent — region capture overlay', () => {
       } else {
         delete (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas;
       }
+    }
+  });
+
+  // Regression for the OffscreenCanvas feature-detect (Copilot PR #158):
+  // some environments expose `OffscreenCanvas` without `convertToBlob`.
+  // Gating on presence alone threw there; the `'convertToBlob' in
+  // OffscreenCanvas.prototype` guard routes to the `<canvas>.toBlob` fallback.
+  // The partial OffscreenCanvas must never be constructed and the delivered
+  // blob is the canvas output (`cropped:…`).
+  it('falls back to <canvas>.toBlob when OffscreenCanvas lacks convertToBlob', async () => {
+    const stub = installCropStub();
+    let offscreenConstructed = false;
+    class OffscreenCanvasNoConvert {
+      constructor() {
+        offscreenConstructed = true;
+      }
+      getContext(): null {
+        return null;
+      }
+    }
+    const originalOffscreen = (globalThis as { OffscreenCanvas?: unknown })
+      .OffscreenCanvas;
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+      OffscreenCanvasNoConvert;
+    try {
+      captureScreenshot.mockResolvedValueOnce(
+        new Blob(['full'], { type: 'image/webp' }),
+      );
+      submit.mockResolvedValueOnce({ ok: true, issue_id: 'rep_fallback' });
+      vi.stubGlobal('devicePixelRatio', 2);
+      const fixture = setup('pk_test_ro_offscreen_partial');
+      openPanel(fixture);
+      openOverlay(fixture);
+      drag(fixture, { x: 10, y: 20 }, { x: 210, y: 120 });
+      btnByText(fixture, 'Capture')!.click();
+      fixture.detectChanges();
+      await flush(fixture);
+
+      expect(q(fixture, '.brw-chip-preview-btn')).not.toBeNull();
+      // The partial OffscreenCanvas was skipped on the missing convertToBlob.
+      expect(offscreenConstructed).toBe(false);
+      expect(stub.drawImageArgs).toHaveLength(1);
+      setDraft(fixture, 'fallback crop');
+      await internals(fixture.componentInstance).doSubmit();
+      const input = submit.mock.calls[0]![0] as {
+        attachments: Array<{ blob: Blob; filename: string }>;
+      };
+      expect(input.attachments[0]!.filename).toBe('screenshot.png');
+      const text = await input.attachments[0]!.blob.text();
+      expect(text).toBe('cropped:200x100');
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalOffscreen !== undefined) {
+        (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas =
+          originalOffscreen;
+      } else {
+        delete (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas;
+      }
+      stub.restore();
     }
   });
 });
