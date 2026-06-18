@@ -1,6 +1,6 @@
 {
   "name": "@tatlacas/brevwick-react-native",
-  "version": "2.0.0-beta.0",
+  "version": "2.0.0-beta.1",
   "description": "Brevwick React Native bindings — drop-in QA feedback widget for Expo and bare React Native apps.",
   "license": "MIT",
   "type": "module",
