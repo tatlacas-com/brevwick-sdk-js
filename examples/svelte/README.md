@@ -13,7 +13,7 @@ cp examples/svelte/.env.example examples/svelte/.env
 pnpm --filter brevwick-example-svelte dev
 ```
 
-Open http://localhost:5173 — the floating Feedback FAB is bottom-right.
+Open http://localhost:5173 — the vertical Feedback tab sits on the right edge (pass `position="bottom-right"` for the legacy corner bubble).
 
 ## Files
 

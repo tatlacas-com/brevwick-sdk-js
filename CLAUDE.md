@@ -64,7 +64,10 @@ pnpm --filter @tatlacas/brevwick-react test
 - Core `@tatlacas/brevwick-sdk` eager total (`index.js` + every chunk it pulls in via static `import` / `export … from`): **< 8 kB gzip** (bumped from 2.85 kB when the console + network rings moved into the eager registry to close the install-time capture race; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and `.size-limit.js`, mirrored in SDD § 12)
 - On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
 - React adapter `@tatlacas/brevwick-react`: **< 25 kB gzip**
-- Solid adapter `@tatlacas/brevwick-solid`: **< 12 kB gzip** (bumped from 5 kB in issue #113 when the Solid widget reached UX parity with the React adapter — chat-thread panel, AI toggle, staged-status rows, retry CTA. Screenshot UI is intentionally absent in v1 per PR #111; callers that need it invoke `useFeedback().captureScreenshot()` directly. The Solid surface stays well below the React 25 kB ceiling.)
+- Solid adapter `@tatlacas/brevwick-solid`: **< 13 kB gzip** (bumped from 5 kB in issue #113 when the Solid widget reached UX parity with the React adapter — chat-thread panel, AI toggle, staged-status rows, retry CTA. The screenshot capture button — restored after the v1 future-flag removal in PR #111 — fits within this ceiling; bumped 12 → 13 kB when the launcher redesign (PR #157: side-tab/bubble variants, compact mode, `resolveLauncherPlacement`) landed on top of the restored screenshot button, pushing the CJS interop bundle to ~12.1 kB. The Solid surface stays well below the React 25 kB ceiling.)
+- Vue adapter `@tatlacas/brevwick-vue`: **< 13 kB gzip** (bumped from 10 kB when the screenshot capture button, region-select overlay, and preview dialog were restored; enforced by `packages/vue/src/__tests__/chunk-split.test.ts` and `.size-limit.js`)
+- Svelte adapter `@tatlacas/brevwick-svelte`: eager entry **< 5 kB gzip**; `FeedbackButton.svelte` SFC source **< 22 kB gzip** (bumped from 14 kB when the screenshot capture UI was restored)
+- Angular adapter `@tatlacas/brevwick-angular` (FESM2022): **< 31 kB gzip** (bumped from 18 kB when the screenshot capture UI was restored; Angular scaffolding carries 4-5 kB irreducible overhead)
 
 The console + network rings sit on the eager path on purpose: they have to be live before the first user error or fetch fires, otherwise the submitted issue is missing the very evidence the user opened the widget to report. Anything heavy that does NOT need to capture pre-submit (`modern-screenshot`, the submit pipeline, the project-config fetch) stays behind `await import('…')` so it doesn't ship until needed.
 
@@ -74,7 +77,7 @@ Every payload that leaves the device runs through `redact()` first. Adding a new
 
 ## Versioning
 
-All seven packages move together (linked in `.changeset/config.json`). Versions follow SemVer from `1.0.0` onward — the `1.0.0-beta.X` train is the lead-up to the first stable.
+All seven packages move together (`fixed` group in `.changeset/config.json`) — every release bumps every package to the same version, even if a changeset only mentions one of them, so consumers always install matching versions across the SDK + every adapter. Versions follow SemVer from `1.0.0` onward — the `1.0.0-beta.X` train is the lead-up to the first stable.
 
 - `feat:` — minor bump
 - `fix:` / `refactor:` — patch bump

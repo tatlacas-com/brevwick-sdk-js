@@ -41,6 +41,8 @@ defineProps<{ configError: ConfigError }>();
         instance) in <code>.env.local</code>.
       </p>
     </section>
-    <FeedbackButton v-if="configError === null" position="bottom-right" />
+    <!-- Right-edge tab by default; pass position="bottom-right" to keep
+         the legacy corner bubble. -->
+    <FeedbackButton v-if="configError === null" />
   </main>
 </template>

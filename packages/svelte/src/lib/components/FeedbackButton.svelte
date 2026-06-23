@@ -9,31 +9,59 @@
   } from '@tatlacas/brevwick-sdk';
   import { getFeedback } from '../context';
   import { BREVWICK_SVELTE_VERSION } from '../internal/version';
+  import {
+    resolveLauncherPlacement,
+    type FeedbackButtonPosition,
+    type FeedbackButtonVariant,
+  } from '../launcher';
 
-  // Props use Svelte's `export let` (legacy mode under Svelte 5) rather
-  // than `$props()` runes. This keeps the SFC compiling under both legacy
-  // and runes-mode hosts: Svelte 5 supports `export let` cleanly in legacy
-  // mode, and a runes-mode parent simply sees the same prop interface.
-  // We will revisit when Svelte 6 (rune-only) lands.
-  /** Corner the FAB pins to. Default `'bottom-right'`. */
-  export let position: 'bottom-right' | 'bottom-left' = 'bottom-right';
+  // Props use `export let` (not `$props()` runes) so the SFC compiles
+  // under both legacy and runes-mode hosts. Revisit at Svelte 6.
+  /**
+   * Launcher presentation. Default `'tab'` (new default). Intentionally no
+   * prop-level default — `resolveLauncherPlacement` must see "unset" so the
+   * corner-implies-bubble compat rule can fire.
+   */
+  export let variant: FeedbackButtonVariant | undefined = undefined;
+  /**
+   * Launcher placement. Defaults: `'right'` (tab), `'bottom-right'`
+   * (bubble). A legacy corner without an explicit `variant` keeps the
+   * bubble; when both are set, `variant` wins and `position` contributes
+   * only its horizontal side.
+   */
+  export let position: FeedbackButtonPosition | undefined = undefined;
+  /**
+   * Icon-only mode (circular bubble / square edge tab). The `label` is not
+   * rendered but becomes the `aria-label`. Default `false`.
+   */
+  export let compact: boolean = false;
+  /**
+   * Tab-only: vertical offset in px from the viewport's vertical center
+   * (positive = down). Ignored for the bubble. Default `0`.
+   */
+  export let offset: number = 0;
   /** When true, the FAB renders as disabled and cannot open the dialog. */
   export let disabled: boolean = false;
   /** When true, the component renders nothing. Useful for feature-flagging. */
   export let hidden: boolean = false;
-  /** FAB label. Default `'Feedback'`. */
+  /** Launcher label. Default `'Feedback'`. Hidden visually when `compact`. */
   export let label: string = 'Feedback';
   /** Force a palette regardless of the OS `prefers-color-scheme` setting. */
   export let theme: 'light' | 'dark' | 'system' = 'system';
   /** Fired with the SDK's `SubmitResult` after every submit (success or failure). */
   export let onSubmit: ((result: SubmitResult) => void) | undefined = undefined;
 
-  // File attachment cap. Keep in sync with MAX_ATTACHMENT_COUNT in
-  // packages/sdk/src/submit.ts (not exported on the SDK's frozen public
+  // Combined screenshot + file cap. Keep in sync with MAX_ATTACHMENT_COUNT
+  // in packages/sdk/src/submit.ts (not exported on the SDK's frozen public
   // surface) and the matching constant in packages/react/src/feedback-button.tsx.
   // Enforced in the UI so the user can't queue an attachment the SDK would
   // reject downstream.
   const MAX_ATTACHMENTS = 5;
+
+  // Minimum accepted side length (px) for a region selection — below this
+  // the selection is treated as an accidental click and the confirm is
+  // rejected with a shake. Mirrors REGION_MIN_SIDE_PX in the React adapter.
+  const REGION_MIN_SIDE_PX = 2;
 
   // Stagger between staged-status rows in milliseconds. Applied as
   // `animation-delay` per row (the rows mount with a CSS @keyframes
@@ -43,10 +71,8 @@
   // see `prefersReducedMotion` below.
   const STATUS_ROW_STAGGER_MS = 200;
 
-  // Phase ordinal mirrored from the React adapter (#74). Row 1 ("Captured")
-  // shows from `'sanitising'` onwards, row 2 ("Sanitised") from
-  // `'formatting'` onwards. Row 3 ("Formatting with AI") has its own
-  // exact-match rule and does not consult this table.
+  // Phase ordinal mirrored from the React adapter (#74). Row 3
+  // ("Formatting with AI") has its own exact-match rule.
   const PHASE_RANK: Record<string, number> = {
     idle: 0,
     capturing: 1,
@@ -64,23 +90,24 @@
   const phase = feedback.phase;
   const submitErrorTagged = feedback.error;
 
-  /**
-   * One bubble in the conversation thread. The greeting and submitted-issue
-   * receipt are `assistant` messages; submitted drafts become `user`
-   * messages. Mirrors the React adapter's Message shape.
-   */
+  /** One bubble in the conversation thread (React's Message shape). */
   type Message = {
     id: string;
     role: 'assistant' | 'user';
     text: string;
     sentAt?: number;
     issueSent?: boolean;
+    /**
+     * Exact post-redaction payload the SDK POSTed — set only under
+     * `config.debug`; renders a "copy raw payload" affordance.
+     */
+    rawPayload?: Record<string, unknown>;
   };
 
   const GREETING: Message = {
     id: 'greeting',
     role: 'assistant',
-    text: "Hi! Tell us what's happening.",
+    text: "Hi! Tell us what's happening. A screenshot helps if you have one.",
   };
   const ASSISTANT_RECEIPT_TEXT = 'Thanks — your issue is on its way.';
 
@@ -88,6 +115,23 @@
   // the React adapter's COMPOSER_MAX_HEIGHT_PX so the two widgets cap at
   // the same line count before scrolling internally.
   const COMPOSER_MAX_HEIGHT_PX = 120;
+
+  /** One captured screenshot queued in the composer. `url` is an object URL
+   *  for the thumbnail / preview; revoked on remove / submit / reset /
+   *  destroy so a long session doesn't leak blob URLs. */
+  type ScreenshotAttachment = { id: number; blob: Blob; url: string };
+
+  /** Viewport-space rectangle selected by the user on the region overlay. */
+  type Region = { x: number; y: number; w: number; h: number };
+
+  type DragState = {
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  };
 
   let mounted = false;
   let open = false;
@@ -98,21 +142,40 @@
   let confirmClose = false;
   let useAi = true;
   let messages: Message[] = [GREETING];
+  let screenshots: ScreenshotAttachment[] = [];
   let files: { id: number; file: File }[] = [];
   let submitError: string | null = null;
+  // True while a capture is being rasterised / cropped (issue #55). Drives
+  // the in-thread "Capturing screenshot…" bubble, disables the screenshot /
+  // file / Send controls and gates the Enter-to-send path in handleSubmit.
+  let capturing = false;
+  // Whether the region-capture overlay is up. The panel stays mounted but
+  // gets `brw-svelte-panel-hidden` (visibility:hidden) so the user can see
+  // — and drag-select over — page content the panel would otherwise cover
+  // (#49), without losing composer state.
+  let regionOpen = false;
+  // Stable screenshot id of the thumbnail the user tapped to preview;
+  // `null` keeps the preview dialog closed. Using the id (not the array
+  // index) keeps the dialog bound to the same attachment if a sibling
+  // screenshot is removed mid-preview; removing the previewed screenshot
+  // itself clears the id (handled in removeScreenshot).
+  let previewId: number | null = null;
+  // Region-overlay drag state. `dragging` gates pointermove so a hover
+  // without a press never mutates the selection.
+  let drag: DragState | null = null;
+  let dragging = false;
+  // Transient "shake" on a degenerate (accidental-click-sized) selection.
+  let shake = false;
+  let shakeTimer: ReturnType<typeof setTimeout> | undefined;
+  let screenshotId = 0;
   let fileId = 0;
   let messageId = 0;
   let prefersReducedMotion = false;
-  // Bound to the composer textarea so the autogrow reactive block can
-  // measure scrollHeight and resize between min-height (one row) and
-  // COMPOSER_MAX_HEIGHT_PX without coupling to a CSS-only grow that
-  // would jump in row-sized increments.
+  // Bound to the composer textarea for scrollHeight-based autogrow.
   let textareaEl: HTMLTextAreaElement | undefined;
 
   // Project-config render-policy state. Mirrors React's `useProjectConfig`:
-  // lazy fetch on first panel open, cache the result for the lifetime of the
-  // component. The fetch is gated behind the open-state to preserve the
-  // widget's "zero-cost until opened" property.
+  // lazy fetch on first open, cached for the component's lifetime.
   type ProjectConfigStatus = 'idle' | 'loading' | 'ready' | 'error';
   let projectConfigStatus: ProjectConfigStatus = 'idle';
   let projectConfig: ProjectConfig | null = null;
@@ -127,37 +190,45 @@
     projectConfig?.ai_enabled === true &&
     projectConfig?.ai_submitter_choice_allowed === true;
 
-  // Last submitted FeedbackInput so the retry path can re-run the exact same
-  // payload without forcing the user to re-type the draft we cleared
-  // synchronously on Send.
+  // Last submitted FeedbackInput so retry re-runs the exact same payload.
   let lastSubmittedInput: FeedbackInput | null = null;
+  // User bubble id for the most recent submit, so retry can re-attach a
+  // freshly composed `rawPayload` to the same bubble.
+  let lastUserMessageId: string | null = null;
+  // Bubble id showing "Copied!" feedback + the timer that clears it.
+  let copiedRawId: string | null = null;
+  let copiedRawTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  // Receipt timestamps live in a writable so the relative-time formatter
-  // re-runs reactively without coupling to the message identity. Mirrors
-  // the React `formatRelativeTime` reading `Date.now()` once at render.
+  // Writable so the relative-time formatter re-runs reactively.
   const nowStore = writable<number>(Date.now());
 
-  $: attachmentsAtCap = files.length >= MAX_ATTACHMENTS;
+  $: attachmentCount = screenshots.length + files.length;
+  $: attachmentsAtCap = attachmentCount >= MAX_ATTACHMENTS;
   $: hasContent =
     draft.trim().length > 0 ||
     expected.length > 0 ||
     actual.length > 0 ||
+    screenshots.length > 0 ||
     files.length > 0;
-  $: canSend = draft.trim().length > 0 && $status !== 'submitting';
+  $: canSend =
+    draft.trim().length > 0 && $status !== 'submitting' && !capturing;
+  // aria-label on the screenshot button mutates so AT users hear *why* the
+  // control is unavailable instead of a generic "dimmed" announcement.
+  $: screenshotLabel = attachmentsAtCap
+    ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
+    : capturing
+      ? 'Capturing screenshot…'
+      : 'Capture screenshot of this page';
 
-  // Autogrow the composer textarea between one row and
-  // COMPOSER_MAX_HEIGHT_PX as the user types. Mirrors the React adapter:
-  // reset to `auto` first so shrinking on backspace works, then size to
-  // `scrollHeight` capped at the ceiling.
+  // Autogrow the composer textarea up to COMPOSER_MAX_HEIGHT_PX. Reset to
+  // `auto` first so shrinking on backspace works (parity with React).
   $: if (textareaEl && draft !== undefined) {
     textareaEl.style.height = 'auto';
     textareaEl.style.height = `${Math.min(textareaEl.scrollHeight, COMPOSER_MAX_HEIGHT_PX)}px`;
   }
 
-  // Phase-driven row visibility. Parity with the React adapter — row 1
-  // shows from `sanitising` onwards, row 2 from `formatting` onwards, row
-  // 3 only during the exact `formatting` phase (and only when the project
-  // has AI enabled). The retry row owns the `error` phase exclusively.
+  // Phase-driven row visibility, parity with React. The retry row owns
+  // the `error` phase exclusively.
   $: phaseRank = PHASE_RANK[$phase] ?? 0;
   $: showCaptured = phaseRank >= PHASE_RANK.sanitising;
   $: showSanitised = phaseRank >= PHASE_RANK.formatting;
@@ -179,12 +250,15 @@
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', handleWindowKeydown);
     }
+    if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
+    if (shakeTimer) clearTimeout(shakeTimer);
+    // Revoke any object URLs left behind on destroy so an HMR cycle doesn't
+    // leak thumbnail previews between renders.
+    for (const s of screenshots) URL.revokeObjectURL(s.url);
   });
 
-  // Lazy project-config fetch on first panel open. Subsequent opens reuse
-  // the cached result. Mirrors the React adapter's useProjectConfig — the
-  // SDK itself caches per session, so the second call would no-op anyway,
-  // but tracking here avoids an extra awaited microtask on every open.
+  // Lazy project-config fetch on first panel open; later opens reuse the
+  // cached result (the SDK also caches per session).
   $: if (open && !projectConfigTriggered) {
     projectConfigTriggered = true;
     projectConfigStatus = 'loading';
@@ -208,12 +282,57 @@
     return `msg-${messageId}`;
   }
 
+  /**
+   * Stamp the dev-only raw payload onto a user bubble once `submit()`
+   * resolves. No-op unless the host enabled `config.debug` (the SDK only
+   * populates `result.debug` then), so this is inert in production.
+   */
+  function attachRawPayload(messageId: string, result: SubmitResult): void {
+    const payload = result.debug?.payload;
+    if (!payload) return;
+    messages = messages.map((m) =>
+      m.id === messageId ? { ...m, rawPayload: payload } : m,
+    );
+  }
+
+  /**
+   * Copy the dev-only raw payload (the exact, post-redaction JSON body POSTed
+   * to the ingest endpoint) to the clipboard. Pretty-printed with a two-space
+   * indent; the parsed JSON matches what was sent over the wire (only the
+   * whitespace differs from the unindented request body). Degrades to a no-op
+   * where the async clipboard API is missing.
+   */
+  function copyRaw(message: Message): void {
+    if (!message.rawPayload) return;
+    const json = JSON.stringify(message.rawPayload, null, 2);
+    const clip =
+      navigator.clipboard;
+    if (!clip) return;
+    void clip.writeText(json).then(
+      () => {
+        copiedRawId = message.id;
+        if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
+        copiedRawTimeout = setTimeout(() => {
+          copiedRawId = null;
+        }, 1500);
+      },
+      () => {
+        /* clipboard write rejected (permissions) — leave the label as is */
+      },
+    );
+  }
+
   function resetAll(): void {
     draft = '';
     expected = '';
     actual = '';
     showExtras = false;
+    for (const s of screenshots) URL.revokeObjectURL(s.url);
+    screenshots = [];
     files = [];
+    previewId = null;
+    regionOpen = false;
+    resetRegionState();
     confirmClose = false;
     submitError = null;
     messages = [GREETING];
@@ -264,9 +383,24 @@
   // Escape-to-close: parity with the React adapter (Radix Dialog ships this
   // for free). Listener is attached only while the panel is open and is
   // detached the moment it closes or the component unmounts. Esc maps to
-  // minimize so the user's draft survives an accidental keypress.
+  // minimize so the user's draft survives an accidental keypress. When the
+  // screenshot preview dialog or the region-capture overlay is up, Esc is
+  // consumed by the topmost layer (parity with React's nested Dialog.Roots,
+  // where Radix scopes Esc to the innermost dialog): preview first, then
+  // overlay, then the panel's own minimize.
   function handleWindowKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape' && open) {
+    if (event.key !== 'Escape') return;
+    if (previewId !== null) {
+      event.preventDefault();
+      previewId = null;
+      return;
+    }
+    if (regionOpen) {
+      event.preventDefault();
+      closeRegion();
+      return;
+    }
+    if (open) {
       event.preventDefault();
       minimizePanel();
     }
@@ -280,11 +414,177 @@
     }
   }
 
+  /**
+   * Capture the page (optionally cropped to a user-selected region) and
+   * queue the result as a composer attachment. Split from the historical
+   * one-shot capture: the screenshot button now only opens the region
+   * overlay, and the overlay fans out here with either a region or `null`
+   * (full page). The overlay is torn down before `captureScreenshot()` is
+   * awaited; `data-brevwick-skip` on every overlay node is defence-in-depth
+   * should a capture ever race the unmount.
+   */
+  async function performCapture(region: Region | null): Promise<void> {
+    submitError = null;
+    capturing = true;
+    try {
+      const blob = await feedback.captureScreenshot();
+      const finalBlob = region ? await cropToRegion(blob, region) : blob;
+      // Defence-in-depth: the screenshot button is disabled at the cap, but
+      // a long-running capture started before files were attached can still
+      // land after the combined total reached the ceiling. Drop the new
+      // capture rather than silently exceed the SDK's attachment cap. (The
+      // object URL is only created on the keep path, so a rejected capture
+      // doesn't leak.)
+      if (screenshots.length + files.length >= MAX_ATTACHMENTS) {
+        submitError = `Maximum ${MAX_ATTACHMENTS} attachments reached`;
+        return;
+      }
+      screenshotId += 1;
+      screenshots = [
+        ...screenshots,
+        {
+          id: screenshotId,
+          blob: finalBlob,
+          url: URL.createObjectURL(finalBlob),
+        },
+      ];
+    } catch (err) {
+      // Non-blocking inline alert; no chip is queued and Send re-enables
+      // immediately — a failed capture never blocks submission.
+      submitError =
+        err instanceof Error ? err.message : 'Screenshot capture failed';
+    } finally {
+      capturing = false;
+    }
+  }
+
+  function resetRegionState(): void {
+    drag = null;
+    dragging = false;
+    shake = false;
+    if (shakeTimer) {
+      clearTimeout(shakeTimer);
+      shakeTimer = undefined;
+    }
+  }
+
+  function openRegionOverlay(): void {
+    if (capturing || attachmentsAtCap) return;
+    submitError = null;
+    resetRegionState();
+    regionOpen = true;
+  }
+
+  function closeRegion(): void {
+    regionOpen = false;
+    resetRegionState();
+  }
+
+  function confirmRegionFull(): void {
+    closeRegion();
+    void performCapture(null);
+  }
+
+  function confirmRegion(): void {
+    if (
+      !drag ||
+      drag.w <= REGION_MIN_SIDE_PX ||
+      drag.h <= REGION_MIN_SIDE_PX
+    ) {
+      // Degenerate (accidental-click-sized) selection: shake the overlay
+      // instead of capturing. Replace any in-flight settle timer so
+      // rapid-fire clicks don't stack.
+      shake = true;
+      if (shakeTimer) clearTimeout(shakeTimer);
+      shakeTimer = setTimeout(() => {
+        shake = false;
+        shakeTimer = undefined;
+      }, 320);
+      return;
+    }
+    const region: Region = { x: drag.x, y: drag.y, w: drag.w, h: drag.h };
+    closeRegion();
+    void performCapture(region);
+  }
+
+  function handleRegionPointerDown(event: PointerEvent): void {
+    // Pointerdown on the Cancel / Capture / Capture-full-page controls
+    // bubbles up through this handler. Without this guard the bubbled
+    // event would reinitialise the drag state to a zero-size rect right
+    // before the button's own click fires, sending a valid selection into
+    // the degenerate-shake path. Only initiate a drag when the press
+    // landed directly on the overlay layer.
+    if (event.target !== event.currentTarget) return;
+    // Ignore non-primary buttons (right- / middle-click). pointerType
+    // 'touch' and 'pen' always issue button === 0.
+    if (event.button !== 0) return;
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    dragging = true;
+    drag = {
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      w: 0,
+      h: 0,
+    };
+  }
+
+  function handleRegionPointerMove(event: PointerEvent): void {
+    if (!dragging || !drag) return;
+    drag = {
+      startX: drag.startX,
+      startY: drag.startY,
+      x: Math.min(drag.startX, event.clientX),
+      y: Math.min(drag.startY, event.clientY),
+      w: Math.abs(event.clientX - drag.startX),
+      h: Math.abs(event.clientY - drag.startY),
+    };
+  }
+
+  function handleRegionPointerUp(event: PointerEvent): void {
+    if (!dragging) return;
+    (event.currentTarget as HTMLElement).releasePointerCapture?.(
+      event.pointerId,
+    );
+    dragging = false;
+  }
+
+  // Enter on the overlay root confirms the region — but only when the
+  // overlay root itself is the event target. Tab-focusing a button inside
+  // the overlay and pressing Enter bubbles up here; without the guard we
+  // would hijack the button's own Enter activation (Cancel, Capture full
+  // page) and run the region-confirm path instead — a real a11y defect.
+  function handleRegionKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter') return;
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    confirmRegion();
+  }
+
+  function removeScreenshot(id: number): void {
+    const target = screenshots.find((s) => s.id === id);
+    if (target) URL.revokeObjectURL(target.url);
+    screenshots = screenshots.filter((s) => s.id !== id);
+    if (previewId === id) previewId = null;
+  }
+
+  function previewScreenshot(id: number): void {
+    previewId = id;
+  }
+
+  function closePreview(): void {
+    previewId = null;
+  }
+
   function handleFiles(event: Event): void {
     const input = event.target as HTMLInputElement;
     const list = input.files;
     if (!list || list.length === 0) return;
-    const remaining = MAX_ATTACHMENTS - files.length;
+    // Cap the combined screenshot+file total so a bulk-add via
+    // <input multiple> can't exceed the SDK ceiling. Prefix-of-input
+    // semantics: drop the overflow tail, not arbitrary entries.
+    const remaining = MAX_ATTACHMENTS - (files.length + screenshots.length);
     if (remaining <= 0) {
       input.value = '';
       return;
@@ -309,6 +609,12 @@
 
   async function handleSubmit(): Promise<void> {
     if (!canSend) return;
+    // Block submission while a capture is in flight (`canSend` already
+    // covers it; this explicit guard keeps the contract obvious). Without
+    // it the user could press Enter between clicking Capture and the
+    // thumbnail rendering, sending the issue without the screenshot they
+    // intended to include.
+    if (capturing) return;
     if (!draft.trim()) {
       submitError = 'Please describe what happened.';
       return;
@@ -316,6 +622,18 @@
     submitError = null;
 
     const attachments: Array<Blob | FeedbackAttachment> = [];
+    // Single-screenshot filename stays `screenshot.<ext>` (matches the
+    // pre-#56 wire format and keeps server-side identifiers stable).
+    // Multi-screenshot submissions disambiguate with `-1`, `-2`, … in the
+    // order they were captured. Extension derives from the blob's MIME.
+    screenshots.forEach((s, idx) => {
+      const ext = s.blob.type.split('/')[1]?.split('+')[0] || 'webp';
+      const filename =
+        screenshots.length === 1
+          ? `screenshot.${ext}`
+          : `screenshot-${idx + 1}.${ext}`;
+      attachments.push({ blob: s.blob, filename });
+    });
     for (const { file } of files)
       attachments.push({ blob: file, filename: file.name });
 
@@ -348,6 +666,12 @@
     };
     messages = [...messages, userBubble];
 
+    // Snapshot the in-flight sets so we only revoke / drop attachments that
+    // actually rode along with this submit. The composer's capture button is
+    // disabled while $status === 'submitting', but a defence-in-depth diff
+    // keeps any screenshot that somehow lands mid-flight from being silently
+    // dropped along with its object URL.
+    const submittedScreenshotIds = new Set(screenshots.map((s) => s.id));
     const submittedFileIds = new Set(files.map((f) => f.id));
 
     draft = '';
@@ -355,10 +679,12 @@
     actual = '';
     showExtras = false;
     lastSubmittedInput = input;
+    lastUserMessageId = userBubble.id;
 
     try {
       const result = await feedback.submit(input);
       onSubmit?.(result);
+      attachRawPayload(userBubble.id, result);
       if (result.ok) {
         const assistant: Message = {
           id: newMessageId(),
@@ -372,7 +698,16 @@
         // success confirmation is actually seen.
         open = true;
         // Drop the live composer attachments now they have ridden along
-        // with the submit.
+        // with the submit, revoking the submitted screenshots' object URLs.
+        for (const s of screenshots) {
+          if (submittedScreenshotIds.has(s.id)) URL.revokeObjectURL(s.url);
+        }
+        screenshots = screenshots.filter(
+          (s) => !submittedScreenshotIds.has(s.id),
+        );
+        if (previewId !== null && submittedScreenshotIds.has(previewId)) {
+          previewId = null;
+        }
         files = files.filter((f) => !submittedFileIds.has(f.id));
         // Refresh the relative-time anchor so the receipt's "just now"
         // is computed against the same Date.now we just stamped.
@@ -410,6 +745,7 @@
       const result = await feedback.retry();
       if (!result) return;
       onSubmit?.(result);
+      if (lastUserMessageId) attachRawPayload(lastUserMessageId, result);
       if (result.ok) {
         const assistant: Message = {
           id: newMessageId(),
@@ -462,6 +798,71 @@
     }
   }
 
+  /**
+   * Crop a full-page screenshot Blob to the user-selected viewport
+   * rectangle. The source Blob from `captureScreenshot()` is rendered in
+   * device pixels by the core SDK's screenshot encoder, but the region came
+   * from pointer events in CSS pixels, so the source rectangle is multiplied
+   * by `devicePixelRatio` on the way in and drawn out at the selection's
+   * CSS-pixel size. Uses `OffscreenCanvas` when the host provides it *with* a
+   * working `convertToBlob` (cheaper, avoids a DOM node); otherwise falls back
+   * to a detached `<canvas>` + `toBlob`. Some environments expose
+   * `OffscreenCanvas` without `convertToBlob`, so presence alone is not enough
+   * — we feature-detect the method before taking that path. Output MIME is PNG
+   * — the caller derives the attachment filename from `blob.type`. Mirrors the
+   * React adapter's `cropToRegion`.
+   */
+  async function cropToRegion(blob: Blob, region: Region): Promise<Blob> {
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await loadImageForCrop(url);
+      const dpr =
+        typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+      const sx = region.x * dpr;
+      const sy = region.y * dpr;
+      const sw = region.w * dpr;
+      const sh = region.h * dpr;
+
+      const OffscreenCanvasCtor =
+        typeof OffscreenCanvas !== 'undefined' &&
+        'convertToBlob' in OffscreenCanvas.prototype
+          ? OffscreenCanvas
+          : undefined;
+      if (OffscreenCanvasCtor) {
+        const canvas = new OffscreenCanvasCtor(region.w, region.h);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2D context unavailable');
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, region.w, region.h);
+        return await canvas.convertToBlob({ type: 'image/png' });
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = region.w;
+      canvas.height = region.h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 2D context unavailable');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, region.w, region.h);
+      return await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (out) =>
+            out ? resolve(out) : reject(new Error('Canvas produced no blob')),
+          'image/png',
+        );
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function loadImageForCrop(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () =>
+        reject(new Error('Screenshot failed to load for crop'));
+      img.src = src;
+    });
+  }
+
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
@@ -487,10 +888,27 @@
     return `${days} d ago`;
   }
 
-  // Reactive so the FAB / panel CSS classes re-derive when `position` changes.
-  $: fabPosClass = position === 'bottom-left' ? 'brw-fab-bl' : 'brw-fab-br';
+  // resolveLauncherPlacement is the single source of truth for the
+  // variant/position matrix (shared shape with React).
+  $: placement = resolveLauncherPlacement(variant, position);
+  $: fabModifierClasses = [
+    placement.variant === 'tab' ? 'brw-fab--tab' : 'brw-fab--bubble',
+    placement.variant === 'tab'
+      ? placement.side === 'left'
+        ? 'brw-fab-l'
+        : 'brw-fab-r'
+      : placement.side === 'left'
+        ? 'brw-fab-bl'
+        : 'brw-fab-br',
+    compact ? 'brw-fab--compact' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   $: panelPosClass =
-    position === 'bottom-left' ? 'brw-panel-bl' : 'brw-panel-br';
+    placement.side === 'left' ? 'brw-panel-bl' : 'brw-panel-br';
+  // Compact removes the visible text, so `label` becomes the aria-label;
+  // non-compact keeps the established accessible name (parity with React).
+  $: fabAriaLabel = compact ? label : 'Open feedback form';
 
   // Per-instance ID for the disclosure aria-controls relationship. Stays
   // stable across re-renders so AT focus tracking doesn't churn. Uses a
@@ -502,8 +920,14 @@
 {#if !hidden && mounted}
   <div class="brw-svelte-root" data-brw-theme={theme} data-brevwick-skip>
     {#if open}
+      <!-- Hidden (not unmounted) while the region overlay is up so the user
+           can see — and select a region over — page content the panel would
+           otherwise cover (#49). visibility:hidden preserves composer state
+           and the existing data-brevwick-skip keeps it out of the capture. -->
       <div
-        class="brw-svelte-panel {panelPosClass}"
+        class="brw-svelte-panel {panelPosClass}{regionOpen
+          ? ' brw-svelte-panel-hidden'
+          : ''}"
         role="dialog"
         aria-modal="false"
         aria-label="Send feedback"
@@ -582,8 +1006,50 @@
             {:else}
               <div class="brw-svelte-bubble brw-svelte-bubble--user">
                 {message.text}
+                {#if message.rawPayload !== undefined}
+                  <button
+                    type="button"
+                    class="brw-svelte-copy-raw"
+                    aria-label="Copy the raw payload sent to the API"
+                    data-brw-copy-raw
+                    on:click={() => copyRaw(message)}
+                  >
+                    {copiedRawId === message.id ? 'Copied!' : 'Copy raw payload'}
+                  </button>
+                {/if}
               </div>
             {/if}
+          {/each}
+
+          {#each screenshots as shot, idx (shot.id)}
+            {@const shotLabel =
+              screenshots.length === 1 ? 'screenshot' : `screenshot ${idx + 1}`}
+            <div class="brw-svelte-chip">
+              <!-- The thumbnail is a button so keyboard users can open the
+                   preview with Enter / Space the same way pointer users can
+                   click. The remove × is a sibling — clicks on it don't
+                   propagate into the open-preview path. -->
+              <button
+                type="button"
+                class="brw-svelte-chip-preview-btn"
+                aria-label={`Preview ${shotLabel}`}
+                on:click={() => previewScreenshot(shot.id)}
+              >
+                <img src={shot.url} alt="" class="brw-svelte-chip-thumb" />
+              </button>
+              <span class="brw-svelte-chip-name">{shotLabel}</span>
+              <span class="brw-svelte-chip-size"
+                >{formatSize(shot.blob.size)}</span
+              >
+              <button
+                type="button"
+                class="brw-svelte-chip-remove"
+                aria-label={`Remove ${shotLabel}`}
+                on:click={() => removeScreenshot(shot.id)}
+              >
+                ×
+              </button>
+            </div>
           {/each}
 
           {#each files as f (f.id)}
@@ -600,6 +1066,17 @@
               </button>
             </div>
           {/each}
+
+          {#if capturing}
+            <!-- In-thread loading indicator (#55). The region overlay closes
+                 before captureScreenshot() resolves, so this bubble bridges
+                 the otherwise-silent gap between the overlay closing and the
+                 thumbnail appearing. -->
+            <div class="brw-svelte-bubble brw-svelte-bubble--assistant">
+              <span class="brw-svelte-spinner" aria-hidden="true"></span>
+              Capturing screenshot…
+            </div>
+          {/if}
 
           <button
             type="button"
@@ -750,6 +1227,35 @@
 
         <div class="brw-svelte-composer">
           <div class="brw-svelte-composer-shell">
+            <button
+              type="button"
+              class="brw-svelte-icon-btn"
+              aria-label={screenshotLabel}
+              on:click={openRegionOverlay}
+              disabled={capturing || attachmentsAtCap || $status === 'submitting'}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="5" width="18" height="12" rx="2" />
+                <rect
+                  x="7"
+                  y="8"
+                  width="10"
+                  height="6"
+                  rx="1"
+                  stroke-dasharray="2 2"
+                />
+              </svg>
+            </button>
             <label class="brw-svelte-icon-btn" aria-label="Attach file">
               <svg
                 viewBox="0 0 24 24"
@@ -771,7 +1277,9 @@
                 multiple
                 class="brw-svelte-file-input"
                 on:change={handleFiles}
-                disabled={attachmentsAtCap || $status === 'submitting'}
+                disabled={capturing ||
+                  attachmentsAtCap ||
+                  $status === 'submitting'}
                 aria-label={attachmentsAtCap
                   ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
                   : 'Attach file'}
@@ -847,16 +1355,136 @@
       </div>
     {/if}
 
+    {#if regionOpen}
+      <!-- Full-viewport overlay that lets the submitter drag-select a
+           rectangle on top of the page. Confirming a non-degenerate
+           rectangle fans out to the crop pipeline; "Capture full page"
+           preserves the one-shot behaviour. Every node carries
+           data-brevwick-skip so a rogue capture that fires while the
+           overlay is still in the tree excludes the overlay chrome from
+           the image (the capture path unmounts the overlay first — this
+           is defence-in-depth). Mirrors React's RegionCaptureOverlay. -->
+      <div class="brw-svelte-region-backdrop" data-brevwick-skip></div>
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="brw-svelte-region-layer{shake ? ' brw-svelte-region-shake' : ''}"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Select screenshot region"
+        data-testid="brw-region-overlay"
+        data-brevwick-skip
+        tabindex="-1"
+        on:pointerdown={handleRegionPointerDown}
+        on:pointermove={handleRegionPointerMove}
+        on:pointerup={handleRegionPointerUp}
+        on:pointercancel={handleRegionPointerUp}
+        on:keydown={handleRegionKeydown}
+      >
+        <h2 class="brw-svelte-sr-only">Select screenshot region</h2>
+        {#if drag && drag.w > 0 && drag.h > 0}
+          <div
+            class="brw-svelte-region-selection"
+            data-testid="brw-region-selection"
+            style="left: {drag.x}px; top: {drag.y}px; width: {drag.w}px; height: {drag.h}px;"
+          ></div>
+        {/if}
+        <div class="brw-svelte-region-controls" data-brevwick-skip>
+          <button
+            type="button"
+            class="brw-svelte-btn brw-svelte-region-btn"
+            on:click={closeRegion}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="brw-svelte-btn brw-svelte-region-btn"
+            on:click={confirmRegionFull}
+          >
+            Capture full page
+          </button>
+          <button
+            type="button"
+            class="brw-svelte-btn brw-svelte-btn-primary brw-svelte-region-btn"
+            on:click={confirmRegion}
+          >
+            Capture
+          </button>
+        </div>
+      </div>
+    {/if}
+
+    {#if previewId !== null}
+      {@const previewShot =
+        screenshots.find((s) => s.id === previewId) ?? null}
+      <!-- Modal preview of a captured screenshot at viewport-fit size so the
+           submitter can confirm they captured the right region before
+           sending. Esc-to-dismiss is handled by the shared window keydown
+           listener (preview takes priority over panel minimize). Carries
+           data-brevwick-skip so a re-capture initiated while the dialog is
+           up doesn't snapshot the dialog chrome. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div
+        class="brw-svelte-preview-backdrop"
+        data-brevwick-skip
+        on:click={closePreview}
+      ></div>
+      <div
+        class="brw-svelte-preview-layer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Screenshot preview"
+        data-testid="brw-preview-dialog"
+        data-brevwick-skip
+      >
+        <h2 class="brw-svelte-sr-only">Screenshot preview</h2>
+        {#if previewShot}
+          <img
+            class="brw-svelte-preview-image"
+            src={previewShot.url}
+            alt="Captured screenshot"
+          />
+        {/if}
+        <button
+          type="button"
+          class="brw-svelte-icon-btn brw-svelte-preview-close"
+          aria-label="Close preview"
+          on:click={closePreview}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+    {/if}
+
+    <!-- --brw-fab-tab-offset is a positioning input, not part of the
+         public --brw-* theming contract — set only when it has an effect. -->
     <button
       type="button"
-      class="brw-svelte-fab {fabPosClass}"
+      class="brw-svelte-fab {fabModifierClasses}"
       data-brevwick-skip
       data-testid="brw-svelte-fab"
-      aria-label="Open feedback form"
+      data-brw-variant={placement.variant}
+      aria-label={fabAriaLabel}
+      style:--brw-fab-tab-offset={placement.variant === 'tab' && offset !== 0
+        ? `${offset}px`
+        : undefined}
       {disabled}
       on:click={toggleOpen}
     >
       <svg
+        class="brw-fab-icon"
         viewBox="0 0 24 24"
         width="18"
         height="18"
@@ -869,7 +1497,7 @@
       >
         <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
       </svg>
-      <span>{label}</span>
+      {#if !compact}<span class="brw-fab-label">{label}</span>{/if}
     </button>
   </div>
 {/if}
@@ -901,11 +1529,8 @@
     --brw-accent: #4f46e5;
     --brw-accent-fg: #ffffff;
     --brw-error: #b91c1c;
-    /* Success / check colour for the staged-status checklist. Matches the
-       emerald used in the marketing AnimatedDemo so the in-widget checklist
-       reads as the same affordance the docs preview. Widget-internal: no
-       public --brw-success alias by design — host overrides flow through
-       --brw-accent for chrome and don't need a knob for the green tick. */
+    /* Checklist tick colour. Widget-internal by design — no public
+       --brw-success knob; host overrides flow through --brw-accent. */
     --brw-success: #10b981;
     --brw-shadow:
       0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -958,14 +1583,13 @@
     }
   }
 
+  /* Shared launcher chrome — variant geometry lives on .brw-fab--bubble /
+     .brw-fab--tab (mirrors the React adapter's .brw-fab split). */
   .brw-svelte-fab {
     position: fixed;
-    bottom: 24px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 16px;
-    border-radius: 999px;
     border: 1px solid var(--brw-border);
     background: var(--brw-panel-bg);
     color: var(--brw-fg);
@@ -973,23 +1597,97 @@
     cursor: pointer;
     font: inherit;
     z-index: 2147483646;
+    transition: transform 120ms ease-out;
   }
   .brw-svelte-fab:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
-  .brw-svelte-fab.brw-fab-br {
-    right: 24px;
+  /* Ring sits 2px outside the box so it clears the tab's flat edge. */
+  .brw-svelte-fab:focus-visible {
+    outline: 2px solid var(--brw-border-focus);
+    outline-offset: 2px;
   }
-  .brw-svelte-fab.brw-fab-bl {
-    left: 24px;
+  .brw-svelte-fab .brw-fab-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
   }
 
-  /* Anchor the panel at the same `bottom: 24px` / corner offset as the
-     FAB so the panel's higher z-index covers the FAB while it is open
-     (parity with the React adapter — Radix Dialog there mounts the
-     panel above the trigger at the same position, hiding the FAB
-     behind the panel rather than leaving them side-by-side). */
+  /* Bubble — legacy corner pill. Fixed 48px height + 48px compact circle
+     to stay a visual twin of the react/solid/vue/RN bubble. */
+  .brw-svelte-fab.brw-fab--bubble {
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    height: 48px;
+    min-width: 48px;
+    padding: 0 18px;
+    border-radius: 999px;
+  }
+  .brw-svelte-fab.brw-fab--bubble:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  .brw-svelte-fab.brw-fab-br {
+    right: calc(24px + env(safe-area-inset-right, 0px));
+  }
+  .brw-svelte-fab.brw-fab-bl {
+    left: calc(24px + env(safe-area-inset-left, 0px));
+  }
+  .brw-svelte-fab.brw-fab--bubble.brw-fab--compact {
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  /* Tab — vertical edge tab, the new default. writing-mode stacks the
+     icon + label vertically; the left tab mirrors the flat edge and radii
+     by rotating 180° composed INSIDE `transform` (after the centering
+     translateY) via `--brw-fab-tab-flip`. Composing in `transform` (not the
+     standalone `rotate` property, which applies AFTER `transform` per CSS
+     Transforms L2) keeps `translateY(-50%)` outermost, so it never inverts
+     into `+50%` and the left tab stays vertically centred. */
+  .brw-svelte-fab.brw-fab--tab {
+    top: calc(50% + var(--brw-fab-tab-offset, 0px));
+    transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg));
+    writing-mode: vertical-rl;
+    min-height: 48px;
+    width: 40px;
+    padding: 16px 0;
+    justify-content: center;
+    /* Rounded page-facing side, flat against the viewport edge. */
+    border-radius: 10px 0 0 10px;
+  }
+  .brw-svelte-fab.brw-fab-r {
+    right: env(safe-area-inset-right, 0px);
+    border-right: none; /* flat edge: no hairline against the viewport */
+  }
+  .brw-svelte-fab.brw-fab-l {
+    left: env(safe-area-inset-left, 0px);
+    border-right: none; /* pre-flip right edge IS the viewport edge */
+    --brw-fab-tab-flip: 180deg;
+  }
+  /* Hover pulls the tab 2px out of its edge (the whole transform is
+     restated — transform overwrites). translateX(-2px) is innermost, so
+     the left tab's 180° flip turns it into +2px visually. */
+  .brw-svelte-fab.brw-fab--tab:hover:not(:disabled) {
+    transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg)) translateX(-2px);
+  }
+  .brw-svelte-fab .brw-fab-label {
+    letter-spacing: 0.02em;
+  }
+  .brw-svelte-fab.brw-fab--tab.brw-fab--compact {
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brw-svelte-fab {
+      transition: none;
+    }
+  }
+
+  /* Anchored at the FAB's corner offset so the panel's higher z-index
+     covers the FAB while open (parity with React's Radix Dialog). */
   .brw-svelte-panel {
     position: fixed;
     bottom: 24px;
@@ -1103,6 +1801,25 @@
   .brw-svelte-bubble--receipt svg {
     flex-shrink: 0;
   }
+  /* Dev-only "copy raw payload" button (config.debug). Sits under the bubble
+     text, muted, so it never competes with real widget chrome. */
+  .brw-svelte-copy-raw {
+    display: block;
+    margin-top: 6px;
+    padding: 2px 6px;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.4;
+    background: transparent;
+    border: 1px solid var(--brw-bubble-user-fg);
+    border-radius: 6px;
+    color: var(--brw-bubble-user-fg);
+    opacity: 0.7;
+    cursor: pointer;
+  }
+  .brw-svelte-copy-raw:hover {
+    opacity: 1;
+  }
 
   .brw-svelte-chip {
     display: inline-flex;
@@ -1113,6 +1830,22 @@
     border-radius: 8px;
     align-self: flex-start;
     max-width: 100%;
+  }
+  .brw-svelte-chip-preview-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+    display: inline-flex;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .brw-svelte-chip-thumb {
+    width: 24px;
+    height: 24px;
+    object-fit: cover;
+    border-radius: 4px;
+    display: block;
   }
   .brw-svelte-chip-name {
     font-size: 13px;
@@ -1189,18 +1922,11 @@
     min-height: 34px;
   }
 
-  /* Staged-status rows: progress indicators, not conversation bubbles.
-     They sit under a dashed top divider as a compact stacked checklist,
-     mirroring the marketing AnimatedDemo widget mock — and intentionally
-     stay outside the bubble class family so message-count queries ignore
-     them. .brw-svelte-status-rows is the grouping container that owns
-     the divider + stacking; .brw-svelte-status-row is one ticked line.
-     The animation-delay is set inline per row so the three rows fade in
-     sequentially under the shared @keyframes entrance even when the
-     underlying SDK phase events fire microseconds apart. The
-     reduced-motion media query collapses the entrance to an instant
-     fade, pairing with the inline 0ms delay the template emits when
-     prefers-reduced-motion: reduce. */
+  /* Staged-status rows: a stacked checklist under a dashed divider,
+     intentionally outside the bubble class family so message-count
+     queries ignore them. animation-delay is set inline per row so the
+     rows fade in sequentially even when SDK phase events fire
+     microseconds apart; reduced-motion collapses the entrance. */
   .brw-svelte-status-rows {
     align-self: stretch;
     display: flex;
@@ -1232,10 +1958,7 @@
     width: 12px;
     height: 12px;
   }
-  /* The shared .brw-svelte-spinner ships at 14px so it reads at full size
-     in the composer; inside the staged-status checklist it has to match
-     the 12px tick so the third row's indicator sits on the same baseline
-     as the first two. */
+  /* Downsize the shared 14px spinner to match the 12px ticks. */
   .brw-svelte-status-row .brw-svelte-spinner {
     width: 12px;
     height: 12px;
@@ -1243,11 +1966,8 @@
   .brw-svelte-status-row-label {
     flex: 1;
   }
-  /* The retry row is a standalone alert that sits outside the checklist
-     container, so it carries its own chrome — padding, radius, border —
-     instead of inheriting the checklist's tick-line minimalism. The
-     background stays transparent so the red border + red label read as
-     an alert overlay rather than a filled bubble surface. */
+  /* Retry row: a standalone alert outside the checklist container, with
+     its own chrome; transparent bg so it reads as an alert overlay. */
   .brw-svelte-status-row--error {
     align-self: stretch;
     padding: 10px 12px;
@@ -1337,15 +2057,9 @@
     }
   }
 
-  /* Outer composer is just the bottom strip — padding + bg + the
-     divider line above. The actual input affordance lives in
-     `.brw-svelte-composer-shell` so it reads as one unified chip
-     containing the attach button, textarea, optional AI toggle and
-     send button. Mirrors the React adapter's `.brw-composer` /
-     `.brw-composer-shell` split (#114 follow-up — the original Svelte
-     parity PR shipped a 3-row grid that put the textarea on its own
-     row; this shape lines everything up on one row to match the
-     React reference). */
+  /* Outer composer is the bottom strip; the unified input chip (attach,
+     textarea, AI toggle, send on one row) lives in -composer-shell.
+     Mirrors React's .brw-composer / .brw-composer-shell split (#114). */
   .brw-svelte-composer {
     flex-shrink: 0;
     padding: 8px 10px;
@@ -1416,12 +2130,9 @@
     pointer-events: none;
   }
 
-  /* AI toggle — track-and-thumb switch, parity with the React adapter's
-     iOS-style toggle (#65). The "AI" text sits outside the button so the
-     switch itself is an unambiguous track, not a pressed-button state. */
-  /* Wrap matches `.brw-svelte-send` height (34px) so the switch
-     centre and the send-button centre land on the same baseline
-     under the shell's `align-items: flex-end`. */
+  /* AI toggle — track-and-thumb switch, parity with React (#65). The
+     "AI" text sits outside the button; the wrap matches the send
+     button's 34px height so both centre on the same baseline. */
   .brw-svelte-aitoggle-wrap {
     flex-shrink: 0;
     display: inline-flex;
@@ -1487,6 +2198,123 @@
     .brw-svelte-aitoggle-text {
       transition: none;
     }
+  }
+
+  /* Visually-hidden heading for the region overlay / preview dialog —
+     keeps the dialog announcement intact without painting chrome. */
+  .brw-svelte-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* Panel stays mounted (composer state preserved) but invisible while the
+     region overlay is up (#49). */
+  .brw-svelte-panel-hidden {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  /* Region-capture overlay: a translucent full-viewport layer the user
+     drags a selection rectangle on. Sits above the panel's z-index. */
+  .brw-svelte-region-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.25);
+    z-index: 2147483647;
+  }
+  .brw-svelte-region-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    cursor: crosshair;
+    touch-action: none;
+    outline: none;
+  }
+  .brw-svelte-region-selection {
+    position: fixed;
+    border: 2px dashed var(--brw-accent);
+    background: rgba(129, 140, 248, 0.15);
+    pointer-events: none;
+    box-sizing: border-box;
+  }
+  .brw-svelte-region-controls {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--brw-panel-bg);
+    border: 1px solid var(--brw-border);
+    border-radius: 12px;
+    box-shadow: var(--brw-shadow);
+  }
+  .brw-svelte-region-btn {
+    white-space: nowrap;
+  }
+  .brw-svelte-region-shake {
+    animation: brw-svelte-region-shake 300ms ease-in-out;
+  }
+  @keyframes brw-svelte-region-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-6px);
+    }
+    75% {
+      transform: translateX(6px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brw-svelte-region-shake {
+      animation: none;
+    }
+  }
+
+  /* Screenshot preview dialog: viewport-fit modal so the submitter can
+     confirm they captured the right region before sending. */
+  .brw-svelte-preview-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+    z-index: 2147483647;
+  }
+  .brw-svelte-preview-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    pointer-events: none;
+  }
+  .brw-svelte-preview-image {
+    max-width: min(92vw, 1200px);
+    max-height: 84vh;
+    border-radius: 12px;
+    border: 1px solid var(--brw-border);
+    box-shadow: var(--brw-shadow);
+    background: var(--brw-panel-bg);
+    pointer-events: auto;
+  }
+  .brw-svelte-preview-close {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    background: var(--brw-panel-bg);
+    border: 1px solid var(--brw-border);
+    box-shadow: var(--brw-shadow);
+    pointer-events: auto;
   }
 
   .brw-svelte-footer {

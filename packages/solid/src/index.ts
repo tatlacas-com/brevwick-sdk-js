@@ -17,7 +17,9 @@ export type {
 export { FeedbackButton } from './components/feedback-button';
 export type {
   BrevwickTheme,
+  FeedbackButtonPosition,
   FeedbackButtonProps,
+  FeedbackButtonVariant,
 } from './components/feedback-button';
 
 export type {

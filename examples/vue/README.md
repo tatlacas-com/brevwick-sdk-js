@@ -11,7 +11,7 @@ cp .env.example .env.local        # then seed your real pk_test_* key
 pnpm --filter brevwick-example-vue dev
 ```
 
-Open http://localhost:3001 — the FAB renders bottom-right. Click it, type a description, optionally capture a screenshot, hit **Send**.
+Open http://localhost:3001 — the launcher renders as a vertical tab on the right edge (pass `position="bottom-right"` for the legacy corner bubble). Click it, type a description, optionally capture a screenshot, hit **Send**.
 
 ## Env vars
 

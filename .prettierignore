@@ -12,3 +12,4 @@ notes
 **/next-env.d.ts
 **/.expo/**
 **/CHANGELOG.md
+.changeset/pre.json

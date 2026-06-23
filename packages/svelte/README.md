@@ -33,7 +33,7 @@ pnpm add @tatlacas/brevwick-svelte@beta @tatlacas/brevwick-sdk@beta
 <FeedbackButton />
 ```
 
-That's it. A floating action button appears in the bottom-right; clicking it opens a feedback dialog with screenshot capture and file attachments.
+That's it. A vertical feedback tab appears on the right edge of the viewport (pass `position="bottom-right"` for the legacy corner bubble); clicking it opens a feedback dialog with screenshot capture and file attachments.
 
 > **Place `setBrevwickContext` in `+layout.svelte`, NOT `+layout.server.ts`.** The SDK is browser-side; the context setter is a no-op during SSR and `<FeedbackButton>` mounts after hydration.
 
@@ -68,7 +68,7 @@ Returns the underlying SDK instance for advanced use, or `null` during SSR. The 
 
 ## `FeedbackButton`
 
-A floating action button + chat-style feedback dialog. Opens to a composer with:
+A feedback launcher + chat-style feedback dialog. The launcher renders as a vertical tab flush against the right viewport edge by default, or as the classic floating corner bubble via `variant="bubble"`. Opens to a composer with:
 
 - **Textarea** with Enter-to-send (Shift+Enter for newline).
 - **Screenshot** capture via the SDK's `captureScreenshot()`.
@@ -76,19 +76,32 @@ A floating action button + chat-style feedback dialog. Opens to a composer with:
 - **Inline error / success** states.
 
 ```svelte
-<FeedbackButton position="bottom-left" label="Report a bug" />
+<!-- Default: vertical tab on the right edge, vertically centered. -->
+<FeedbackButton label="Report a bug" />
+
+<!-- Legacy floating corner bubble. -->
+<FeedbackButton variant="bubble" position="bottom-left" label="Report a bug" />
+
+<!-- Icon-only tab, nudged 120px above the vertical center. The `label`
+     becomes the launcher's aria-label. -->
+<FeedbackButton compact offset={-120} label="Report a bug" />
 ```
+
+> **Migration:** the default presentation changed from the corner bubble to the right-edge tab. Pass `position="bottom-right"` (or your previous corner) to keep the old look — a legacy corner `position` without an explicit `variant` still renders the bubble, so existing call sites are unaffected.
 
 ### Props
 
-| Prop       | Type                              | Default          | Description                                              |
-| ---------- | --------------------------------- | ---------------- | -------------------------------------------------------- |
-| `position` | `'bottom-right' \| 'bottom-left'` | `'bottom-right'` | Which corner the FAB pins to.                            |
-| `disabled` | `boolean`                         | `false`          | FAB renders as disabled and cannot open the dialog.      |
-| `hidden`   | `boolean`                         | `false`          | Component renders nothing — useful for feature flags.    |
-| `label`    | `string`                          | `'Feedback'`     | FAB label.                                               |
-| `theme`    | `'system' \| 'light' \| 'dark'`   | `'system'`       | Force a palette regardless of OS `prefers-color-scheme`. |
-| `onSubmit` | `(result: SubmitResult) => void`  | —                | Fired after every submit (success or failure).           |
+| Prop       | Type                                                   | Default                                     | Description                                                                                                                                                                          |
+| ---------- | ------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `variant`  | `'tab' \| 'bubble'`                                    | `'tab'`                                     | Launcher presentation — vertical edge tab (the new default) or the legacy floating corner pill. A legacy corner `position` without an explicit `variant` implies `'bubble'`.         |
+| `position` | `'right' \| 'left' \| 'bottom-right' \| 'bottom-left'` | `'right'` (tab) / `'bottom-right'` (bubble) | Where the launcher sits. Edge sides are the tab's home, corners the bubble's. When `variant` and `position` disagree, `variant` wins and `position` contributes its horizontal side. |
+| `compact`  | `boolean`                                              | `false`                                     | Icon-only launcher (circular bubble / square edge tab). The `label` is not rendered but becomes the launcher's `aria-label`.                                                         |
+| `offset`   | `number`                                               | `0`                                         | Tab only: vertical offset in px from the viewport's vertical center. Positive moves the tab down, negative up. Ignored for the bubble.                                               |
+| `disabled` | `boolean`                                              | `false`                                     | Launcher renders as disabled and cannot open the dialog.                                                                                                                             |
+| `hidden`   | `boolean`                                              | `false`                                     | Component renders nothing — useful for feature flags.                                                                                                                                |
+| `label`    | `string`                                               | `'Feedback'`                                | Launcher label. Hidden visually when `compact`.                                                                                                                                      |
+| `theme`    | `'system' \| 'light' \| 'dark'`                        | `'system'`                                  | Force a palette regardless of OS `prefers-color-scheme`.                                                                                                                             |
+| `onSubmit` | `(result: SubmitResult) => void`                       | —                                           | Fired after every submit (success or failure).                                                                                                                                       |
 
 ### Theming via CSS custom properties
 

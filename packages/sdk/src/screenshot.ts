@@ -1,4 +1,5 @@
 import type { BrevwickInternal } from './core/internal';
+import { placeholderBlob } from './screenshot-fallback';
 
 /**
  * Options for {@link captureScreenshot}. All fields are optional.
@@ -43,7 +44,8 @@ export interface CaptureScreenshotOpts {
    *   before capture — a skip marker on the root element itself is
    *   ignored (hiding the capture target would produce an empty image).
    *   Skip markers outside the sub-tree are left untouched.
-   * - Inner overflow:auto/scroll containers are compensated for their
+   * - Inner overflow:auto/scroll containers — including the capture
+   *   root itself, when it is scrollable — are compensated for their
    *   live `scrollTop`/`scrollLeft` so the capture matches what the
    *   user sees. `position: sticky` and `position: fixed` direct
    *   children of those containers are explicitly skipped by the
@@ -71,33 +73,20 @@ export interface CaptureScreenshotOpts {
 const DEFAULT_QUALITY = 0.85;
 const MIME = 'image/webp';
 
-// Base64-encoded 1×1 transparent VP8L WebP. Used when capture fails so
-// callers that depend on `.attachments[].blob` still get a valid image type.
-const PLACEHOLDER_WEBP_BASE64 =
-  'UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==';
-
-// Decode once at module load — the bytes are immutable, and every failure
-// path previously re-ran `atob` + the byte-copy loop. The returned Blob must
-// still be fresh per call because consumers may hold and revoke URLs from it.
-// Store the underlying ArrayBuffer (not the view) so `new Blob([...])` types
-// cleanly under TS `strict` without widening to `ArrayBufferLike`.
-const PLACEHOLDER_BUFFER: ArrayBuffer = ((): ArrayBuffer => {
-  const binary = atob(PLACEHOLDER_WEBP_BASE64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-})();
-
-function placeholderBlob(): Blob {
-  return new Blob([PLACEHOLDER_BUFFER], { type: MIME });
-}
-
 /**
  * Cache the first `import('modern-screenshot')` Promise so subsequent captures
  * reuse the resolved module. ES dynamic import is already host-cached, but
  * holding our own reference avoids a class of test-runner issues where
  * concurrent `await import` of the same specifier can deadlock under
  * aggressive module-cache reset.
+ *
+ * The cache is dropped again if the import REJECTS: a transient chunk-load
+ * failure (flaky network, captive portal, mid-deploy 404 that later heals)
+ * must not poison every subsequent capture for the lifetime of the page —
+ * before this reset, one failed load meant placeholder screenshots forever,
+ * even after connectivity recovered. The `.catch` below also guarantees the
+ * cached rejection always has at least one handler, so it can never surface
+ * as an unhandled rejection even if no capture is awaiting it.
  */
 let modernScreenshotPromise:
   | Promise<typeof import('modern-screenshot')>
@@ -105,7 +94,14 @@ let modernScreenshotPromise:
 
 function loadModernScreenshot(): Promise<typeof import('modern-screenshot')> {
   if (!modernScreenshotPromise) {
-    modernScreenshotPromise = import('modern-screenshot');
+    const attempt = import('modern-screenshot');
+    modernScreenshotPromise = attempt;
+    attempt.catch(() => {
+      // Only clear the cache if no newer attempt has replaced it.
+      if (modernScreenshotPromise === attempt) {
+        modernScreenshotPromise = undefined;
+      }
+    });
   }
   return modernScreenshotPromise;
 }
@@ -211,12 +207,15 @@ function restoreSkippedNodes(nodes: SkippedNode[]): void {
  *    `transform-origin` on the child can shift slightly versus the
  *    live tree — rare in practice, would surface as a small visual
  *    offset on transformed widgets, never as the blank-capture bug.
- *  - The capture root itself is not walked. `root.querySelectorAll('*')`
- *    returns descendants only, so passing a scrollable element as
- *    `opts.element` will not compensate that element's own scroll —
- *    the root is the camera frame, and translating it would shift
- *    the entire capture. Pass an outer wrapper if the visible
- *    viewport is the element you want to capture.
+ *  - The capture root's own scroll IS compensated, but indirectly:
+ *    the root itself is never translated (it is the camera frame —
+ *    translating it would shift the entire capture), its direct
+ *    children are, exactly like any descendant container's.
+ *    `root.querySelectorAll('*')` returns descendants only, so the
+ *    root is checked explicitly before the descendant walk — without
+ *    that check, passing a scrollable element as `opts.element`
+ *    rasterized the TOP of its scroll extent (the same blank-capture
+ *    symptom family this pass exists to fix).
  *  - RTL writing modes: browsers historically disagreed on
  *    `scrollLeft` semantics in RTL containers (negative-anchored vs
  *    positive-from-right vs positive-from-left). Modern Chromium
@@ -248,41 +247,54 @@ function isScrollableContainer(el: HTMLElement): boolean {
   );
 }
 
-function compensateInnerScrolls(root: Document | HTMLElement): HTMLElement[] {
-  const candidates = root.querySelectorAll<HTMLElement>('*');
-  const records: HTMLElement[] = [];
-  candidates.forEach((el) => {
-    if (!isScrollableContainer(el)) return;
-    const dx = -el.scrollLeft;
-    const dy = -el.scrollTop;
-    if (dx === 0 && dy === 0) return;
-    const view = el.ownerDocument?.defaultView;
-    if (!view) return;
-    for (
-      let child = el.firstElementChild;
-      child;
-      child = child.nextElementSibling
-    ) {
-      if (!(child instanceof HTMLElement)) continue;
-      // Skip sticky/fixed direct children: translating a pinned
-      // element by -scrollTop would rasterize it off the top of the
-      // frame (the failure mode this pass is meant to prevent).
-      const childPos = view.getComputedStyle(child).position;
-      if (childPos === 'sticky' || childPos === 'fixed') continue;
-      const count = scrollCompRefCount.get(child) ?? 0;
-      if (count === 0) {
-        scrollStashedTransform.set(child, child.style.transform);
-        scrollStashedOrigin.set(child, child.style.transformOrigin);
-        const existing = child.style.transform;
-        child.style.transform = existing
-          ? `translate(${dx}px, ${dy}px) ${existing}`
-          : `translate(${dx}px, ${dy}px)`;
-        child.style.transformOrigin = '0 0';
-      }
-      scrollCompRefCount.set(child, count + 1);
-      records.push(child);
+function compensateContainer(el: HTMLElement, records: HTMLElement[]): void {
+  if (!isScrollableContainer(el)) return;
+  const dx = -el.scrollLeft;
+  const dy = -el.scrollTop;
+  if (dx === 0 && dy === 0) return;
+  const view = el.ownerDocument?.defaultView;
+  if (!view) return;
+  for (
+    let child = el.firstElementChild;
+    child;
+    child = child.nextElementSibling
+  ) {
+    if (!(child instanceof HTMLElement)) continue;
+    // Skip sticky/fixed direct children: translating a pinned
+    // element by -scrollTop would rasterize it off the top of the
+    // frame (the failure mode this pass is meant to prevent).
+    const childPos = view.getComputedStyle(child).position;
+    if (childPos === 'sticky' || childPos === 'fixed') continue;
+    const count = scrollCompRefCount.get(child) ?? 0;
+    if (count === 0) {
+      scrollStashedTransform.set(child, child.style.transform);
+      scrollStashedOrigin.set(child, child.style.transformOrigin);
+      const existing = child.style.transform;
+      child.style.transform = existing
+        ? `translate(${dx}px, ${dy}px) ${existing}`
+        : `translate(${dx}px, ${dy}px)`;
+      child.style.transformOrigin = '0 0';
     }
-  });
+    scrollCompRefCount.set(child, count + 1);
+    records.push(child);
+  }
+}
+
+function compensateInnerScrolls(root: Document | HTMLElement): HTMLElement[] {
+  const records: HTMLElement[] = [];
+  // The root's own scroll first: `querySelectorAll('*')` returns
+  // descendants only, so a scrollable capture root would otherwise
+  // rasterize the top of its scroll extent (the blank-capture symptom
+  // family). The root itself is never translated — it is the camera
+  // frame — but its direct children are compensated exactly like any
+  // descendant container's. A `Document` root has no own scroll box
+  // (window scroll is left to modern-screenshot's viewport handling).
+  if (root instanceof HTMLElement) {
+    compensateContainer(root, records);
+  }
+  root
+    .querySelectorAll<HTMLElement>('*')
+    .forEach((el) => compensateContainer(el, records));
   return records;
 }
 
@@ -299,6 +311,48 @@ function restoreInnerScrolls(records: HTMLElement[]): void {
       scrollCompRefCount.set(child, count);
     }
   }
+}
+
+/**
+ * Hard deadline on a single capture (module load + rasterization). A hung
+ * `domToBlob` (pathological page, browser bug, wedged worker) or a stalled
+ * dynamic import must never leave callers stuck in a `capturing` state —
+ * adapters disable their Send button while a capture is in flight, so a
+ * capture that never settles would wedge the composer. On deadline the
+ * capture resolves through the normal failure path (1×1 placeholder +
+ * console-ring warn) and all DOM mutations (skip-scrub, scroll
+ * compensation) are restored in `finally`. The Flutter SDK applies the
+ * same pattern with a 5 s deadline; DOM rasterization of large pages is
+ * slower, so the JS deadline is 10 s.
+ */
+const CAPTURE_TIMEOUT_MS = 10_000;
+
+function withCaptureDeadline<T>(
+  work: Promise<T>,
+  ms: number,
+  onDeadline?: () => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onDeadline?.();
+      reject(
+        new Error(`screenshot rasterization exceeded the ${ms}ms deadline`),
+      );
+    }, ms);
+    // Both handlers are attached to `work` here, so a late settle (resolve
+    // OR reject) after the deadline fired is consumed by an already-settled
+    // outer promise — it can never surface as an unhandled rejection.
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
 }
 
 function logFailure(
@@ -356,10 +410,38 @@ async function capture(
   let scrollComps: HTMLElement[] = [];
 
   try {
-    skipped = scrubSkippedNodes(element);
-    scrollComps = compensateInnerScrolls(element);
-    const mod = await loadModernScreenshot();
-    const result = await mod.domToBlob(element, { quality, type: MIME });
+    // The deadline spans the dynamic import AND the rasterization: a
+    // cold-CDN import that never resolves wedges callers exactly the same
+    // way a hung `domToBlob` does.
+    //
+    // The DOM mutations (skip-scrub + scroll compensation) are applied
+    // AFTER the module load resolves, not before: on a cold cache the
+    // chunk download can take seconds, and mutating up-front meant the
+    // live page visibly jumped (scrolled containers translated by
+    // -scrollTop) and the widget vanished for the whole download. It also
+    // widened the race window in which a skip-marked node mounted after
+    // the scrub-but-before-clone would be missed. Mutating in the same
+    // microtask turn as the `domToBlob` call keeps the window minimal.
+    let deadlineFired = false;
+    const result = await withCaptureDeadline(
+      (async () => {
+        const mod = await loadModernScreenshot();
+        // If the deadline already resolved this capture with the
+        // placeholder, the outer `finally` has run (with nothing to
+        // restore) — mutating the DOM now would hide widgets with nobody
+        // left to unhide them. Bail before touching anything.
+        if (deadlineFired) {
+          throw new Error('module loaded after the capture deadline');
+        }
+        skipped = scrubSkippedNodes(element);
+        scrollComps = compensateInnerScrolls(element);
+        return mod.domToBlob(element, { quality, type: MIME });
+      })(),
+      CAPTURE_TIMEOUT_MS,
+      () => {
+        deadlineFired = true;
+      },
+    );
     if (!isValidImageBlob(result)) {
       logFailure(internal, new Error('domToBlob returned no blob'));
       return placeholderBlob();
@@ -380,6 +462,11 @@ async function capture(
  * afterwards, even on failure. Never throws — a capture failure yields a 1×1
  * transparent placeholder so callers that always attach the result still get a
  * valid image/webp blob.
+ *
+ * A capture is also bounded by a hard 10 s deadline (engine load +
+ * rasterization). A hung rasterization resolves through the same placeholder
+ * path instead of leaving the returned promise pending forever, so UI that
+ * tracks a `capturing` flag can never wedge.
  */
 export async function captureScreenshot(
   opts?: CaptureScreenshotOpts,

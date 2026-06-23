@@ -24,6 +24,7 @@ import {
 } from './registry';
 import { validateConfig, type ValidatedConfig } from './validate';
 import type { RingName } from './internal';
+import { placeholderBlob } from '../screenshot-fallback';
 
 function ringEnabled(config: ValidatedConfig, name: RingName): boolean {
   if (name === 'route') return config.rings.route;
@@ -196,8 +197,33 @@ function build(
       // is unreachable in a healthy build.
       import('../submit').then((m) => m.dispatchSubmit(internal, input)),
     captureScreenshot: (): Promise<Blob> =>
-      import('../screenshot').then((m) =>
-        m.captureScreenshotForInstance(internal),
+      import('../screenshot').then(
+        (m) => m.captureScreenshotForInstance(internal),
+        (err: unknown) => {
+          // The screenshot chunk itself failed to load (deploy mismatch /
+          // offline). `captureScreenshot` is documented never to throw —
+          // a rejection here would propagate into adapter capture flows
+          // and host submit pipelines that `await` the blob inline, so it
+          // degrades to the same 1×1 placeholder as any other capture
+          // failure. The placeholder lives in the eager
+          // `screenshot-fallback` module precisely because it cannot be
+          // pulled out of the chunk that just failed to load.
+          const message =
+            'brevwick: screenshot capture failed, using placeholder' +
+            (err instanceof Error ? `: ${err.message}` : '');
+          try {
+            internal.push({
+              kind: 'console',
+              level: 'warn',
+              message,
+              timestamp: Date.now(),
+              count: 1,
+            });
+          } catch {
+            globalThis.console?.warn?.(message);
+          }
+          return placeholderBlob();
+        },
       ),
     getConfig: loadConfig,
   };
