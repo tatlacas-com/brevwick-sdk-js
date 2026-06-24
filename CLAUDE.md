@@ -129,14 +129,15 @@ git checkout -b chore/resume-dev-<version> origin/dev
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - Subject ≤ 72 chars
 - No `Co-Authored-By` headers — no Claude attribution anywhere
-- Squash-merge only on both `dev` and `main`
+- Squash-merge everything **except** the `dev → main` promotion PR, which **must be a merge commit** (see Branch protection for why). Day-to-day PRs into `dev`, and the auto-opened "Version Packages" PRs, are squash-merged.
 
 ### Branch protection
 
-Both `dev` and `main` are protected:
+Both `dev` and `main` are protected by separate rulesets (`release-branch-protection` for `dev`, `main-branch-protection` for `main`). Both enforce: PR required, no direct push for non-admins, no force-push, no deletion, required status checks (`check`, `codecov/patch`, `codecov/project`, strict), and stale reviews dismissed on new push.
 
-- Squash-merge only; no direct push, no force-push, no deletion.
-- Required status checks: `check`, `codecov/patch`, `codecov/project`.
-- Stale reviews dismissed on new push.
+The branches differ on **allowed merge methods**:
+
+- `dev`: **squash only**, to keep the integration history clean.
+- `main`: **squash or merge commit**. The `dev → main` promotion PR must be merged as a **merge commit** (not squashed). Squashing the promotion collapses dev's merge into a single new-parent commit and severs `main`'s ancestry to `dev`, so the merge base never advances — which makes every subsequent promotion re-conflict the entire divergence (real source files included). Merging it preserves the link so future promotions only diff new work. All other PRs into `main` (e.g. the "Version Packages" PR) still squash.
 
 `main` additionally enforces (via `guard-deploy-branches.yml`) that PRs into it must come from `dev`, a `chore/promote-*` branch, or `changeset-release/main` — use `scripts/promote-stable.sh`, do not open a feature-branch PR straight into `main`.
