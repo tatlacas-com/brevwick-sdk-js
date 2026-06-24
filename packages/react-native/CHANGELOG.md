@@ -1,5 +1,57 @@
 # @tatlacas/brevwick-react-native
 
+## 2.0.0
+
+### Major Changes
+
+- [#160](https://github.com/tatlacas-com/brevwick-sdk-js/pull/160) [`56b2d4e`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/56b2d4eb307a1a76f3315356f3c084325ba9792c) Thanks [@tatlacas](https://github.com/tatlacas)! - BREAKING CHANGE: the launcher's default presentation changes from the corner
+  bubble to the vertical edge tab.
+
+  In 1.x, rendering `<FeedbackButton />` with no `position` (or `variant`) prop
+  produced a floating corner pill pinned to `bottom-right`. As of 2.0 the default
+  resolves to `variant: 'tab'` — a vertical button flush against the right
+  viewport edge, vertically centered (`resolveLauncherPlacement`,
+  `@tatlacas/brevwick-sdk/launcher`). Every adapter (React, Solid, Vue, Svelte,
+  Angular, React Native) shares this default.
+
+  Migration: call sites that want the legacy corner bubble must now opt in
+  explicitly. Pass a legacy corner `position` without a `variant`
+  (`<FeedbackButton position="bottom-right" />`) — which keeps the bubble
+  byte-for-byte — or set `variant="bubble"` directly. Call sites that already
+  pass a corner `position` are unaffected and render exactly as before; only the
+  bare-default usage changes.
+
+### Minor Changes
+
+- [#157](https://github.com/tatlacas-com/brevwick-sdk-js/pull/157) [`db60dd6`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/db60dd6c42a048d40a24e60232c885b835a9fe57) Thanks [@tatlacas](https://github.com/tatlacas)! - feat: launcher `variant` (vertical edge tab is the new default) + `compact` icon-only mode
+
+  The FeedbackButton launcher now supports two presentations across every adapter (React, Solid, Vue, Svelte, Angular, React Native):
+  - `variant="tab"` — **the new default**: a vertical tab flush against the right viewport edge (right edge of the host view on React Native), vertically centered. A new `offset` prop nudges the tab up/down from center in px.
+  - `variant="bubble"` — the legacy floating corner pill.
+  - `compact` — icon-only mode for either variant (circular bubble / square edge tab); the `label` is not rendered but becomes the launcher's `aria-label`.
+  - `position` gains the edge sides `'right' | 'left'` alongside the legacy corners. Defaults: `'right'` for the tab, `'bottom-right'` for the bubble.
+
+  Backwards compatibility: passing a legacy corner `position` (`'bottom-right'` / `'bottom-left'` — or the offset-object form on React Native) without an explicit `variant` keeps the corner bubble, so existing call sites render exactly as before. When both are set, `variant` wins and `position` contributes only its horizontal side.
+
+  The framework-agnostic placement resolver is now exported from the core package at `@tatlacas/brevwick-sdk/launcher` (`resolveLauncherPlacement`, `FeedbackButtonVariant`, `FeedbackButtonPosition`). Every adapter consumes this single tree-shakeable copy instead of carrying its own (the React Native adapter composes it for its offset-object form).
+
+  Fixes a bug where the left-edge tab (`position="left"`) rendered well below vertical center: the standalone CSS `rotate: 180deg` was applied after `transform` and inverted the centering `translateY(-50%)`. The 180° flip is now composed inside `transform`, so the left tab is correctly centered while keeping its mirrored radii, flat edge, and hover behavior. The Svelte compact bubble is also aligned to 48px to match the other adapters.
+
+### Patch Changes
+
+- [#152](https://github.com/tatlacas-com/brevwick-sdk-js/pull/152) [`ba4d53a`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ba4d53af10637d49c1047cbeb32d6af856a7824b) Thanks [@tatlacas](https://github.com/tatlacas)! - Re-align the seven linked packages onto a single version on the prerelease
+  channel. The stable `1.0.2` release (PR [#150](https://github.com/tatlacas-com/brevwick-sdk-js/issues/150)) bumped only the five web
+  adapters — `react`, `solid`, `vue`, `svelte`, `angular` — because the
+  consumed changeset listed only those packages, and `.changeset/config.json`
+  uses `linked` (which shares a version-floor across the group but does not
+  auto-bump siblings) rather than `fixed`. As a result `@tatlacas/brevwick-sdk`
+  and `@tatlacas/brevwick-react-native` were left at `1.0.1` on npm while the
+  others moved to `1.0.2`. Listing all seven here brings every package to the
+  next prerelease (`1.0.3-beta.0`) together, restoring parity across the
+  linked group before further work continues on the dev channel.
+- Updated dependencies [[`3327926`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/332792687ef9bf85822a0446a3cca4ba604b506a), [`56b2d4e`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/56b2d4eb307a1a76f3315356f3c084325ba9792c), [`db60dd6`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/db60dd6c42a048d40a24e60232c885b835a9fe57), [`ba4d53a`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ba4d53af10637d49c1047cbeb32d6af856a7824b), [`ede8731`](https://github.com/tatlacas-com/brevwick-sdk-js/commit/ede8731518a22831711198ee40389b53044be221)]:
+  - @tatlacas/brevwick-sdk@2.0.0
+
 ## 1.0.1
 
 ### Patch Changes
