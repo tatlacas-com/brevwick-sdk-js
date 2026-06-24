@@ -14,6 +14,7 @@ describe('validateConfig', () => {
     expect(cfg.endpoint).toBe('https://api.brevwick.com');
     expect(cfg.enabled).toBe(true);
     expect(cfg.fingerprintOptOut).toBe(false);
+    expect(cfg.debug).toBe(false);
     expect(cfg.rings.console).toEqual({
       enabled: true,
       levels: ['log', 'info', 'warn', 'error', 'debug'],
@@ -61,6 +62,7 @@ describe('validateConfig', () => {
       'fingerprintOptOut not boolean',
       { projectKey: VALID_KEY, fingerprintOptOut: 1 },
     ],
+    ['debug not boolean', { projectKey: VALID_KEY, debug: 'yes' }],
     ['userContext not function', { projectKey: VALID_KEY, userContext: {} }],
     ['user without id', { projectKey: VALID_KEY, user: {} }],
     ['user id not string', { projectKey: VALID_KEY, user: { id: 42 } }],
@@ -197,6 +199,11 @@ describe('validateConfig', () => {
       fingerprintOptOut: true,
     });
     expect(cfg.fingerprintOptOut).toBe(true);
+  });
+
+  it('accepts debug=true', () => {
+    const cfg = validateConfig({ projectKey: VALID_KEY, debug: true });
+    expect(cfg.debug).toBe(true);
   });
 
   it('accepts enabled=false', () => {

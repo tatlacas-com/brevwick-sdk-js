@@ -102,6 +102,22 @@ export interface BrevwickConfig {
   redact?: BrevwickRedactConfig;
   /** Send `X-Brevwick-Fingerprint-Optout: 1` to skip the salted fingerprint. */
   fingerprintOptOut?: boolean;
+  /**
+   * Dev-only escape hatch. When `true`, every `submit()` result carries a
+   * `debug.payload` snapshot of the exact, **post-redaction** body that was
+   * POSTed to the ingest endpoint — including the parts the widget never
+   * renders (console ring, network ring, route trail, device + user context,
+   * attachment descriptors). Adapters surface this behind a per-message
+   * "copy raw payload" affordance so a developer can inspect everything that
+   * leaves the device.
+   *
+   * Off by default and meant to be wired to a host-app build flag, e.g.
+   * `debug: process.env.NEXT_PUBLIC_SEE_LOGS === 'true'`. Leave it `false`
+   * in production: it retains the composed payload in memory on every submit.
+   * It never changes what is sent — the payload is identical to a non-debug
+   * submit and is still fully redacted.
+   */
+  debug?: boolean;
 }
 
 export interface FeedbackAttachment {
@@ -175,12 +191,30 @@ export interface SubmitError {
 }
 
 /**
+ * Dev-only diagnostics attached to a {@link SubmitResult} when
+ * {@link BrevwickConfig.debug} is `true`. Absent otherwise. `payload` is the
+ * exact, already-redacted object that was JSON-serialised into the ingest
+ * POST body — the single source of truth for "everything that left the
+ * device", including the ring buffers and context the widget never shows.
+ *
+ * Present only on results whose payload was actually composed: a failure that
+ * short-circuits before composition (e.g. `ATTACHMENT_UPLOAD_FAILED` on client
+ * validation) carries no `debug`.
+ */
+export interface SubmitDebugInfo {
+  payload: Record<string, unknown>;
+}
+
+/**
  * Tagged result. `submit()` never throws — callers discriminate on `ok`.
  * Matches SDD § 12 updated contract (cross-repo PR accompanies this change).
+ *
+ * `debug` rides on either variant only when `config.debug` is enabled — see
+ * {@link SubmitDebugInfo}.
  */
 export type SubmitResult =
-  | { ok: true; issue_id: string }
-  | { ok: false; error: SubmitError };
+  | { ok: true; issue_id: string; debug?: SubmitDebugInfo }
+  | { ok: false; error: SubmitError; debug?: SubmitDebugInfo };
 
 export interface ConsoleEntry {
   kind: 'console';

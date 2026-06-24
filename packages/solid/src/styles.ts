@@ -126,14 +126,10 @@ export const BREVWICK_CSS = `
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: var(--brw-fg, var(--brw-fg-base));
 }
+/* Shared launcher chrome — variant-independent. */
 .brw-fab {
   position: fixed;
   z-index: 2147483000;
-  bottom: 24px;
-  height: 48px;
-  min-width: 48px;
-  padding: 0 18px;
-  border-radius: 999px;
   border: 1px solid var(--brw-border, var(--brw-border-base));
   background: var(--brw-accent, var(--brw-accent-base));
   color: var(--brw-accent-fg, var(--brw-accent-fg-base));
@@ -144,15 +140,79 @@ export const BREVWICK_CSS = `
   gap: 8px;
   cursor: pointer;
   box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+  /* Only transform animates; box-shadow intentionally static. */
   transition: transform 120ms ease-out;
 }
-.brw-fab:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
 .brw-fab:disabled { cursor: not-allowed; opacity: 0.5; }
-.brw-fab-br { right: 24px; }
-.brw-fab-bl { left: 24px; }
-.brw-fab-icon { width: 18px; height: 18px; }
+.brw-fab:focus-visible {
+  outline: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+  outline-offset: 2px;
+}
+.brw-fab-icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+/* ── Bubble (legacy corner pill) ───────────────────────────────────── */
+.brw-fab--bubble {
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  height: 48px;
+  min-width: 48px;
+  padding: 0 18px;
+  border-radius: 999px;
+}
+.brw-fab--bubble:hover:not(:disabled) { transform: translateY(-1px); }
+.brw-fab-br { right: calc(24px + env(safe-area-inset-right, 0px)); }
+.brw-fab-bl { left: calc(24px + env(safe-area-inset-left, 0px)); }
+/* Compact bubble: 48px circle, icon only. */
+.brw-fab--bubble.brw-fab--compact {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* ── Tab (NEW DEFAULT: vertical edge tab) ──────────────────────────── */
+/* writing-mode flips the inline axis vertical: the flex row (icon, label)
+   stacks top→bottom and the label glyphs read top→bottom, rotated 90° cw. */
+/* The left tab mirrors the flat edge / radii by rotating 180° — composed
+   INSIDE \`transform\` (after the centering translateY), via the
+   \`--brw-fab-tab-flip\` custom property, so the rotation never inverts the
+   centering. (The standalone \`rotate\` property applies AFTER \`transform\`
+   per CSS Transforms L2, which flipped \`translateY(-50%)\` into \`+50%\` and
+   dropped the left tab a full tab-height below centre.) */
+.brw-fab--tab {
+  top: calc(50% + var(--brw-fab-tab-offset, 0px));
+  transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg));
+  writing-mode: vertical-rl;
+  min-height: 48px;
+  width: 40px;
+  padding: 16px 0;
+  justify-content: center;
+  /* Rounded on the page-facing side, flat against the edge (right-tab
+     orientation; the left tab's flip mirrors it). */
+  border-radius: 10px 0 0 10px;
+}
+.brw-fab-r {
+  right: env(safe-area-inset-right, 0px);
+  border-right: none;            /* flat edge: no hairline against the viewport */
+}
+.brw-fab-l {
+  left: env(safe-area-inset-left, 0px);
+  border-right: none;            /* pre-flip right edge IS the viewport edge */
+  --brw-fab-tab-flip: 180deg;
+}
+/* Hover pulls the tab 2px out of the edge (the whole transform is restated —
+   transform is overwritten, not merged). translateX(-2px) is innermost so
+   the left tab's 180° flip turns it into +2px visually: also away from its
+   edge. */
+.brw-fab--tab:hover:not(:disabled) {
+  transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg)) translateX(-2px);
+}
+.brw-fab-label { letter-spacing: 0.02em; }
+/* Compact tab: square-ish icon-only edge chip. */
+.brw-fab--tab.brw-fab--compact {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
 .brw-panel {
   position: fixed;
   z-index: 2147483002;
@@ -269,6 +329,23 @@ export const BREVWICK_CSS = `
   color: var(--brw-fg-muted, var(--brw-fg-muted-base));
 }
 .brw-bubble--receipt svg { flex-shrink: 0; }
+/* Dev-only "copy raw payload" button (config.debug). Sits under the bubble
+   text, muted, so it never competes with real widget chrome. */
+.brw-copy-raw {
+  display: block;
+  margin-top: 6px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  background: transparent;
+  border: 1px solid var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
+  border-radius: 6px;
+  color: var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
+  opacity: 0.7;
+  cursor: pointer;
+}
+.brw-copy-raw:hover { opacity: 1; }
 .brw-chip {
   align-self: flex-end;
   display: inline-flex;

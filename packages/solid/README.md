@@ -30,6 +30,33 @@ export default function App() {
 }
 ```
 
+## Launcher presentation
+
+`<FeedbackButton>` defaults to a vertical tab flush against the right
+viewport edge, vertically centered (`variant="tab"`). The legacy floating
+corner bubble is still available:
+
+```tsx
+// Right-edge tab (the default). `offset` nudges it from the vertical
+// center in px (positive = down); `compact` renders an icon-only square
+// tab and the string `label` becomes the aria-label.
+<FeedbackButton compact offset={-120} label="Report a bug" />
+
+// Legacy floating corner bubble.
+<FeedbackButton variant="bubble" position="bottom-right" />
+```
+
+`position` accepts the edge sides `'right' | 'left'` (default `'right'`)
+plus the legacy corners `'bottom-right' | 'bottom-left'`. When `variant`
+and `position` disagree, `variant` wins and `position` contributes only
+its horizontal side.
+
+> **Migration:** the default presentation changed from the corner bubble
+> to the right-edge tab. Pass `position="bottom-right"` (or your previous
+> corner) to keep the old look — a legacy corner `position` without an
+> explicit `variant` still renders the bubble, so existing call sites are
+> unaffected.
+
 ## Imperative submit
 
 ```tsx

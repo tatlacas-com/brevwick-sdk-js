@@ -13,6 +13,7 @@ export {
 export {
   BwFeedbackButtonComponent,
   type BwFeedbackButtonPosition,
+  type BwFeedbackButtonVariant,
 } from './lib/components/feedback-button.component';
 export { BREVWICK_ANGULAR_VERSION } from './lib/internal/version';
 

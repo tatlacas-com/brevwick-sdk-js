@@ -107,25 +107,55 @@ Single instance per Angular app. SSR-safe via `inject(PLATFORM_ID)` + `isPlatfor
 
 ### `<bw-feedback-button>` (`BwFeedbackButtonComponent`)
 
-Standalone component — import it directly into any `@Component({ standalone: true, imports: [BwFeedbackButtonComponent] })`. Renders a FAB plus a minimal text-only panel (textarea + send button); the component does not capture screenshots — apps that need that fidelity wrap `BrevwickService.captureScreenshot()` themselves and pass the resulting `Blob` through `submit()`'s `attachments` field. Submission goes through `BrevwickService` automatically.
+Standalone component — import it directly into any `@Component({ standalone: true, imports: [BwFeedbackButtonComponent] })`. Renders a launcher (a vertical tab on the right viewport edge by default; a floating corner bubble via `variant="bubble"`) plus a chat-style feedback panel. Opens to a composer with:
+
+- **Textarea** with Enter-to-send (Shift+Enter for newline).
+- **Screenshot** capture with region-select overlay (drag a rectangle, or "Capture full page"), tap-to-preview thumbnails, and a combined 5-attachment cap.
+- **File attachments** via paperclip icon.
+- **Optional "Expected vs Actual"** disclosure.
+- **Optional AI-format toggle** (only visible when the project allows per-submitter choice).
+
+Submission goes through `BrevwickService` automatically.
 
 ```ts
+// Default: vertical tab on the right edge, vertically centered.
 <bw-feedback-button
-  position="bottom-right"
   label="Report a bug"
   (submit)="onResult($event)"
 />
+
+// Legacy floating corner bubble.
+<bw-feedback-button variant="bubble" position="bottom-right" />
+
+// Icon-only tab, nudged 120px above the vertical center. The label
+// becomes the launcher's aria-label.
+<bw-feedback-button [compact]="true" [offset]="-120" label="Report a bug" />
 ```
 
-| Input / Output | Type                              | Default          | Description                                           |
-| -------------- | --------------------------------- | ---------------- | ----------------------------------------------------- |
-| `position`     | `'bottom-right' \| 'bottom-left'` | `'bottom-right'` | Which corner the FAB pins to.                         |
-| `disabled`     | `boolean`                         | `false`          | FAB renders as disabled and cannot open the panel.    |
-| `hidden`       | `boolean`                         | `false`          | Component renders nothing — useful for feature flags. |
-| `label`        | `string`                          | `'Feedback'`     | FAB label.                                            |
-| `(submit)`     | `EventEmitter<SubmitResult>`      | —                | Fired after every submit (success or failure).        |
+> **Migration:** the default presentation changed from the corner bubble to the right-edge tab. Pass `position="bottom-right"` (or your previous corner) to keep the old look — a legacy corner `position` without an explicit `variant` still renders the bubble, so existing call sites are unaffected.
 
-> The Angular component is a deliberately lean baseline. The full chat-style panel — multi-screenshot, region-select capture, AI toggle, etc. — currently lives in `@tatlacas/brevwick-react`. Apps that need that fidelity in Angular today should wrap `BrevwickService` with their own component using whichever Angular UI library they already use.
+| Input / Output | Type                                                   | Default                                     | Description                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `variant`      | `'tab' \| 'bubble'`                                    | `'tab'`                                     | Launcher presentation — vertical edge tab (the new default) or the legacy floating corner pill. A legacy corner `position` without an explicit `variant` implies `'bubble'`.         |
+| `position`     | `'right' \| 'left' \| 'bottom-right' \| 'bottom-left'` | `'right'` (tab) / `'bottom-right'` (bubble) | Where the launcher sits. Edge sides are the tab's home, corners the bubble's. When `variant` and `position` disagree, `variant` wins and `position` contributes its horizontal side. |
+| `compact`      | `boolean`                                              | `false`                                     | Icon-only launcher (circular bubble / square edge tab). The `label` is not rendered but becomes the launcher's `aria-label`.                                                         |
+| `offset`       | `number`                                               | `0`                                         | Tab only: vertical offset in px from the viewport's vertical center. Positive moves the tab down, negative up. Ignored for the bubble.                                               |
+| `disabled`     | `boolean`                                              | `false`                                     | Launcher renders as disabled and cannot open the panel.                                                                                                                              |
+| `hidden`       | `boolean`                                              | `false`                                     | Component renders nothing — useful for feature flags.                                                                                                                                |
+| `label`        | `string`                                               | `'Feedback'`                                | Launcher label. Hidden visually when `compact`.                                                                                                                                      |
+| `theme`        | `'system' \| 'light' \| 'dark'`                        | `'system'`                                  | Force a palette regardless of OS `prefers-color-scheme`.                                                                                                                             |
+| `(submit)`     | `EventEmitter<SubmitResult>`                           | —                                           | Fired after every submit (success or failure).                                                                                                                                       |
+
+### Hiding sensitive content from screenshots
+
+The widget captures the page via `@tatlacas/brevwick-sdk`'s `captureScreenshot()`. Any element tagged `data-brevwick-skip` is hidden before capture and restored after:
+
+```html
+<input data-brevwick-skip type="password" />
+<div data-brevwick-skip>{{ customerEmail }}</div>
+```
+
+The FAB, panel, region overlay, and preview dialog all carry `data-brevwick-skip` themselves, so they never appear in the screenshots they capture.
 
 ## SSR / Angular Universal
 
@@ -149,12 +179,12 @@ bootstrap = () =>
 
 ## Bundle size
 
-| Surface                | Budget          | Notes                                                                                                                                                                                |
-| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Eager (`fesm2022.mjs`) | **≤ 8 kB gzip** | Angular's `@Injectable`, standalone-component, and Signals scaffolding accounts for ~4-5 kB; our code lands on top.                                                                  |
-| On widget open         | ≤ 25 kB gzip    | If you wire `BrevwickService.captureScreenshot()` into your own component, `modern-screenshot` is dynamic-imported on first call via the SDK — same lazy chunk every adapter shares. |
+| Surface                | Budget          | Notes                                                                                                               |
+| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Eager (`fesm2022.mjs`) | **≤ 8 kB gzip** | Angular's `@Injectable`, standalone-component, and Signals scaffolding accounts for ~4-5 kB; our code lands on top. |
+| On widget open         | ≤ 25 kB gzip    | `modern-screenshot` is dynamic-imported on the first capture via the SDK — same lazy chunk every adapter shares.    |
 
-The Angular envelope is intentionally larger than the React/Vue/Svelte/Solid adapters because the underlying framework has irreducible runtime overhead per `@Injectable` + standalone component. The eager budget is enforced by [`size-limit`](../../.size-limit.js); `<bw-feedback-button>` itself does not invoke `captureScreenshot` — the lean baseline submits text only.
+The Angular envelope is intentionally larger than the React/Vue/Svelte/Solid adapters because the underlying framework has irreducible runtime overhead per `@Injectable` + standalone component. The eager budget is enforced by [`size-limit`](../../.size-limit.js). `<bw-feedback-button>` only reaches `captureScreenshot` when the user clicks the screenshot button, so `modern-screenshot` stays on the lazy widget-open chunk.
 
 ## Build & versioning
 

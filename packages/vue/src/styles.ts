@@ -37,7 +37,37 @@ export const BREVWICK_STYLE_ID = 'brevwick-vue-styles';
  */
 export const COMPOSER_MAX_HEIGHT_PX = 120;
 
-export const BREVWICK_CSS = `
+// Launcher (`.brw-fab`) notes — kept OUTSIDE the template literal because
+// CSS comments inside `BREVWICK_CSS` ship in the bundle and the Vue package
+// budget (< 10 kB gzip) has no room for prose. The React adapter carries the
+// same notes inline; the rules below are byte-identical to its stylesheet.
+//
+// - `.brw-fab` is the variant-independent chrome; pill geometry lives under
+//   `.brw-fab--bubble` (legacy corner pill, safe-area-inset corners, compact
+//   48px circle). Only transform animates; box-shadow intentionally static.
+// - `.brw-fab--tab` (NEW DEFAULT): `writing-mode: vertical-rl` flips the
+//   inline axis vertical — the flex row (icon, label) stacks top→bottom and
+//   the label glyphs read top→bottom, rotated 90° cw. The left tab mirrors
+//   the flat edge / radii by rotating 180° via the `--brw-fab-tab-flip`
+//   custom property composed INSIDE `transform` (after the centering
+//   translateY) — flat edge stays against the viewport edge, radii mirror,
+//   and the label reads bottom→top, Userback-style. Composing the rotate in
+//   `transform` (not the standalone `rotate` property, which applies AFTER
+//   `transform` per CSS Transforms L2) keeps `translateY(-50%)` the
+//   outermost transform, so it never inverts into `+50%` and the left tab
+//   stays vertically centred. `border-right: none` removes the hairline on
+//   the flat edge (for `.brw-fab-l` the pre-flip right edge IS the
+//   viewport edge).
+// - Tab hover pulls the tab 2px out of the edge (the whole transform is
+//   restated — transform is overwritten, not merged). translateX(-2px) is
+//   innermost, so `.brw-fab-l`'s 180° flip turns it into +2px visually:
+//   also away from its edge.
+// - Compact tab: square-ish icon-only edge chip.
+// - `--brw-fab-tab-offset` is set inline by the adapter only when
+//   `offset !== 0`; it is a positioning input, not part of the public
+//   `--brw-*` theming contract (no `-base` twin).
+export const BREVWICK_CSS =
+  `
 :where(:root) {
   /* Surfaces */
   --brw-panel-bg-base: #ffffff;
@@ -98,17 +128,19 @@ export const BREVWICK_CSS = `
     --brw-success-base: #34d399;
   }
 }
-/* Forced palettes via <FeedbackButton theme="light|dark">. These rewrite
-   --brw-*-base on .brw-root, so they replace the OS-driven defaults for
-   the widget subtree without ever writing to the public --brw-* names.
-   That preserves host-level :root overrides (the widget consumer path
-   always asks for --brw-X first, with --brw-X-base only as fallback —
-   see the BREVWICK_STYLE_ID jsdoc above). theme="system" deliberately
-   has no rule; the :where(:root) defaults plus the media query already
-   do the right thing. Values duplicated rather than extracted because
-   the stylesheet ships as a literal template string with zero build
-   tooling. */
-.brw-root[data-brw-theme='light'] {
+` +
+  // Forced palettes via <FeedbackButton theme="light|dark">. These rewrite
+  // --brw-*-base on .brw-root, so they replace the OS-driven defaults for
+  // the widget subtree without ever writing to the public --brw-* names.
+  // That preserves host-level :root overrides (the widget consumer path
+  // always asks for --brw-X first, with --brw-X-base only as fallback —
+  // see the BREVWICK_STYLE_ID jsdoc above). theme="system" deliberately
+  // has no rule; the :where(:root) defaults plus the media query already
+  // do the right thing. Values duplicated rather than extracted because
+  // the stylesheet ships as a literal template string with zero build
+  // tooling. (TS comment, not a CSS comment, so it does not ship in the
+  // bundle — see the budget note above BREVWICK_CSS.)
+  `.brw-root[data-brw-theme='light'] {
   --brw-panel-bg-base: #ffffff;
   --brw-bubble-assistant-bg-base: #f1f5f9;
   --brw-bubble-user-bg-base: #0f172a;
@@ -149,11 +181,6 @@ export const BREVWICK_CSS = `
 .brw-fab {
   position: fixed;
   z-index: 2147483000;
-  bottom: 24px;
-  height: 48px;
-  min-width: 48px;
-  padding: 0 18px;
-  border-radius: 999px;
   border: 1px solid var(--brw-border, var(--brw-border-base));
   background: var(--brw-accent, var(--brw-accent-base));
   color: var(--brw-accent-fg, var(--brw-accent-fg-base));
@@ -164,17 +191,58 @@ export const BREVWICK_CSS = `
   gap: 8px;
   cursor: pointer;
   box-shadow: var(--brw-shadow, var(--brw-shadow-base));
-  /* Only transform animates on hover; box-shadow is static so it is
-     intentionally excluded from the transition list. */
   transition: transform 120ms ease-out;
 }
-.brw-fab:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
 .brw-fab:disabled { cursor: not-allowed; opacity: 0.5; }
-.brw-fab-br { right: 24px; }
-.brw-fab-bl { left: 24px; }
-.brw-fab-icon { width: 18px; height: 18px; }
+.brw-fab:focus-visible {
+  outline: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+  outline-offset: 2px;
+}
+.brw-fab-icon { width: 18px; height: 18px; flex-shrink: 0; }
+.brw-fab--bubble {
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  height: 48px;
+  min-width: 48px;
+  padding: 0 18px;
+  border-radius: 999px;
+}
+.brw-fab--bubble:hover:not(:disabled) { transform: translateY(-1px); }
+.brw-fab-br { right: calc(24px + env(safe-area-inset-right, 0px)); }
+.brw-fab-bl { left: calc(24px + env(safe-area-inset-left, 0px)); }
+.brw-fab--bubble.brw-fab--compact {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  justify-content: center;
+}
+.brw-fab--tab {
+  top: calc(50% + var(--brw-fab-tab-offset, 0px));
+  transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg));
+  writing-mode: vertical-rl;
+  min-height: 48px;
+  width: 40px;
+  padding: 16px 0;
+  justify-content: center;
+  border-radius: 10px 0 0 10px;
+}
+.brw-fab-r {
+  right: env(safe-area-inset-right, 0px);
+  border-right: none;
+}
+.brw-fab-l {
+  left: env(safe-area-inset-left, 0px);
+  border-right: none;
+  --brw-fab-tab-flip: 180deg;
+}
+.brw-fab--tab:hover:not(:disabled) {
+  transform: translateY(-50%) rotate(var(--brw-fab-tab-flip, 0deg)) translateX(-2px);
+}
+.brw-fab-label { letter-spacing: 0.02em; }
+.brw-fab--tab.brw-fab--compact {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
 .brw-panel {
   position: fixed;
   z-index: 2147483002;
@@ -292,6 +360,23 @@ export const BREVWICK_CSS = `
   color: var(--brw-fg-muted, var(--brw-fg-muted-base));
 }
 .brw-bubble--receipt svg { flex-shrink: 0; }
+/* Dev-only "copy raw payload" button (config.debug). Sits under the bubble
+   text, muted, so it never competes with real widget chrome. */
+.brw-copy-raw {
+  display: block;
+  margin-top: 6px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  background: transparent;
+  border: 1px solid var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
+  border-radius: 6px;
+  color: var(--brw-bubble-user-fg, var(--brw-bubble-user-fg-base));
+  opacity: 0.7;
+  cursor: pointer;
+}
+.brw-copy-raw:hover { opacity: 1; }
 .brw-chip {
   align-self: flex-end;
   display: inline-flex;
@@ -519,19 +604,21 @@ export const BREVWICK_CSS = `
   border-color: var(--brw-accent, var(--brw-accent-base));
 }
 .brw-error { color: var(--brw-error-base); font-size: 12px; align-self: stretch; }
-/* Staged-status rows: progress indicators, not conversation bubbles.
-   They sit under a dashed top divider as a compact stacked checklist,
-   mirroring the marketing AnimatedDemo widget mock — and intentionally
-   stay outside the .brw-bubble class family so message-count queries
-   ignore them. .brw-status-rows is the grouping container that owns the
-   divider + stacking; .brw-status-row is one ticked line. The
-   animation-delay is set inline per row so the three rows fade in
-   sequentially under the shared @keyframes entrance even when the
-   underlying SDK phase events fire microseconds apart. The
-   reduced-motion media query collapses the entrance to an instant fade,
-   pairing with the inline 0ms delay the adapter passes when the user
-   has prefers-reduced-motion: reduce. */
-.brw-status-rows {
+` +
+  // Staged-status rows: progress indicators, not conversation bubbles.
+  // They sit under a dashed top divider as a compact stacked checklist,
+  // mirroring the marketing AnimatedDemo widget mock — and intentionally
+  // stay outside the .brw-bubble class family so message-count queries
+  // ignore them. .brw-status-rows is the grouping container that owns the
+  // divider + stacking; .brw-status-row is one ticked line. The
+  // animation-delay is set inline per row so the three rows fade in
+  // sequentially under the shared @keyframes entrance even when the
+  // underlying SDK phase events fire microseconds apart. The
+  // reduced-motion media query collapses the entrance to an instant fade,
+  // pairing with the inline 0ms delay the adapter passes when the user
+  // has prefers-reduced-motion: reduce. (TS comment, not a CSS comment, so
+  // it does not ship in the bundle — see the budget note above BREVWICK_CSS.)
+  `.brw-status-rows {
   align-self: stretch;
   display: flex;
   flex-direction: column;
@@ -647,5 +734,90 @@ export const BREVWICK_CSS = `
   inset: 0;
   background: rgba(0, 0, 0, 0.35);
   z-index: 2147483001;
+}
+.brw-region-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 2147483003;
+}
+.brw-region-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483004;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+.brw-region-selection {
+  position: fixed;
+  border: 2px solid var(--brw-border-focus, var(--brw-border-focus-base));
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.brw-region-controls {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+  border: 1px solid var(--brw-border, var(--brw-border-base));
+  border-radius: 10px;
+  box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+  z-index: 2147483005;
+}
+.brw-region-btn { font: inherit; }
+.brw-region-shake { animation: brw-region-shake 300ms ease-out; }
+@keyframes brw-region-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+/* Screenshot preview dialog (issue #57). Sits above the panel and the
+   region overlay z-stack so the dialog is always on top when triggered
+   from a chip in the panel. The image is contain-bounded to 90vw / 80vh
+   so a tall full-page capture stays readable and a small region capture
+   isn't upscaled past its native pixels. */
+.brw-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 2147483006;
+}
+.brw-preview-layer {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483007;
+  outline: none;
+}
+.brw-preview-image {
+  max-width: 90vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+  background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+}
+.brw-preview-close {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--brw-panel-bg, var(--brw-panel-bg-base));
+  border: 1px solid var(--brw-border, var(--brw-border-base));
+  box-shadow: var(--brw-shadow, var(--brw-shadow-base));
+}
+@media (prefers-reduced-motion: reduce) {
+  .brw-region-shake { animation: none; }
 }
 `;

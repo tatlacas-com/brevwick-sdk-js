@@ -55,11 +55,28 @@ export type {
 
 export type { CaptureScreenshotOpts } from './screenshot';
 
+import { placeholderBlob } from './screenshot-fallback';
+
 /**
  * Lazy re-export: the real module (and its `modern-screenshot` peer dep) is
  * resolved only on the first call so the base chunk stays below its 2 kB gzip
  * budget. `export { captureScreenshot } from './screenshot'` would pull the
  * module — and through it, `modern-screenshot` — into the root bundle.
+ *
+ * The chunk-load rejection is converted to the standard placeholder here:
+ * `captureScreenshot` is documented never to throw, and the failure path
+ * inside `./screenshot` cannot cover the case where that very chunk fails
+ * to load (deploy mismatch / offline).
  */
 export const captureScreenshot: typeof import('./screenshot').captureScreenshot =
-  (...args) => import('./screenshot').then((m) => m.captureScreenshot(...args));
+  (...args) =>
+    import('./screenshot').then(
+      (m) => m.captureScreenshot(...args),
+      (err: unknown) => {
+        globalThis.console?.warn?.(
+          'brevwick: screenshot capture failed, using placeholder' +
+            (err instanceof Error ? `: ${err.message}` : ''),
+        );
+        return placeholderBlob();
+      },
+    );

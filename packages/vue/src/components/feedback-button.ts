@@ -7,6 +7,7 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  shallowRef,
   watch,
   type PropType,
   type VNode,
@@ -18,6 +19,7 @@ import type {
   SubmitError,
   SubmitResult,
 } from '@tatlacas/brevwick-sdk';
+import { resolveLauncherPlacement } from '@tatlacas/brevwick-sdk/launcher';
 import { useFeedback, type FeedbackPhase } from '../composables/use-feedback';
 import {
   BREVWICK_CSS,
@@ -34,10 +36,38 @@ import { BREVWICK_INJECTION_KEY } from '../plugin';
  */
 export type BrevwickTheme = 'light' | 'dark' | 'system';
 
+/** Launcher presentation. `'tab'` (NEW DEFAULT) is a vertical button flush
+ *  against a viewport edge; `'bubble'` is the legacy floating corner pill. */
+export type FeedbackButtonVariant = 'bubble' | 'tab';
+
+/**
+ * Launcher placement.
+ * - `'right' | 'left'`        — edge sides (natural home of the tab).
+ * - `'bottom-right' | 'bottom-left'` — legacy corners (natural home of the
+ *   bubble). Passing one of these WITHOUT an explicit `variant` opts into
+ *   the bubble, preserving pre-2.x call sites byte-for-byte.
+ */
+export type FeedbackButtonPosition =
+  | 'right'
+  | 'left'
+  | 'bottom-right'
+  | 'bottom-left';
+
+/**
+ * The variant/position resolution table (`resolveLauncherPlacement`) is a
+ * pure, framework-agnostic function shared by every adapter, so it lives in
+ * `@tatlacas/brevwick-sdk/launcher` rather than being copied here. See the
+ * resolution semantics in that module (mirrored in SDD § 12).
+ */
+
 /**
  * Stable snapshot of one attachment that rode along with a submit. We store
- * only the underlying `Blob`, mirroring the React adapter's `MessageAttachment`
- * — bubble previews are forward-compat only; the V1 Vue widget renders text.
+ * only the underlying `Blob` (not the live `ScreenshotAttachment.url`),
+ * mirroring the React adapter's `MessageAttachment` — the success path
+ * revokes the composer's object URL the moment the snapshot is appended, so
+ * keeping the URL on the message would leave a dangling reference. A future
+ * render that wants to preview the attachment can call
+ * `URL.createObjectURL(blob)` itself.
  */
 interface MessageAttachment {
   readonly blob: Blob;
@@ -47,6 +77,9 @@ interface MessageAttachment {
 /**
  * One bubble in the conversation thread. The greeting and submitted-issue
  * receipt are `assistant` messages; submitted drafts become `user` messages.
+ * `attachments` snapshots the screenshots + files that rode along with the
+ * submit so a follow-up render can show what was sent (currently the bubble
+ * itself just shows text, but the field is there for forward-compat).
  */
 interface Message {
   id: string;
@@ -55,16 +88,60 @@ interface Message {
   sentAt?: number;
   issueSent?: boolean;
   attachments?: {
+    screenshots?: readonly MessageAttachment[];
     files?: readonly MessageAttachment[];
   };
+  /**
+   * The exact, post-redaction payload the SDK POSTed for this message — set
+   * only when the host enabled `config.debug`. When present, the bubble
+   * renders a "copy raw payload" affordance so a developer can inspect
+   * everything that left the device (rings/context the widget never shows).
+   */
+  rawPayload?: Record<string, unknown>;
 }
 
 /**
- * Combined attachment cap mirrored from the SDK's `MAX_ATTACHMENT_COUNT`.
- * V1 Vue does not capture screenshots through the widget UI (the toggle and
- * region overlay are React-only for now), so this is a file-only ceiling.
+ * Combined screenshot + file cap, mirrored from the SDK's
+ * `MAX_ATTACHMENT_COUNT` in `packages/sdk/src/submit.ts`. Enforced in the
+ * UI by disabling the screenshot and file-attach buttons once the combined
+ * total reaches this ceiling — that way the user can't queue an attachment
+ * the SDK would reject downstream.
  */
 const MAX_ATTACHMENTS = 5;
+
+interface ScreenshotAttachment {
+  /**
+   * Monotonic id assigned at capture time. Same rationale as
+   * {@link FileAttachment.id}: keys based on `url` or array index would
+   * reconcile a removal-of-middle-item against the wrong slot.
+   */
+  readonly id: number;
+  readonly blob: Blob;
+  readonly url: string;
+}
+
+/** Viewport-space rectangle selected by the user on the region overlay. */
+interface Region {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** Minimum accepted side length (px) — below this the selection is treated
+ *  as an accidental click and the confirm is rejected with a shake. */
+const REGION_MIN_SIDE_PX = 2;
+
+/** Live drag rectangle on the region overlay, anchored at the pointer-down
+ *  point so the selection normalises regardless of drag direction. */
+interface DragState {
+  readonly startX: number;
+  readonly startY: number;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
 
 const GREETING_MESSAGE: Message = {
   id: 'greeting',
@@ -140,9 +217,9 @@ function formatRelativeTime(ms: number | undefined): string {
  * Mirrors the React adapter's `<FeedbackButton>` UX (panel header with
  * minimize/close, conversation thread with assistant + user bubbles, autogrow
  * composer, AI toggle when project policy permits, staged-status rows driven
- * by the SDK's phase bus, retry row on failure). Screenshot capture lives
- * behind a future-flag — `captureScreenshot` is exposed by the composable
- * but the Vue v1 widget does not render the trigger button. See SDD § 12.
+ * by the SDK's phase bus, retry row on failure, screenshot capture with a
+ * region-select overlay, thumbnail chips with a tap-to-preview dialog).
+ * See SDD § 12.
  *
  * ## Theming
  *
@@ -153,12 +230,49 @@ function formatRelativeTime(ms: number | undefined): string {
 export const FeedbackButton = defineComponent({
   name: 'BrevwickFeedbackButton',
   props: {
-    position: {
-      type: String as PropType<'bottom-right' | 'bottom-left'>,
-      default: 'bottom-right',
+    /**
+     * Launcher presentation. Default `'tab'` — **this changed in vNEXT**:
+     * the zero-config launcher is now a vertical tab on the right viewport
+     * edge. Pass `variant="bubble"` (or a legacy corner `position`) to keep
+     * the floating corner pill.
+     *
+     * No prop-layer default on purpose — `resolveLauncherPlacement` must
+     * see "unset" so the corner-implies-bubble compat rule can apply.
+     */
+    variant: {
+      type: String as PropType<FeedbackButtonVariant>,
+      default: undefined,
     },
+    /**
+     * Where the launcher sits. Defaults: `'right'` for the tab,
+     * `'bottom-right'` for the bubble.
+     *
+     * Compatibility: passing a legacy corner (`'bottom-right'` /
+     * `'bottom-left'`) without an explicit `variant` renders the BUBBLE at
+     * that corner — existing call sites keep their pre-vNEXT presentation.
+     * When `variant` and `position` disagree (e.g. `variant="tab"` +
+     * `position="bottom-left"`), `variant` wins and `position` contributes
+     * only its horizontal side.
+     */
+    position: {
+      type: String as PropType<FeedbackButtonPosition>,
+      default: undefined,
+    },
+    /**
+     * Icon-only mode. Bubble → 48px circular icon button; tab → compact
+     * square edge tab with just the icon. The `label` is not rendered but
+     * becomes the launcher's `aria-label`. Default `false`.
+     */
+    compact: { type: Boolean, default: false },
+    /**
+     * Tab-only: vertical offset in px from the vertical center of the
+     * viewport. Positive moves the tab down, negative up. Ignored for the
+     * bubble. Default `0`.
+     */
+    offset: { type: Number, default: 0 },
     disabled: { type: Boolean, default: false },
     hidden: { type: Boolean, default: false },
+    /** Launcher label. Default `'Feedback'`. Hidden visually when `compact`. */
     label: { type: String, default: 'Feedback' },
     theme: { type: String as PropType<BrevwickTheme>, default: 'system' },
     className: { type: String, default: '' },
@@ -168,7 +282,13 @@ export const FeedbackButton = defineComponent({
     },
   },
   setup(props) {
-    const { submit, status, phase, error: submitErrorTagged } = useFeedback();
+    const {
+      submit,
+      captureScreenshot,
+      status,
+      phase,
+      error: submitErrorTagged,
+    } = useFeedback();
     // Reach the SDK directly (not via the composable) for `getConfig()` —
     // the composable exposes only the submission primitives, and lifting
     // getConfig into it would break the React-symmetric surface. The
@@ -180,7 +300,27 @@ export const FeedbackButton = defineComponent({
     const expected = ref('');
     const actual = ref('');
     const showExtras = ref(false);
+    // `shallowRef` (every mutation reassigns the whole array) so the
+    // captured `Blob`s are never wrapped in deep-reactive proxies — the
+    // exact blob instance must ride the wire into `submit()` untouched.
+    const screenshots = shallowRef<ScreenshotAttachment[]>([]);
     const files = ref<FileAttachment[]>([]);
+    // True while a screenshot is being rasterised / cropped (issue #55).
+    // Drives the in-thread "Capturing screenshot…" bubble and disables the
+    // screenshot / file / send controls so a second capture or a submit
+    // can't race the one in flight.
+    const capturing = ref(false);
+    // True while the region-select overlay is up. The panel stays mounted
+    // (state preserved) but gets `brw-panel-hidden` so the user can see —
+    // and select a region over — page content the panel would otherwise
+    // cover (issue #49).
+    const regionOpen = ref(false);
+    // Stable screenshot id of the thumbnail the user tapped to preview;
+    // `null` keeps the preview dialog closed. Using the id (not the array
+    // index) means the dialog stays bound to the same attachment if the
+    // user removes a sibling screenshot mid-preview — `removeScreenshot()`
+    // clears `previewId` only when the previewed screenshot itself goes.
+    const previewId = ref<number | null>(null);
     const confirmClose = ref(false);
     const submitError = ref<string | null>(null);
     const messages = ref<Message[]>(initialMessages());
@@ -200,15 +340,32 @@ export const FeedbackButton = defineComponent({
     // mutate refs on a torn-down tree.
     let mounted = true;
     let configTriggered = false;
+    let screenshotIdCounter = 0;
     let fileIdCounter = 0;
     let messageIdCounter = 0;
     // Snapshot of the last `FeedbackInput` passed to `submit()` so the
     // retry CTA can re-run with the exact same payload (including any
     // attached files) without forcing the user to re-type the draft.
     let lastSubmittedInput: FeedbackInput | null = null;
+    // Id of the user bubble for the most recent submit, so the retry path can
+    // re-attach a freshly composed `rawPayload` to the same bubble.
+    let lastUserMessageId: string | null = null;
 
     const composerRef = ref<HTMLTextAreaElement | null>(null);
     const keepBtnRef = ref<HTMLButtonElement | null>(null);
+    // Region-overlay drag selection. `dragging` is a plain flag (not a ref)
+    // because nothing renders off it — it only gates the move/up handlers.
+    const drag = ref<DragState | null>(null);
+    const shake = ref(false);
+    let dragging = false;
+    // Tracks the in-flight "shake settle" setTimeout. We keep the handle so
+    // (a) closing the overlay cancels it — otherwise a shake queued right
+    // before Esc would mutate state behind a torn-down overlay — and (b)
+    // rapid-fire Capture clicks on a degenerate selection replace the timer
+    // instead of stacking.
+    let shakeTimer: ReturnType<typeof setTimeout> | undefined;
+    const overlayRef = ref<HTMLDivElement | null>(null);
+    const previewLayerRef = ref<HTMLDivElement | null>(null);
     // Per-instance id for the disclosure aria-controls — rendering multiple
     // <FeedbackButton>s mid-animation would otherwise collide on a shared id.
     const disclosurePanelId = `brw-disclosure-${Math.random().toString(36).slice(2, 10)}`;
@@ -237,6 +394,12 @@ export const FeedbackButton = defineComponent({
 
     onBeforeUnmount(() => {
       mounted = false;
+      if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
+      if (shakeTimer) clearTimeout(shakeTimer);
+      // Revoke any live screenshot object URLs so an unmount mid-composition
+      // doesn't leak blob references for the lifetime of the document.
+      for (const s of screenshots.value) URL.revokeObjectURL(s.url);
+      screenshots.value = [];
     });
 
     const showAiToggle = computed(
@@ -250,7 +413,9 @@ export const FeedbackButton = defineComponent({
       () => projectConfig.value.config?.ai_enabled === true,
     );
 
-    const attachmentCount = computed(() => files.value.length);
+    const attachmentCount = computed(
+      () => screenshots.value.length + files.value.length,
+    );
     const attachmentsAtCap = computed(
       () => attachmentCount.value >= MAX_ATTACHMENTS,
     );
@@ -260,17 +425,42 @@ export const FeedbackButton = defineComponent({
         draft.value.trim().length > 0 ||
         expected.value.length > 0 ||
         actual.value.length > 0 ||
+        screenshots.value.length > 0 ||
         files.value.length > 0,
     );
 
-    const fabPosClass = computed(() =>
-      props.position === 'bottom-left' ? 'brw-fab-bl' : 'brw-fab-br',
-    );
-    const panelPosClass = computed(() =>
-      props.position === 'bottom-left' ? 'brw-panel-bl' : 'brw-panel-br',
-    );
     const rootClassName = computed(() =>
       ['brw-root', props.className].filter(Boolean).join(' '),
+    );
+    const placement = computed(() =>
+      resolveLauncherPlacement(props.variant, props.position),
+    );
+    const fabClasses = computed(() => {
+      const { variant: v, side } = placement.value;
+      return [
+        rootClassName.value,
+        'brw-fab',
+        v === 'tab' ? 'brw-fab--tab' : 'brw-fab--bubble',
+        v === 'tab'
+          ? side === 'left'
+            ? 'brw-fab-l'
+            : 'brw-fab-r'
+          : side === 'left'
+            ? 'brw-fab-bl'
+            : 'brw-fab-br',
+        props.compact ? 'brw-fab--compact' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+    });
+    const panelPosClass = computed(() =>
+      placement.value.side === 'left' ? 'brw-panel-bl' : 'brw-panel-br',
+    );
+    // Non-compact keeps the established accessible name (the visible label
+    // still supplements it). Compact removes the visible text, so the
+    // `label` string becomes the aria-label.
+    const fabAriaLabel = computed(() =>
+      props.compact ? props.label : 'Open feedback form',
     );
 
     function maybeFetchConfig(): void {
@@ -304,7 +494,10 @@ export const FeedbackButton = defineComponent({
       expected.value = '';
       actual.value = '';
       showExtras.value = false;
+      for (const s of screenshots.value) URL.revokeObjectURL(s.url);
+      screenshots.value = [];
       files.value = [];
+      previewId.value = null;
       confirmClose.value = false;
       submitError.value = null;
       messages.value = initialMessages();
@@ -344,7 +537,12 @@ export const FeedbackButton = defineComponent({
 
     function handleFiles(list: FileList | null): void {
       if (!list || list.length === 0) return;
-      const remaining = MAX_ATTACHMENTS - files.value.length;
+      // Cap the combined screenshot+file total at MAX_ATTACHMENTS so a
+      // bulk-add via <input multiple> can't exceed the SDK ceiling. Keep
+      // prefix-of-input semantics: drop the overflow tail rather than
+      // silently dropping arbitrary entries.
+      const remaining =
+        MAX_ATTACHMENTS - (files.value.length + screenshots.value.length);
       if (remaining <= 0) return;
       const next: FileAttachment[] = [];
       for (let i = 0; i < Math.min(list.length, remaining); i++) {
@@ -358,6 +556,120 @@ export const FeedbackButton = defineComponent({
       files.value = files.value.filter((f) => f.id !== id);
     }
 
+    // Split from the historical one-shot capture: the button only opens the
+    // region overlay, and the overlay fans out to either a full-page or a
+    // cropped capture. Closing the overlay and starting `captureScreenshot()`
+    // happen in the same tick — the primary protection against the overlay
+    // bleeding into the rendered page is `data-brevwick-skip` on every
+    // overlay node, which the SDK's capture path honours before it
+    // snapshots; the unmount landing first is defence-in-depth.
+    //
+    // `capturing` is the in-thread loading flag (issue #55). The region
+    // overlay closes the moment the user clicks Capture so the panel is
+    // already visible by the time `captureScreenshot()` resolves; the flag
+    // surfaces a "Capturing screenshot…" bubble in the thread to bridge
+    // that gap so the panel re-appearing without the chip isn't mysterious.
+    async function performCapture(region: Region | null): Promise<void> {
+      submitError.value = null;
+      capturing.value = true;
+      try {
+        const blob = await captureScreenshot();
+        if (!mounted) return;
+        const finalBlob = region ? await cropToRegion(blob, region) : blob;
+        if (!mounted) return;
+        // Defence-in-depth: the screenshot button is disabled at the cap,
+        // but a long-running capture started before files were attached can
+        // still land after the combined total is at the ceiling — refs are
+        // live, so this re-check sees anything attached while the capture
+        // was in flight. Drop the new capture rather than silently exceed
+        // the SDK's combined attachment ceiling. (The object URL is only
+        // created for a kept capture so a rejected one doesn't leak.)
+        if (screenshots.value.length + files.value.length >= MAX_ATTACHMENTS) {
+          submitError.value = `Maximum ${MAX_ATTACHMENTS} attachments reached`;
+          return;
+        }
+        screenshots.value = [
+          ...screenshots.value,
+          {
+            id: ++screenshotIdCounter,
+            blob: finalBlob,
+            url: URL.createObjectURL(finalBlob),
+          },
+        ];
+      } catch (err) {
+        if (!mounted) return;
+        // Non-blocking failure: inline role=alert, no chip, Send re-enabled
+        // immediately (via the finally below) — capture failure must never
+        // block submission.
+        submitError.value =
+          err instanceof Error ? err.message : 'Screenshot capture failed';
+      } finally {
+        if (mounted) capturing.value = false;
+      }
+    }
+
+    function clearShakeTimer(): void {
+      if (shakeTimer) {
+        clearTimeout(shakeTimer);
+        shakeTimer = undefined;
+      }
+    }
+
+    /** Reset the overlay's drag + shake scratch state so a re-open starts
+     *  from a clean slate rather than the last session's selection. */
+    function resetRegionScratch(): void {
+      drag.value = null;
+      shake.value = false;
+      dragging = false;
+      clearShakeTimer();
+    }
+
+    function handleOpenRegionOverlay(): void {
+      submitError.value = null;
+      resetRegionScratch();
+      regionOpen.value = true;
+      // Focus the overlay root once it mounts so Esc-to-dismiss and the
+      // Enter-to-confirm shortcut work without a pointer round-trip.
+      void nextTick(() => {
+        overlayRef.value?.focus();
+      });
+    }
+
+    function handleCloseRegion(): void {
+      regionOpen.value = false;
+      resetRegionScratch();
+    }
+
+    function handleConfirmRegion(region: Region): void {
+      regionOpen.value = false;
+      resetRegionScratch();
+      void performCapture(region);
+    }
+
+    function handleConfirmFull(): void {
+      regionOpen.value = false;
+      resetRegionScratch();
+      void performCapture(null);
+    }
+
+    function removeScreenshot(id: number): void {
+      const target = screenshots.value.find((s) => s.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      screenshots.value = screenshots.value.filter((s) => s.id !== id);
+      if (previewId.value === id) previewId.value = null;
+    }
+
+    function handlePreviewScreenshot(id: number): void {
+      previewId.value = id;
+      void nextTick(() => {
+        previewLayerRef.value?.focus();
+      });
+    }
+
+    function handleClosePreview(): void {
+      previewId.value = null;
+    }
+
     function autosizeComposer(): void {
       const el = composerRef.value;
       if (!el) return;
@@ -369,8 +681,60 @@ export const FeedbackButton = defineComponent({
       void nextTick(autosizeComposer);
     });
 
+    /**
+     * Stamp the dev-only raw payload onto a user bubble once `submit()`
+     * resolves. No-op unless the host enabled `config.debug` (the SDK only
+     * populates `result.debug` then), so this is inert in production.
+     */
+    function attachRawPayload(messageId: string, result: SubmitResult): void {
+      const payload = result.debug?.payload;
+      if (!payload) return;
+      messages.value = messages.value.map((m) =>
+        m.id === messageId ? { ...m, rawPayload: payload } : m,
+      );
+    }
+
+    // Id of the bubble whose copy button is showing "Copied!" feedback.
+    // Single ref keyed by message id avoids per-button component state in the
+    // functional render below.
+    const copiedRawId = ref<string | null>(null);
+    let copiedRawTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    /**
+     * Copy the dev-only raw payload (the exact, post-redaction JSON body
+     * POSTed to the ingest endpoint) to the clipboard. Pretty-printed with a
+     * two-space indent; the parsed JSON matches what was sent over the wire
+     * (only the whitespace differs from the unindented request body). Degrades
+     * to a no-op where the async clipboard API is missing.
+     */
+    function copyRaw(message: Message): void {
+      if (!message.rawPayload) return;
+      const json = JSON.stringify(message.rawPayload, null, 2);
+      const clip = navigator.clipboard;
+      if (!clip) return;
+      void clip.writeText(json).then(
+        () => {
+          copiedRawId.value = message.id;
+          if (copiedRawTimeout) clearTimeout(copiedRawTimeout);
+          copiedRawTimeout = setTimeout(() => {
+            copiedRawId.value = null;
+          }, 1500);
+        },
+        () => {
+          /* clipboard write rejected (permissions) — leave the label as is */
+        },
+      );
+    }
+
     async function doSubmit(): Promise<void> {
       if (status.value === 'submitting') return;
+      // Block submission while a capture is in flight. Without this, the
+      // user could press Enter in the composer between clicking Capture and
+      // the thumbnail rendering, sending the issue without the screenshot
+      // they intended to include. The Send button itself is disabled in
+      // this state, but the Enter-to-send shortcut bypasses the button so
+      // the guard belongs here on the submit path too.
+      if (capturing.value) return;
       if (!draft.value.trim()) {
         submitError.value = 'Please describe what happened.';
         return;
@@ -378,6 +742,18 @@ export const FeedbackButton = defineComponent({
       submitError.value = null;
 
       const attachments: Array<Blob | FeedbackAttachment> = [];
+      // Single-screenshot filename stays `screenshot.<ext>` (matches the
+      // pre-#56 wire format and keeps existing tests / server-side
+      // identifiers stable). Multi-screenshot submissions disambiguate with
+      // `-1`, `-2`, … using the array order they were captured in.
+      screenshots.value.forEach((s, idx) => {
+        const ext = s.blob.type.split('/')[1]?.split('+')[0] || 'webp';
+        const filename =
+          screenshots.value.length === 1
+            ? `screenshot.${ext}`
+            : `screenshot-${idx + 1}.${ext}`;
+        attachments.push({ blob: s.blob, filename });
+      });
       for (const { file } of files.value) {
         attachments.push({ blob: file, filename: file.name });
       }
@@ -401,6 +777,10 @@ export const FeedbackButton = defineComponent({
       // input lets the staged-status rows below carry the rest of the
       // animation while the network round-trip is in flight (#74).
       const submittedDraft = draft.value;
+      const screenshotsSnapshot: readonly MessageAttachment[] | undefined =
+        screenshots.value.length > 0
+          ? screenshots.value.map((s) => ({ blob: s.blob }))
+          : undefined;
       const filesSnapshot: readonly MessageAttachment[] | undefined =
         files.value.length > 0
           ? files.value.map(({ file }) => ({ blob: file, filename: file.name }))
@@ -409,20 +789,37 @@ export const FeedbackButton = defineComponent({
         id: `msg-${++messageIdCounter}`,
         role: 'user',
         text: submittedDraft,
-        attachments: filesSnapshot ? { files: filesSnapshot } : undefined,
+        attachments:
+          screenshotsSnapshot || filesSnapshot
+            ? {
+                ...(screenshotsSnapshot
+                  ? { screenshots: screenshotsSnapshot }
+                  : {}),
+                ...(filesSnapshot ? { files: filesSnapshot } : {}),
+              }
+            : undefined,
       };
       messages.value = [...messages.value, userMessage];
       draft.value = '';
       expected.value = '';
       actual.value = '';
       showExtras.value = false;
+      // The user bubble keeps the screenshot *blobs* in its attachments
+      // snapshot, so the live composer object URLs can be dropped here —
+      // keeping a URL on the message would leave a dangling reference once
+      // revoked.
+      for (const s of screenshots.value) URL.revokeObjectURL(s.url);
+      screenshots.value = [];
       files.value = [];
+      previewId.value = null;
       lastSubmittedInput = input;
+      lastUserMessageId = userMessage.id;
 
       try {
         const result = await submit(input);
         if (!mounted) return;
         props.onSubmit?.(result);
+        attachRawPayload(userMessage.id, result);
         if (result.ok) {
           messages.value = [
             ...messages.value,
@@ -464,6 +861,7 @@ export const FeedbackButton = defineComponent({
         const result = await submit(lastSubmittedInput);
         if (!mounted) return;
         props.onSubmit?.(result);
+        if (lastUserMessageId) attachRawPayload(lastUserMessageId, result);
         if (result.ok) {
           messages.value = [
             ...messages.value,
@@ -504,22 +902,38 @@ export const FeedbackButton = defineComponent({
       return h('div', { class: 'brw-host' }, [
         renderFab(),
         open.value ? renderPanel() : null,
+        regionOpen.value ? renderRegionOverlay() : null,
+        renderPreviewDialog(),
       ]);
     };
 
     function renderFab(): VNode {
+      const { variant: v } = placement.value;
       return h(
         'button',
         {
           type: 'button',
           'data-brevwick-skip': '',
           'data-brw-theme': props.theme,
-          class: [rootClassName.value, 'brw-fab', fabPosClass.value],
+          'data-brw-variant': v,
+          class: fabClasses.value,
           disabled: props.disabled,
-          'aria-label': 'Open feedback form',
+          'aria-label': fabAriaLabel.value,
+          // `--brw-fab-tab-offset` is a positioning input (like the inline
+          // animation-delay on status rows), not part of the public
+          // --brw-* theming contract — set only when it has an effect.
+          style:
+            v === 'tab' && props.offset !== 0
+              ? { '--brw-fab-tab-offset': `${props.offset}px` }
+              : undefined,
           onClick: handleOpen,
         },
-        [renderChatIcon(), props.label],
+        [
+          renderChatIcon(),
+          props.compact
+            ? null
+            : h('span', { class: 'brw-fab-label' }, props.label),
+        ],
       );
     }
 
@@ -530,7 +944,17 @@ export const FeedbackButton = defineComponent({
         {
           'data-brevwick-skip': '',
           'data-brw-theme': props.theme,
-          class: [rootClassName.value, 'brw-panel', panelPosClass.value],
+          // Hide the panel while the region overlay is up so the user can
+          // see (and select a region over) page content the panel would
+          // otherwise cover. The panel stays mounted — visibility:hidden
+          // preserves composer state, and the existing `data-brevwick-skip`
+          // keeps it out of the captured image (issue #49).
+          class: [
+            rootClassName.value,
+            'brw-panel',
+            panelPosClass.value,
+            regionOpen.value ? 'brw-panel-hidden' : '',
+          ],
           role: 'dialog',
           'aria-modal': 'true',
           'aria-label': 'Send feedback',
@@ -586,19 +1010,74 @@ export const FeedbackButton = defineComponent({
         if (message.role === 'assistant') {
           children.push(renderAssistantBubble(message));
         } else {
+          const bubbleChildren: Array<VNode | string> = [message.text];
+          if (message.rawPayload !== undefined) {
+            const copiedMsg = message;
+            bubbleChildren.push(
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'brw-copy-raw',
+                  'aria-label': 'Copy the raw payload sent to the API',
+                  'data-brw-copy-raw': '',
+                  onClick: () => copyRaw(copiedMsg),
+                },
+                copiedRawId.value === message.id
+                  ? 'Copied!'
+                  : 'Copy raw payload',
+              ),
+            );
+          }
           children.push(
             h(
               'div',
               { key: message.id, class: 'brw-bubble brw-bubble--user' },
-              [message.text],
+              bubbleChildren,
             ),
           );
         }
       }
 
+      screenshots.value.forEach((s, idx) => {
+        const label =
+          screenshots.value.length === 1
+            ? 'screenshot'
+            : `screenshot ${idx + 1}`;
+        children.push(
+          renderAttachmentChip(
+            label,
+            s.blob.size,
+            () => removeScreenshot(s.id),
+            `shot-${s.id}`,
+            {
+              previewUrl: s.url,
+              onPreview: () => handlePreviewScreenshot(s.id),
+            },
+          ),
+        );
+      });
+
       for (const { id, file } of files.value) {
         children.push(
           renderAttachmentChip(file.name, file.size, () => removeFile(id), id),
+        );
+      }
+
+      // In-thread loading indicator (issue #55). The region overlay closes
+      // before `captureScreenshot()` resolves, so the panel is already
+      // visible when this bubble shows up — it bridges the otherwise-silent
+      // gap between the overlay closing and the thumbnail appearing.
+      if (capturing.value) {
+        children.push(
+          h(
+            'div',
+            { key: 'capturing', class: 'brw-bubble brw-bubble--assistant' },
+            [
+              h('span', { class: 'brw-spinner', 'aria-hidden': 'true' }),
+              ' Capturing screenshot…',
+            ],
+          ),
         );
       }
 
@@ -684,8 +1163,27 @@ export const FeedbackButton = defineComponent({
       size: number,
       onRemove: () => void,
       key: string | number,
+      preview?: { previewUrl: string; onPreview: () => void },
     ): VNode {
+      // Screenshot chips render the thumbnail as a button so keyboard
+      // activation comes free with <button> — screen-reader users can hit
+      // Enter / Space to open the preview the same way pointer users click.
+      // The remove × is a sibling, so clicks on it don't propagate into the
+      // thumbnail's open-preview path. File chips (no preview) stay
+      // text-only — they are not previewable.
       return h('div', { key, class: 'brw-chip' }, [
+        preview
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'brw-chip-preview-btn',
+                'aria-label': `Preview ${name}`,
+                onClick: preview.onPreview,
+              },
+              [h('img', { src: preview.previewUrl, alt: '' })],
+            )
+          : null,
         h('span', { class: 'brw-chip-name' }, name),
         h('span', { class: 'brw-chip-size' }, formatSize(size)),
         h(
@@ -841,13 +1339,36 @@ export const FeedbackButton = defineComponent({
     }
 
     function renderComposer(submitting: boolean): VNode {
-      const attachDisabled = submitting || attachmentsAtCap.value;
+      // Once a capture is in flight or the attachment cap is reached, the
+      // screenshot + file-attach controls are disabled. The aria-label on
+      // the screenshot button mutates so AT users hear *why* the control is
+      // unavailable instead of the generic "Capture screenshot of this
+      // page, dimmed" announcement.
+      const attachDisabled =
+        submitting || capturing.value || attachmentsAtCap.value;
+      const screenshotLabel = attachmentsAtCap.value
+        ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
+        : capturing.value
+          ? 'Capturing screenshot…'
+          : 'Capture screenshot of this page';
       const fileLabel = attachmentsAtCap.value
         ? `Maximum ${MAX_ATTACHMENTS} attachments reached`
         : 'Attach file';
-      const sendDisabled = submitting || draft.value.trim().length === 0;
+      const sendDisabled =
+        submitting || capturing.value || draft.value.trim().length === 0;
 
       const composerChildren: Array<VNode | null> = [
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'brw-icon-btn',
+            'aria-label': screenshotLabel,
+            disabled: attachDisabled,
+            onClick: handleOpenRegionOverlay,
+          },
+          [renderScreenshotIcon()],
+        ),
         h('label', { class: 'brw-icon-btn' }, [
           renderPaperclipIcon(),
           h('input', {
@@ -943,8 +1464,307 @@ export const FeedbackButton = defineComponent({
         ),
       ]);
     }
+
+    function onOverlayPointerDown(e: PointerEvent): void {
+      // Pointerdown bubbles from the Cancel / Capture / Capture-full-page
+      // controls up through this handler. Without this guard the bubbled
+      // event would reinitialise the drag state to a zero-size rect right
+      // before the button's own click fires, sending a valid selection into
+      // the degenerate-shake path. `currentTarget` is always the overlay
+      // layer; only initiate a drag when the press landed directly on it.
+      if (e.target !== e.currentTarget) return;
+      // Ignore non-primary buttons (right-click / middle-click). pointerType
+      // 'touch' and 'pen' always issue button === 0.
+      if (e.button !== 0) return;
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      dragging = true;
+      drag.value = {
+        startX: e.clientX,
+        startY: e.clientY,
+        x: e.clientX,
+        y: e.clientY,
+        w: 0,
+        h: 0,
+      };
+    }
+
+    function onOverlayPointerMove(e: PointerEvent): void {
+      if (!dragging) return;
+      const prev = drag.value;
+      if (!prev) return;
+      drag.value = {
+        startX: prev.startX,
+        startY: prev.startY,
+        x: Math.min(prev.startX, e.clientX),
+        y: Math.min(prev.startY, e.clientY),
+        w: Math.abs(e.clientX - prev.startX),
+        h: Math.abs(e.clientY - prev.startY),
+      };
+    }
+
+    function onOverlayPointerUp(e: PointerEvent): void {
+      if (!dragging) return;
+      (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+      dragging = false;
+    }
+
+    function confirmRegionSelection(): void {
+      const current = drag.value;
+      if (
+        !current ||
+        current.w <= REGION_MIN_SIDE_PX ||
+        current.h <= REGION_MIN_SIDE_PX
+      ) {
+        shake.value = true;
+        // Replace any in-flight settle timer so rapid-fire clicks don't
+        // stack.
+        clearShakeTimer();
+        shakeTimer = setTimeout(() => {
+          shakeTimer = undefined;
+          shake.value = false;
+        }, 320);
+        return;
+      }
+      handleConfirmRegion({
+        x: current.x,
+        y: current.y,
+        w: current.w,
+        h: current.h,
+      });
+    }
+
+    function onOverlayKeyDown(e: KeyboardEvent): void {
+      // Esc-to-dismiss is owned here (no Radix in the Vue adapter); it
+      // must not bubble into the page's own Escape handling.
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleCloseRegion();
+        return;
+      }
+      // Enter must only confirm the region when the overlay root itself has
+      // focus. Tab-focusing a button inside the overlay and pressing Enter
+      // bubbles up here; without this guard we would hijack the button's
+      // own Enter activation (Cancel, Capture full page) and run the
+      // region-confirm path instead — a real a11y defect.
+      if (e.key !== 'Enter') return;
+      if (e.target !== e.currentTarget) return;
+      e.preventDefault();
+      confirmRegionSelection();
+    }
+
+    /**
+     * Full-viewport overlay that lets the submitter drag-select a rectangle
+     * on top of the page. Confirming with a non-degenerate rectangle fans
+     * out to the crop pipeline; 'Capture full page' preserves the pre-#31
+     * behaviour for users who want the whole viewport.
+     *
+     * Every node rendered here carries `data-brevwick-skip=""` so a rogue
+     * capture that fires while the overlay is still in the tree excludes
+     * the overlay chrome from the image (the capture path unmounts the
+     * overlay first — this is defence-in-depth).
+     */
+    function renderRegionOverlay(): VNode {
+      const current = drag.value;
+      return h('div', { 'data-brevwick-skip': '' }, [
+        h('div', { class: 'brw-region-backdrop', 'data-brevwick-skip': '' }),
+        h(
+          'div',
+          {
+            ref: overlayRef,
+            class: [
+              'brw-root',
+              'brw-region-layer',
+              shake.value ? 'brw-region-shake' : '',
+            ],
+            'data-brevwick-skip': '',
+            'data-brw-theme': props.theme,
+            'data-testid': 'brw-region-overlay',
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-label': 'Select screenshot region',
+            tabindex: -1,
+            onPointerdown: onOverlayPointerDown,
+            onPointermove: onOverlayPointerMove,
+            onPointerup: onOverlayPointerUp,
+            onPointercancel: onOverlayPointerUp,
+            onKeydown: onOverlayKeyDown,
+          },
+          [
+            h('h2', { class: 'brw-sr-only' }, 'Select screenshot region'),
+            current && current.w > 0 && current.h > 0
+              ? h('div', {
+                  class: 'brw-region-selection',
+                  'data-testid': 'brw-region-selection',
+                  style: {
+                    left: `${current.x}px`,
+                    top: `${current.y}px`,
+                    width: `${current.w}px`,
+                    height: `${current.h}px`,
+                  },
+                })
+              : null,
+            h(
+              'div',
+              { class: 'brw-region-controls', 'data-brevwick-skip': '' },
+              [
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'brw-btn brw-region-btn',
+                    onClick: handleCloseRegion,
+                  },
+                  'Cancel',
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'brw-btn brw-region-btn',
+                    onClick: handleConfirmFull,
+                  },
+                  'Capture full page',
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'brw-btn brw-btn-primary brw-region-btn',
+                    onClick: confirmRegionSelection,
+                  },
+                  'Capture',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ]);
+    }
+
+    /**
+     * Modal dialog that shows the captured screenshot at viewport-fit size
+     * so the submitter can confirm they captured the right region before
+     * sending. Carries `data-brevwick-skip=""` on every node so a
+     * re-capture initiated while the dialog is up doesn't snapshot the
+     * dialog chrome itself.
+     */
+    function renderPreviewDialog(): VNode | null {
+      if (previewId.value === null) return null;
+      const screenshot =
+        screenshots.value.find((s) => s.id === previewId.value) ?? null;
+      if (!screenshot) return null;
+      return h('div', { 'data-brevwick-skip': '' }, [
+        h('div', { class: 'brw-preview-backdrop', 'data-brevwick-skip': '' }),
+        h(
+          'div',
+          {
+            ref: previewLayerRef,
+            class: 'brw-root brw-preview-layer',
+            'data-brevwick-skip': '',
+            'data-brw-theme': props.theme,
+            'data-testid': 'brw-preview-dialog',
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-label': 'Screenshot preview',
+            tabindex: -1,
+            onKeydown: (e: KeyboardEvent) => {
+              // Esc closes only the preview — it must not bubble into the
+              // panel's own minimize handling.
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                handleClosePreview();
+              }
+            },
+          },
+          [
+            h('h2', { class: 'brw-sr-only' }, 'Screenshot preview'),
+            h('img', {
+              class: 'brw-preview-image',
+              src: screenshot.url,
+              alt: 'Captured screenshot',
+            }),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'brw-icon-btn brw-preview-close',
+                'aria-label': 'Close preview',
+                onClick: handleClosePreview,
+              },
+              [renderCloseIcon()],
+            ),
+          ],
+        ),
+      ]);
+    }
   },
 });
+
+/**
+ * Crop a full-page screenshot Blob to the user-selected viewport rectangle.
+ *
+ * The source Blob from `captureScreenshot()` is rendered in device pixels by
+ * `modern-screenshot`, but the region came from pointer-events in CSS pixels,
+ * so we multiply the source rectangle by `devicePixelRatio` on the way in and
+ * draw out at the selection's CSS-pixel size. Uses `OffscreenCanvas` when the
+ * host provides it *with* a working `convertToBlob` (cheaper, avoids a DOM
+ * node); otherwise falls back to a detached `<canvas>` + `toBlob`. Some
+ * environments expose `OffscreenCanvas` without `convertToBlob`, so presence
+ * alone is not enough — we feature-detect the method before taking that path.
+ * Output MIME is PNG — the caller derives the attachment filename from
+ * `blob.type`.
+ */
+async function cropToRegion(blob: Blob, region: Region): Promise<Blob> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await loadImageForCrop(url);
+    const dpr =
+      typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const sx = region.x * dpr;
+    const sy = region.y * dpr;
+    const sw = region.w * dpr;
+    const sh = region.h * dpr;
+
+    const OffscreenCanvasCtor =
+      typeof OffscreenCanvas !== 'undefined' &&
+      'convertToBlob' in OffscreenCanvas.prototype
+        ? OffscreenCanvas
+        : undefined;
+    if (OffscreenCanvasCtor) {
+      const canvas = new OffscreenCanvasCtor(region.w, region.h);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 2D context unavailable');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, region.w, region.h);
+      return await canvas.convertToBlob({ type: 'image/png' });
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = region.w;
+    canvas.height = region.h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D context unavailable');
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, region.w, region.h);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (out) =>
+          out ? resolve(out) : reject(new Error('Canvas produced no blob')),
+        'image/png',
+      );
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function loadImageForCrop(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Screenshot failed to load for crop'));
+    img.src = src;
+  });
+}
 
 function renderChatIcon(): VNode {
   return h(
@@ -992,6 +1812,32 @@ function renderCloseIcon(): VNode {
       'aria-hidden': 'true',
     },
     [h('path', { d: 'M6 6l12 12M18 6L6 18' })],
+  );
+}
+
+function renderScreenshotIcon(): VNode {
+  return h(
+    'svg',
+    {
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': '2',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      'aria-hidden': 'true',
+    },
+    [
+      h('rect', { x: '3', y: '5', width: '18', height: '12', rx: '2' }),
+      h('rect', {
+        x: '7',
+        y: '8',
+        width: '10',
+        height: '6',
+        rx: '1',
+        'stroke-dasharray': '2 2',
+      }),
+    ],
   );
 }
 

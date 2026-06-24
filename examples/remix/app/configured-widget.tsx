@@ -78,7 +78,9 @@ function ConfiguredProvider({
   return (
     <BrevwickProvider config={config}>
       {children}
-      <FeedbackButton position="bottom-right" />
+      {/* Right-edge tab by default; pass position="bottom-right" to keep
+          the legacy corner bubble. */}
+      <FeedbackButton />
     </BrevwickProvider>
   );
 }
