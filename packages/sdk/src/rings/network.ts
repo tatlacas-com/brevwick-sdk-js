@@ -43,7 +43,17 @@ const HEADER_ALLOWLIST: ReadonlySet<string> = new Set([
   'x-trace-id',
 ]);
 
-const BINARY_CONTENT_TYPE = /(^image\/)|(^audio\/)|(^video\/)|octet-stream/i;
+// Content-types whose body we elide to a `[binary N bytes]` marker instead of
+// reading as text. Reading binary as text both bloats the payload (a font or
+// image runs to MiB — the source of the 413s) and, worse, smuggles NUL bytes
+// into the capture: a WOFF2 font read via `.text()` carries U+0000, which the
+// server cannot store in a text/jsonb column and 500s the whole submission.
+// `font/*` and `application/wasm|pdf|zip|gzip|x-protobuf` join the original
+// image/audio/video/octet-stream set so the common asset types are caught at
+// the content-type gate; the control-char strip in `redact()` is the catch-all
+// for anything served with a misleading text content-type.
+const BINARY_CONTENT_TYPE =
+  /(^image\/)|(^audio\/)|(^video\/)|(^font\/)|octet-stream|application\/(wasm|pdf|zip|gzip|x-protobuf|font-)/i;
 
 function sanitiseHeaders(
   pairs: Iterable<readonly [string, string]>,

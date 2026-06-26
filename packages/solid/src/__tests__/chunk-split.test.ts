@@ -20,17 +20,19 @@ describe('@tatlacas/brevwick-solid bundle ceiling', () => {
   const hasDist = existsSync(baseEsm) && existsSync(baseCjs);
   const suite = hasDist ? describe : describe.skip;
 
-  // 12 kB gzip ceiling, expressed in 1000-based bytes the way size-limit
-  // reads it. Bumped from 5 kB → 12 kB in issue #113 when the Solid widget
-  // reached UX parity with the React adapter — kept in lockstep with the
-  // entries in `.size-limit.js` and the `CLAUDE.md` budget table.
-  const LIMIT_BYTES = 12_000;
+  // 13 kB gzip ceiling, expressed in 1000-based bytes the way size-limit
+  // reads it. Bumped 5 kB → 12 kB in issue #113 (Solid UX parity with React),
+  // then 12 kB → 13 kB when the launcher redesign (PR #157) landed on top of
+  // the restored screenshot button. This constant had lagged that last bump;
+  // realigned to match the authoritative `.size-limit.js` entries and the
+  // `CLAUDE.md` budget table, both of which already read 13 kB.
+  const LIMIT_BYTES = 13_000;
 
   suite('dist/ exists', () => {
     it.each([
       ['ESM', baseEsm],
       ['CJS', baseCjs],
-    ])('%s bundle is under the 12 kB gzip budget', async (_label, path) => {
+    ])('%s bundle is under the 13 kB gzip budget', async (_label, path) => {
       const { gzipSync } = await import('node:zlib');
       const raw = readFileSync(path);
       const gzipped = gzipSync(raw).length;
