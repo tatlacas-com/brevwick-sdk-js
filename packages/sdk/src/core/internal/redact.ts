@@ -184,6 +184,21 @@ function buildPatterns(
 
 const DEFAULT_PATTERNS = buildPatterns(new Set(), []);
 
+/**
+ * C0 control characters that must never ride out on the wire, minus the three
+ * whitespace controls a captured text body legitimately contains (`\t`, `\n`,
+ * `\r`) plus DEL (U+007F). The critical one is **NUL (U+0000)**: Postgres
+ * rejects U+0000 in `text` and `jsonb` columns, so a single NUL in a captured
+ * console line or network response body fails the server-side `INSERT` and
+ * 500s the whole submission. These bytes show up when a ring reads a binary
+ * payload as text (e.g. a WOFF2 font served with a non-binary content-type).
+ * Stripping them here — at the mandatory redaction chokepoint every ring and
+ * the submit pipeline pass through — guarantees no payload leaves the device
+ * carrying one, regardless of which ring captured it.
+ */
+// eslint-disable-next-line no-control-regex -- stripping control chars is the point
+const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+
 export interface Redactor {
   (input: string): string;
 }
@@ -221,7 +236,12 @@ export function createRedactor(
       }
       out = out.replace(pattern, replacement);
     }
-    return out;
+    // Final, unconditional pass: drop control chars (NUL et al.) that a ring
+    // may have captured from a binary body read as text. Runs after the
+    // redaction patterns and is not gated by `disable`/`custom` — a NUL on
+    // the wire is a correctness bug (server-side INSERT 500), not a
+    // tunable redaction preference.
+    return out.replace(CONTROL_CHARS, '');
   };
 }
 

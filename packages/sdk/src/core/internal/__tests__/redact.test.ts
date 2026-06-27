@@ -155,3 +155,50 @@ describe('redactValue', () => {
     expect(redactValue(true)).toBe(true);
   });
 });
+
+describe('redact (control chars)', () => {
+  const NUL = String.fromCharCode(0);
+
+  it('strips NUL bytes', () => {
+    expect(redact('a' + NUL + 'b')).toBe('ab');
+  });
+
+  it('strips the WOFF2-as-text shape that 500d ingest', () => {
+    // A font body read via Response.text() — magic header + NUL bytes.
+    expect(redact('wOF2' + NUL + NUL + 'bin')).toBe('wOF2bin');
+  });
+
+  it('strips C0 control chars and DEL', () => {
+    const controls =
+      String.fromCharCode(1) +
+      String.fromCharCode(7) +
+      String.fromCharCode(0x1f) +
+      String.fromCharCode(0x7f);
+    expect(redact('x' + controls + 'y')).toBe('xy');
+  });
+
+  it('preserves tab, newline, and carriage return', () => {
+    expect(redact('a\tb\nc\rd')).toBe('a\tb\nc\rd');
+  });
+
+  it('strips control chars even when redaction is fully disabled', () => {
+    const r = createRedactor(
+      new Set([
+        'auth',
+        'cookie',
+        'bearer',
+        'jwt',
+        'email',
+        'card',
+        'ip',
+        'ssn',
+        'phone',
+        'aws',
+        'github',
+        'base64',
+      ]),
+      [],
+    );
+    expect(r('keep' + NUL + 'me')).toBe('keepme');
+  });
+});

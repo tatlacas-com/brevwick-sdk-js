@@ -508,6 +508,31 @@ describe('network ring — fetch', () => {
     expect(entry?.responseBody).toBe(`[binary ${payload.byteLength} bytes]`);
   });
 
+  it('records font responses as [binary N bytes] (the WOFF2 ingest-500 fix)', async () => {
+    // Regression: a WOFF2 font (content-type font/woff2) used to fall through
+    // BINARY_CONTENT_TYPE and get read via .text(), smuggling NUL bytes into
+    // responseBody that 500d the server-side INSERT. font/* now elides to the
+    // synthetic marker — no body bytes, no NUL.
+    const payload = new Uint8Array([
+      0x77, 0x4f, 0x46, 0x32, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    window.fetch = vi.fn(
+      async () =>
+        new Response(payload, {
+          status: 200,
+          headers: { 'content-type': 'font/woff2' },
+        }),
+    ) as unknown as typeof window.fetch;
+
+    const instance = createBrevwick({ projectKey: KEY });
+    await installAndReady(instance);
+
+    await window.fetch('/fonts/inter.woff2');
+    const [entry] = networkEntries(instance);
+    expect(entry?.responseBody).toBe(`[binary ${payload.byteLength} bytes]`);
+    expect(entry?.responseBody).not.toContain(String.fromCharCode(0));
+  });
+
   it('omits the request body for unknown body types (ReadableStream)', async () => {
     // Exercises the `return { kind: 'empty' }` fallback in stringifyBody —
     // a body that is not string / URLSearchParams / Blob / ArrayBuffer /
