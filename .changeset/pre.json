@@ -25,6 +25,7 @@
     "debug-raw-payload",
     "launcher-tab-compact",
     "realign-linked-versions",
-    "restore-screenshot-button"
+    "restore-screenshot-button",
+    "strip-control-chars"
   ]
 }
