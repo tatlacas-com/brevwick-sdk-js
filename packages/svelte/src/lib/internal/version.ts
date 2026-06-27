@@ -10,4 +10,4 @@
  * substitution, so we cannot rely on an ambient token: the literal must
  * already be in the source the bundler reads.
  */
-export const BREVWICK_SVELTE_VERSION: string = '2.0.0-beta.1';
+export const BREVWICK_SVELTE_VERSION: string = '2.0.0-beta.2';
