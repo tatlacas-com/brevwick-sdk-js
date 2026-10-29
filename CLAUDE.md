@@ -1,143 +1,39 @@
 # Brevwick JS SDK
 
-## Working Style
+pnpm workspace publishing seven npm packages: `@tatlacas/brevwick-sdk` (framework-agnostic core) plus `-react`, `-react-native`, `-solid`, `-vue`, `-svelte`, `-angular` adapters. Contributor guide: `CONTRIBUTING.md`.
 
-Never blindly implement a suggestion. Apply critical thinking — push back when something is wrong, over-engineered, or has a better alternative. Ask clarifying questions. Offer alternatives. Collaborative, not a rubber stamp.
+## Commands
 
-**No shortcuts or temporary fixes.** Do not implement workarounds or "for now" solutions that paper over a real problem. If the proper fix belongs in a different repo or requires upstream work, say so and stop. Every fix must address the root cause.
+- `pnpm install` · `pnpm build` · `pnpm lint` · `pnpm type-check` · `pnpm format:check` · `pnpm size`
+- Per package: `pnpm --filter @tatlacas/brevwick-<pkg> {build,test,type-check}`; single file: `pnpm --filter <pkg> exec vitest run <path>`
+- Adapters resolve the core via `dist/`: run `pnpm --filter @tatlacas/brevwick-sdk build` before adapter type-check/tests.
 
-**Never commit and push directly to `main` or `dev`.** Both are protected — all changes go through a PR. No exceptions. Day-to-day work targets `dev` (the default branch); `main` only receives promotion PRs from `dev` (see Release Channels below).
+## Before opening a PR
 
-**Auto-commit, push, and open PR on branches.** When working on a `feat/fix/chore` branch, commit, push, **and create a PR with `gh pr create`** without asking. Every push to a branch must result in a PR. If a PR already exists, just push.
+Run only what the change touches: build, lint, type-check, and the unit tests covering it; `pnpm size` if bundled code changed. Don't run the full suite or Playwright e2e (`pnpm test:e2e`) locally — CI runs them on every push. When CI fails, fix the named test.
 
-**Never remove worktrees locally.** The user manages worktree lifecycle — do not run `git worktree remove` or instruct sub-agents to do so.
+## Workflow
 
-**No Claude attribution anywhere.** Do not add `Co-Authored-By: Claude` headers, and do not mention Claude in commit messages, PR titles, PR descriptions, or code comments.
+- PR-only; `dev` and `main` are protected. Day-to-day PRs target `dev` (default). `main` only takes `chore/promote-*` (via `scripts/promote-stable.sh`, merged as a merge commit) and `changeset-release/main`.
+- Small, single-concern PRs, opened ready (not draft). Squash-merge.
+- Worktrees outside the repo, branched from `origin/dev`: `git worktree add ../brevwick-sdk-js-issue-<N> -b feat/issue-<N>-desc origin/dev`. Never remove worktrees.
+- Branches `feat/` `fix/` `chore/` `docs/`; conventional commits (`feat:` `fix:` `chore:` `docs:` `test:` `refactor:`, optional scope), subject ≤ 72 chars.
+- Commits must be signed (CI rejects unverified). Stage explicit paths, never `git add -A`.
+- No AI attribution (no `Co-Authored-By`, no mentions in commits/PRs/comments).
+- Never `--no-verify`, `--amend`, `--force`, `--admin`, or bypass rules; never weaken a CI gate, budget, or coverage threshold to pass.
 
-## Check PR/CI
+## Hard rules
 
-When asked to "check PR" or "check CI":
+- **Redaction:** every payload leaving the device goes through `redact()`. New context field → new redaction test.
+- **Bundle budgets** (gzip, enforced by `.size-limit.js` + `chunk-split.test.ts`; keep in sync): core eager `index` + static chunks < 8 kB; widget open (with `modern-screenshot`) < 25 kB; react / react-native < 25 kB; solid / vue < 13 kB; svelte eager < 5 kB, `FeedbackButton.svelte` < 22 kB; angular FESM2022 < 31 kB.
+- Console + network rings stay eager (must capture before the first error/fetch). Everything else heavy (screenshot, submit, config fetch) stays behind `await import()`.
+- **Changesets:** any change under `packages/**` needs one (`pnpm changeset`). All seven packages version together (`fixed` group). `feat` → minor, `fix`/`refactor` → patch, breaking → major (call it out).
+- Release channels: `dev` → npm `beta` (pre mode, `release-dev.yml`); `main` → `latest` (`release.yml`). The branch/dist-tag name mismatch is intentional.
 
-1. `gh pr status` — open PRs
-2. `gh pr checks <number>` — CI status for a PR
-3. `gh pr view <number>` — PR details
+## Engineering rules
 
-If CI is failing, **immediately investigate and fix** — do not ask whether to investigate. Fetch failure details, find the root cause, start fixing.
-
-## Worktree Workflow
-
-```bash
-git fetch origin
-# Branch from origin/dev, not local dev (may be stale). dev is the default branch.
-git worktree add ../brevwick-sdk-js-issue-<N> -b feat/issue-<N>-short-desc origin/dev
-cd ../brevwick-sdk-js-issue-<N>
-```
-
-**Do not remove worktrees** — the user cleans them up.
-
-## Project Overview
-
-pnpm workspace publishing three npm packages: `@tatlacas/brevwick-sdk` (core, framework-agnostic), `@tatlacas/brevwick-react` (React bindings), and `@tatlacas/brevwick-solid` (Solid bindings).
-
-**GitHub:** https://github.com/tatlacas-com/brevwick-sdk-js
-
-## Common Commands
-
-```bash
-pnpm install
-pnpm build           # build all packages (tsup)
-pnpm test            # vitest in all packages
-pnpm lint
-pnpm type-check
-pnpm format
-```
-
-Per-package:
-
-```bash
-pnpm --filter @tatlacas/brevwick-sdk build
-pnpm --filter @tatlacas/brevwick-react test
-```
-
-## Bundle Budget — DO NOT EXCEED
-
-- Core `@tatlacas/brevwick-sdk` eager total (`index.js` + every chunk it pulls in via static `import` / `export … from`): **< 8 kB gzip** (bumped from 2.85 kB when the console + network rings moved into the eager registry to close the install-time capture race; enforced by `packages/sdk/src/__tests__/chunk-split.test.ts` and `.size-limit.js`, mirrored in SDD § 12)
-- On widget open (`modern-screenshot` dynamic-imported): **< 25 kB gzip**
-- React adapter `@tatlacas/brevwick-react`: **< 25 kB gzip**
-- Solid adapter `@tatlacas/brevwick-solid`: **< 13 kB gzip** (bumped from 5 kB in issue #113 when the Solid widget reached UX parity with the React adapter — chat-thread panel, AI toggle, staged-status rows, retry CTA. The screenshot capture button — restored after the v1 future-flag removal in PR #111 — fits within this ceiling; bumped 12 → 13 kB when the launcher redesign (PR #157: side-tab/bubble variants, compact mode, `resolveLauncherPlacement`) landed on top of the restored screenshot button, pushing the CJS interop bundle to ~12.1 kB. The Solid surface stays well below the React 25 kB ceiling.)
-- Vue adapter `@tatlacas/brevwick-vue`: **< 13 kB gzip** (bumped from 10 kB when the screenshot capture button, region-select overlay, and preview dialog were restored; enforced by `packages/vue/src/__tests__/chunk-split.test.ts` and `.size-limit.js`)
-- Svelte adapter `@tatlacas/brevwick-svelte`: eager entry **< 5 kB gzip**; `FeedbackButton.svelte` SFC source **< 22 kB gzip** (bumped from 14 kB when the screenshot capture UI was restored)
-- Angular adapter `@tatlacas/brevwick-angular` (FESM2022): **< 31 kB gzip** (bumped from 18 kB when the screenshot capture UI was restored; Angular scaffolding carries 4-5 kB irreducible overhead)
-
-The console + network rings sit on the eager path on purpose: they have to be live before the first user error or fetch fires, otherwise the submitted issue is missing the very evidence the user opened the widget to report. Anything heavy that does NOT need to capture pre-submit (`modern-screenshot`, the submit pipeline, the project-config fetch) stays behind `await import('…')` so it doesn't ship until needed.
-
-## Redaction Is Mandatory
-
-Every payload that leaves the device runs through `redact()` first. Adding a new context field? Add a redaction test for it. Server-side sanitiser is defence-in-depth, not a substitute.
-
-## Versioning
-
-All seven packages move together (`fixed` group in `.changeset/config.json`) — every release bumps every package to the same version, even if a changeset only mentions one of them, so consumers always install matching versions across the SDK + every adapter. Versions follow SemVer from `1.0.0` onward — the `1.0.0-beta.X` train is the lead-up to the first stable.
-
-- `feat:` — minor bump
-- `fix:` / `refactor:` — patch bump
-- Breaking change — major bump (call it out in the changeset body)
-
-## Release Channels
-
-Two long-lived branches map to two npm dist-tags:
-
-| Branch          | npm dist-tag | Purpose                                                           |
-| --------------- | ------------ | ----------------------------------------------------------------- |
-| `dev` (default) | `beta`       | Day-to-day integration; every merge can publish a new `-beta.N`   |
-| `main`          | `latest`     | Stable releases only, fed exclusively by promotion PRs from `dev` |
-
-> **Branch and dist-tag intentionally diverge on the prerelease channel.** The branch (`dev`) is for contributors; the dist-tag (`beta`) is for installers (`npm install @tatlacas/brevwick-sdk@beta`). Don't "fix" the mismatch — it's intentional.
->
-> Concrete consequence: the workflow file is `release-dev.yml` (named for the source branch, like `release.yml`), but inside it `pnpm release:beta` runs `changeset publish --tag beta`. The pre-mode tag in `.changeset/pre.json` is also `beta`.
-
-### Day-to-day flow (the 99% case)
-
-1. `git fetch origin` then branch from `origin/dev` (the default branch).
-2. Make changes; add a changeset (`pnpm changeset`).
-3. Push branch, open PR into `dev` with `gh pr create`.
-4. CI passes → squash-merge into `dev`.
-5. `release-dev.yml` opens (or updates) a "Version Packages (dev)" PR. Merging it publishes `-beta.N` to the npm `beta` dist-tag.
-
-### Stable promotion (occasional)
-
-Run from a fresh chore branch off `origin/main`:
-
-```bash
-git fetch origin
-git checkout -b chore/promote-<version> origin/main
-./scripts/promote-stable.sh
-```
-
-The script merges `dev` into the branch, exits changesets pre mode, pushes, and opens a `dev → main` PR. After that PR merges, `release.yml` on `main` opens a "Version Packages" PR with stable bumps; merging it publishes to the `latest` dist-tag.
-
-After stable ships, resume the prerelease channel:
-
-```bash
-git fetch origin
-git checkout -b chore/resume-dev-<version> origin/dev
-./scripts/resume-dev.sh
-```
-
-### Rules
-
-- Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
-- Subject ≤ 72 chars
-- No `Co-Authored-By` headers — no Claude attribution anywhere
-- Squash-merge everything **except** the `dev → main` promotion PR, which **must be a merge commit** (see Branch protection for why). Day-to-day PRs into `dev`, and the auto-opened "Version Packages" PRs, are squash-merged.
-
-### Branch protection
-
-Both `dev` and `main` are protected by separate rulesets (`release-branch-protection` for `dev`, `main-branch-protection` for `main`). Both enforce: PR required, no direct push for non-admins, no force-push, no deletion, required status checks (`check`, `codecov/patch`, `codecov/project`, strict), and stale reviews dismissed on new push.
-
-The branches differ on **allowed merge methods**:
-
-- `dev`: **squash only**, to keep the integration history clean.
-- `main`: **squash or merge commit**. The `dev → main` promotion PR must be merged as a **merge commit** (not squashed). Squashing the promotion collapses dev's merge into a single new-parent commit and severs `main`'s ancestry to `dev`, so the merge base never advances — which makes every subsequent promotion re-conflict the entire divergence (real source files included). Merging it preserves the link so future promotions only diff new work. All other PRs into `main` (e.g. the "Version Packages" PR) still squash.
-
-`main` additionally enforces (via `guard-deploy-branches.yml`) that PRs into it must come from `dev`, a `chore/promote-*` branch, or `changeset-release/main` — use `scripts/promote-stable.sh`, do not open a feature-branch PR straight into `main`.
+- Push back on wrong or over-engineered suggestions; fix root causes, no "for now" workarounds. If the fix belongs in another repo, say so and stop.
+- Fix every real review finding in the same PR — no follow-up issues.
+- Unknown state is never treated as safe: fail closed.
+- Unit tests are hermetic: no network, real credentials, or real services where a fake (msw, happy-dom) will do; no sleeps — use fake timers.
+- Code documents itself; comment only the non-obvious why.
