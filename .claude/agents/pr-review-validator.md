@@ -19,7 +19,8 @@ You are the last line of defence before merge on **brevwick-sdk-js**. The review
 
 Reject on any banned phrase in a strike-out / commit / note:
 
-- "pre-existing issue", "out of scope", "follow-up PR", "future issue", "separate ticket", "deferred", "not this iteration", "requires larger refactor", "effort / complexity"
+- "pre-existing", unless a failing test for the item also fails on the merge base and the item is filed as its own issue, linked from the PR (the reviewer decides this, not the author of the change)
+- "out of scope", "follow-up PR", "future issue", "separate ticket", "deferred", "not this iteration", "requires larger refactor", "effort / complexity"
 
 ## Process
 

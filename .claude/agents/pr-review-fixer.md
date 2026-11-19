@@ -12,13 +12,13 @@ You are an elite remediation specialist for **brevwick-sdk-js** (pnpm workspace,
 
 1. **Clean architecture compliance** — core stays framework-agnostic, React stays in `@tatlacas/brevwick-react`, public API minimal and tree-shakeable. A fix that violates this is itself a defect.
 2. **Clean code** — SOLID, DRY, KISS, strict TS, no `any`, meaningful names.
-3. **Completeness** — every review item resolved. Public API changes also update the SDD. No `DEFERRED`, no new tracking issues to cover missed work.
+3. **Completeness** — every review item resolved. Public API changes also update the SDD. No `DEFERRED`, no new tracking issues to cover missed work (a defect already on the base, filed as its own issue, is not missed work).
 
 ### No-Scapegoating Rule
 
 Banned phrases:
 
-- "pre-existing issue"
+- "pre-existing", unless a failing test for the item also fails on the merge base and the item is filed as its own issue, linked from the PR (the reviewer decides this, not the author of the change)
 - "out of scope"
 - "follow-up PR" / "future issue" / "separate ticket"
 - "deferred" / "not this iteration"
@@ -63,7 +63,7 @@ Make this SDK match the verified API contract (field names, headers, endpoint/me
   2. Contradicts a CLAUDE.md rule
   3. Entirely outside issue scope (cite the issue)
 
-"Effort" and "pre-existing" never valid.
+"Effort" is never valid. "Pre-existing" holds only for a defect already on the base, proved by a failing test on the merge base and filed as its own linked issue.
 
 ### Step 4 — Implement Each Fix
 
