@@ -1,39 +1,38 @@
-# Brevwick JS SDK
+# brevwick-sdk-js
 
-pnpm workspace publishing seven npm packages: `@tatlacas/brevwick-sdk` (framework-agnostic core) plus `-react`, `-react-native`, `-solid`, `-vue`, `-svelte`, `-angular` adapters. Contributor guide: `CONTRIBUTING.md`.
+A pnpm workspace publishing seven npm packages that version together: `@tatlacas/brevwick-sdk` (the framework-agnostic core) and the `-react`, `-react-native`, `-solid`, `-vue`, `-svelte` and `-angular` adapters. Contributor guide: `CONTRIBUTING.md`.
+
+Area rules load from `.claude/rules/` when you touch matching files.
 
 ## Commands
 
-- `pnpm install` · `pnpm build` · `pnpm lint` · `pnpm type-check` · `pnpm format:check` · `pnpm size`
-- Per package: `pnpm --filter @tatlacas/brevwick-<pkg> {build,test,type-check}`; single file: `pnpm --filter <pkg> exec vitest run <path>`
-- Adapters resolve the core via `dist/`: run `pnpm --filter @tatlacas/brevwick-sdk build` before adapter type-check/tests.
+- Install and build: `pnpm install`, `pnpm build`. Adapters resolve the core through its `dist/`, so run `pnpm --filter @tatlacas/brevwick-sdk build` before an adapter's type-check or tests.
+- Before every push: `pnpm format:check`, `pnpm lint`, `pnpm type-check`, and the tests covering your change: `pnpm --filter @tatlacas/brevwick-<pkg> exec vitest run <path>`. Add `pnpm size` when bundled code changed.
+- Changeset for any change under `packages/**`: `pnpm changeset`.
 
-## Before opening a PR
+CI runs every package's suite with coverage, the size budgets and Playwright (`pnpm test:e2e`) on every push. Don't run them all locally. When CI fails, fix the test it names.
 
-Run only what the change touches: build, lint, type-check, and the unit tests covering it; `pnpm size` if bundled code changed. Don't run the full suite or Playwright e2e (`pnpm test:e2e`) locally — CI runs them on every push. When CI fails, fix the named test.
+## How a change lands
 
-## Workflow
+- PRs target `dev` (the default branch) and are squash-merged. `main` takes only `chore/promote-*` PRs from `scripts/promote-stable.sh`, merged as a merge commit, and `changeset-release/main`. `dev` publishes to npm `beta`, `main` to `latest`; the name mismatch is intentional.
+- One concern per PR, opened ready for review, from a branch `<feat|fix|chore|docs>/issue-<N>-<slug>` in a worktree outside the repo: `git worktree add ../brevwick-sdk-js-issue-<N> -b <branch> origin/dev`.
+- Commit subjects are Conventional, at most 72 characters. Commits must be signed: CI rejects unverified ones. Stage paths by name. Commits, PRs and issues carry no AI attribution.
+- A failing gate is fixed at its cause. `.claude/settings.json` denies skipping hooks, amending and force-pushing, because each pushed head must pass CI on its own. Raising a size budget or lowering coverage to get a pass is a review finding.
 
-- PR-only; `dev` and `main` are protected. Day-to-day PRs target `dev` (default). `main` only takes `chore/promote-*` (via `scripts/promote-stable.sh`, merged as a merge commit) and `changeset-release/main`.
-- Small, single-concern PRs, opened ready (not draft). Squash-merge.
-- Worktrees outside the repo, branched from `origin/dev`: `git worktree add ../brevwick-sdk-js-issue-<N> -b feat/issue-<N>-desc origin/dev`. Never remove worktrees.
-- Branches `feat/` `fix/` `chore/` `docs/`; conventional commits (`feat:` `fix:` `chore:` `docs:` `test:` `refactor:`, optional scope), subject ≤ 72 chars.
-- Commits must be signed (CI rejects unverified). Stage explicit paths, never `git add -A`.
-- No AI attribution (no `Co-Authored-By`, no mentions in commits/PRs/comments).
-- Never `--no-verify`, `--amend`, `--force`, `--admin`, or bypass rules; never weaken a CI gate, budget, or coverage threshold to pass.
+## Review findings
 
-## Hard rules
+- A defect your change introduced is fixed in the same PR. An inline review comment counts as a change request.
+- A defect that was already there gets its own issue with a failing test, linked from the PR. "Already there" means that test also fails on the merge base, and the reviewer decides it, not the author. It blocks the merge only if it makes the change itself unsafe. Small PRs are what keep review fast.
 
-- **Redaction:** every payload leaving the device goes through `redact()`. New context field → new redaction test.
-- **Bundle budgets** (gzip, enforced by `.size-limit.js` + `chunk-split.test.ts`; keep in sync): core eager `index` + static chunks < 8 kB; widget open (with `modern-screenshot`) < 25 kB; react / react-native < 25 kB; solid / vue < 13 kB; svelte eager < 5 kB, `FeedbackButton.svelte` < 22 kB; angular FESM2022 < 31 kB.
-- Console + network rings stay eager (must capture before the first error/fetch). Everything else heavy (screenshot, submit, config fetch) stays behind `await import()`.
-- **Changesets:** any change under `packages/**` needs one (`pnpm changeset`). All seven packages version together (`fixed` group). `feat` → minor, `fix`/`refactor` → patch, breaking → major (call it out).
-- Release channels: `dev` → npm `beta` (pre mode, `release-dev.yml`); `main` → `latest` (`release.yml`). The branch/dist-tag name mismatch is intentional.
+## Architecture
 
-## Engineering rules
+- The core owns capture, redaction, transport and the wire contract with brevwick-api. Adapters are thin bindings to a framework and hold no logic the core could hold, so all seven packages behave the same.
+- The API is the source of truth for the wire shape. If the fix belongs in brevwick-api, say so and stop.
 
-- Push back on wrong or over-engineered suggestions; fix root causes, no "for now" workarounds. If the fix belongs in another repo, say so and stop.
-- Fix every real review finding in the same PR — no follow-up issues.
-- Unknown state is never treated as safe: fail closed.
-- Unit tests are hermetic: no network, real credentials, or real services where a fake (msw, happy-dom) will do; no sleeps — use fake timers.
-- Code documents itself; comment only the non-obvious why.
+## Rules for every change
+
+- Every payload leaving the device goes through `redact()`. A new context field gets a redaction test, because a leak here ships into customers' apps.
+- Unknown is never safe: fail closed.
+- Replace old paths outright, with no compatibility shims, unless the change is a published breaking change with its own major changeset.
+- One source of truth: share logic instead of copying it.
+- Comments say only what the code cannot: a non-obvious reason, an external contract, a trap.

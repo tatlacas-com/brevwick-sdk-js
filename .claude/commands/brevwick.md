@@ -12,7 +12,7 @@ You are landing a single issue end-to-end. Parse `$ARGUMENTS` as an issue URL. I
 - Never `git add -A` or `git add .` — stage specific paths only.
 - Never remove a worktree. The user manages worktree lifecycle.
 - Never skip hooks (`--no-verify`, `--no-gpg-sign`). Fix the root cause.
-- The full CI gauntlet (per repo's `CLAUDE.md`) must pass locally before push. No partial pushes.
+- Before push: the repo's lint/format/type checks and the tests covering what you changed (commands in its `CLAUDE.md`). CI runs the full suite on every push; when it fails, fix the test it names.
 - Conventional-commit subject ≤ 72 characters.
 
 ---
@@ -128,11 +128,13 @@ If the worktree path already exists, abort: `Worktree ../<…> already exists �
 
 Re-read `CLAUDE.md` in the worktree. Apply every rule it states (layer rules, sentinels, redaction, wire-contract mirrors, never-log lists, dependency allow-lists). These are non-negotiable.
 
-Make the change. Add tests for every `if`/`switch`/`catch`/`for` branch you introduce. Update changelogs/SDD links if the issue or `CLAUDE.md` requires it.
+Make the change. Add tests that fail without the change for each behaviour you add, including its error paths. Update changelogs/SDD links if the issue or `CLAUDE.md` requires it.
 
 Save any clarifications received in step 3 to `notes/issue-${ID}-context.md` so a re-run picks up the same context.
 
-## STEP 6 — CI gauntlet
+## STEP 6 — Local checks
+
+Run the checks in the repo's `CLAUDE.md`: lint, format and type checks, plus only the tests covering your change. The full chains below are what CI runs on every push, for reference; do not run the whole suite locally.
 
 Read the CI command from this repo's `CLAUDE.md`. For `brevwick-sdk-js`:
 
@@ -144,7 +146,7 @@ Add `pnpm size` if the change touches bundle-budgeted code (see CLAUDE.md § bun
 
 For any other repo: `grep -E "CI gauntlet\|ci\.yml" CLAUDE.md`. If nothing usable, ask the user once via `AskUserQuestion`: which command mirrors `.github/workflows/ci.yml`? Save the answer to `notes/issue-${ID}-context.md` for future runs.
 
-On any failure, fix the root cause and re-run the **full** chain. Never push partial-green.
+On a failure, fix the root cause and re-run the failing check. When CI fails after push, fix the test it names.
 
 ## STEP 7 — Commit
 

@@ -14,7 +14,7 @@ HARD blockers. Any violation → **CHANGES REQUIRED**.
 
 1. **Clean architecture compliance** — `@tatlacas/brevwick-sdk` stays framework-agnostic. React types / hooks / JSX belong ONLY in `@tatlacas/brevwick-react`. No leaking React, DOM, or Node-only APIs into the core. Public API surface is intentional and tree-shakeable. Module boundaries in `CLAUDE.md` are absolute.
 2. **Clean code** — SOLID, DRY, KISS, meaningful names, single responsibility, small functions, no dead code, no commented-out code, no `any`, no stale TODOs, no deep nesting.
-3. **Completeness** — every acceptance criterion implemented. No stubs / placeholders / "follow-up" work.
+3. **Completeness** — every acceptance criterion implemented. No stubs / placeholders / "follow-up" work. A defect that was already on the base before this PR is different: record it as its own issue with a failing test, linked from the review, and do not count it against this PR unless it makes the change unsafe.
 4. **Cross-repo contract fidelity** — every ingest call, request payload, header, and parsed response is verified against the source-of-truth repo as it actually exists on its canonical remote branch (see _Step 2.5 — Cross-Repo Contract Verification_). An unverified or drifting contract is a HARD blocker, not a nit.
 
 ## Process
